@@ -1,0 +1,62 @@
+[project]
+name = "dsp"
+version = "0.1.0"
+description = "DS Playground: analyse data and train models on demand"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "duckdb==1.5.5",
+    "jsonschema[format-nongpl]==4.26.0",
+    "typer==0.27.2",
+]
+
+[project.scripts]
+dsp = "dsp.interfaces.cli:app"
+
+[dependency-groups]
+dev = [
+    "mypy==2.3.1",
+    "pytest==9.1.1",
+    "pytest-cov==7.1.0",
+    "pytest-socket==0.8.1",
+    "ruff==0.16.10",
+    "types-jsonschema==4.26.0.20260518",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dsp"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "SIM", "PT", "RUF", "D", "TID", "S602", "S604", "S605"]
+ignore = ["D100", "D104", "D105", "D107"]
+allowed-confusables = ["–"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.mypy]
+strict = true
+files = ["src", "tools"]
+
+[tool.pytest.ini_options]
+addopts = "-q --strict-markers --disable-socket --allow-unix-socket"
+testpaths = ["tests"]
+pythonpath = [".", "tools"]
+markers = [
+    "slow: takes more than two seconds",
+    "sandbox: needs the OS sandbox",
+    "live_model: needs the local open model",
+    "remote_model: needs a hosted or proprietary model key",
+    "desktop: needs the built desktop app",
+    "network: touches the public network",
+]

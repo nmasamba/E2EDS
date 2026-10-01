@@ -76,3 +76,24 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
 - **2026-10-01 — S0 — FINDING — suite table defects** — in `../requirements_and_decisions.md` the "Traceability
   for the general data workflow" table has rows R24–R27 pasted into it, and R23, ADR25 and O20 appear out of
   numeric order. The IDs themselves are intact.
+
+## Sprint 1
+
+- **2026-10-01 — S1 — DECISION — no typed models yet** — objects are plain dicts validated against the JSON
+  Schemas; pydantic is not a dependency until the harness needs it (Sprint 2). Less code, one source of truth.
+- **2026-10-01 — S1 — DECISION — pack manifest** — the Sprint 1 export uses a small app-owned `PackManifest`
+  (relative paths, digests, recipe, source; no timestamps, so the same input gives identical bytes on macOS
+  and Linux). The suite's `AnalysisReleaseManifest` needs run, report and evidence references that do not
+  exist until Sprint 8; filling them now would mean fabricating them.
+- **2026-10-01 — S1 — ASSUMPTION — recipe execution** — the built-in profiling recipe runs in-process and is
+  labelled `signed_recipe`. It is reviewed code in this repository, not generated code; it moves into the
+  sandboxed runner in Sprint 4.
+- **2026-10-01 — S1 — ASSUMPTION — error code for a digest mismatch** — the suite's shared codes have none for
+  integrity failures; a staged file that does not match its digest raises `INTERNAL_ERROR`.
+- **2026-10-01 — S1 — DEFECT — integer detection** — found by test: DuckDB rounds `'43.2'` when cast to
+  BIGINT, so decimals were proposed as integers. Fixed by requiring a full digit match; integer ranges come
+  from exact BIGINT values, not doubles.
+- **2026-10-01 — S1 — ASSUMPTION — fixture randomness** — the orders generator uses `random.Random(seed)`;
+  numpy is not a dependency until model fitting needs it (Sprint 9).
+- **2026-10-01 — S1 — FINDING — Linux architecture coverage** — `make verify-linux` on this Mac runs
+  linux/arm64. The docs' x86-64 profile is exercised only by the GitHub Actions `ubuntu-24.04` job.

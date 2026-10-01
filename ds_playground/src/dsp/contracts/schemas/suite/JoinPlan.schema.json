@@ -1,0 +1,662 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.6.0"
+    },
+    "planning_only": {
+      "type": "boolean"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "revision": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "type": {
+      "const": "JoinPlan"
+    },
+    "tenant_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "project_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "owner_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "collection_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "revision",
+        "sha256"
+      ]
+    },
+    "state": {
+      "enum": [
+        "proposed",
+        "validated",
+        "approved",
+        "rejected",
+        "superseded"
+      ]
+    },
+    "anchor_alias": {
+      "type": "string",
+      "minLength": 1
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "operation": {
+            "enum": [
+              "aggregate",
+              "join",
+              "asof_join",
+              "union",
+              "asset_link"
+            ]
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          },
+          "output_alias": {
+            "type": "string",
+            "minLength": 1
+          },
+          "keys": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "left": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "right": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "normalisation": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "left",
+                "right",
+                "normalisation"
+              ]
+            },
+            "minItems": 0
+          },
+          "group_by": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 0
+          },
+          "aggregates": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "output": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "function": {
+                  "enum": [
+                    "sum",
+                    "count",
+                    "min",
+                    "max",
+                    "mean"
+                  ]
+                },
+                "field": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "output",
+                "function",
+                "field"
+              ]
+            },
+            "minItems": 0
+          },
+          "filter_expression": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "join_type": {
+            "enum": [
+              "none",
+              "left",
+              "inner",
+              "semi",
+              "anti",
+              "asof",
+              "union_all",
+              "link"
+            ]
+          },
+          "cardinality": {
+            "enum": [
+              "one_to_one",
+              "many_to_one",
+              "one_to_many",
+              "many_to_many",
+              "not_applicable"
+            ]
+          },
+          "output_grain": {
+            "type": "string",
+            "minLength": 1
+          },
+          "null_key_policy": {
+            "enum": [
+              "quarantine",
+              "reject",
+              "not_applicable"
+            ]
+          },
+          "unmatched_policy": {
+            "enum": [
+              "quarantine",
+              "retain_null_and_report",
+              "reject",
+              "not_applicable"
+            ]
+          },
+          "temporal": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "cutoff": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "effective_from": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "effective_to": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "available_at": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "tie_policy": {
+                    "const": "reject_ambiguity"
+                  }
+                },
+                "required": [
+                  "cutoff",
+                  "effective_from",
+                  "effective_to",
+                  "available_at",
+                  "tie_policy"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "allowed_use": {
+            "enum": [
+              "analysis_only",
+              "prediction_time_features",
+              "labels_only",
+              "asset_provenance"
+            ]
+          },
+          "projection": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          },
+          "required_checks": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "id",
+          "operation",
+          "inputs",
+          "output_alias",
+          "keys",
+          "group_by",
+          "aggregates",
+          "filter_expression",
+          "join_type",
+          "cardinality",
+          "output_grain",
+          "null_key_policy",
+          "unmatched_policy",
+          "temporal",
+          "allowed_use",
+          "projection",
+          "required_checks"
+        ],
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "operation": {
+                  "const": "asof_join"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "temporal": {
+                  "type": "object"
+                },
+                "join_type": {
+                  "const": "asof"
+                },
+                "keys": {
+                  "minItems": 1
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "operation": {
+                  "const": "aggregate"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "group_by": {
+                  "minItems": 1
+                },
+                "aggregates": {
+                  "minItems": 1
+                },
+                "join_type": {
+                  "const": "none"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "operation": {
+                  "const": "join"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "keys": {
+                  "minItems": 1
+                },
+                "inputs": {
+                  "minItems": 2,
+                  "maxItems": 2
+                },
+                "join_type": {
+                  "enum": [
+                    "left",
+                    "inner",
+                    "semi",
+                    "anti"
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      },
+      "minItems": 1
+    },
+    "outputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "alias": {
+            "type": "string",
+            "minLength": 1
+          },
+          "grain": {
+            "type": "string",
+            "minLength": 1
+          },
+          "primary_key": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          },
+          "anchor_alias": {
+            "type": "string",
+            "minLength": 1
+          },
+          "max_rows_per_anchor": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          }
+        },
+        "required": [
+          "alias",
+          "grain",
+          "primary_key",
+          "anchor_alias",
+          "max_rows_per_anchor"
+        ]
+      },
+      "minItems": 1
+    },
+    "excluded_inputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "alias": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "alias",
+          "reason"
+        ]
+      },
+      "minItems": 0
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_output_rows_per_table": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_columns_per_table": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_expansion_ratio": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "memory_gib": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "scratch_gib": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "wall_time_seconds": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "max_output_rows_per_table",
+        "max_columns_per_table",
+        "max_expansion_ratio",
+        "memory_gib",
+        "scratch_gib",
+        "wall_time_seconds"
+      ]
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "revision": {
+            "type": "string",
+            "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+          },
+          "sha256": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^sha256:[a-f0-9]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "revision",
+          "sha256"
+        ]
+      },
+      "minItems": 0
+    },
+    "outcome": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "INSUFFICIENT_EVIDENCE"
+      ]
+    },
+    "approval_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 0
+    },
+    "unresolved_decisions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 0
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1
+    }
+  },
+  "required": [
+    "schema_version",
+    "planning_only",
+    "id",
+    "revision",
+    "type",
+    "tenant_ref",
+    "project_ref",
+    "owner_ref",
+    "collection_ref",
+    "state",
+    "anchor_alias",
+    "nodes",
+    "outputs",
+    "excluded_inputs",
+    "limits",
+    "evidence_refs",
+    "outcome",
+    "approval_refs",
+    "unresolved_decisions",
+    "limitations"
+  ],
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.example.invalid/tip/0.6.0/JoinPlan.schema.json",
+  "title": "JoinPlan — proposed planning contract",
+  "description": "Structural planning contract; no identity, rights, semantic, security, execution or performance guarantee.",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "planning_only": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "state": {
+            "const": "proposed"
+          },
+          "outcome": {
+            "const": "INSUFFICIENT_EVIDENCE"
+          },
+          "approval_refs": {
+            "maxItems": 0
+          },
+          "evidence_refs": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "approved"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "const": "PASS"
+          },
+          "approval_refs": {
+            "minItems": 1
+          },
+          "evidence_refs": {
+            "minItems": 1
+          },
+          "unresolved_decisions": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "planning_only": {
+            "const": false
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "collection_ref": {
+            "properties": {
+              "sha256": {
+                "type": "string",
+                "pattern": "^sha256:[a-f0-9]{64}$"
+              }
+            }
+          },
+          "evidence_refs": {
+            "items": {
+              "properties": {
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^sha256:[a-f0-9]{64}$"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,431 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.6.0"
+    },
+    "planning_only": {
+      "type": "boolean"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "revision": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "type": {
+      "const": "TaskCapabilitySpec"
+    },
+    "tenant_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "project_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "owner_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "task_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_.-]+$"
+      },
+      "minItems": 1
+    },
+    "family": {
+      "enum": [
+        "classical_ml",
+        "genai_application",
+        "genai_training",
+        "agent",
+        "data_analysis"
+      ]
+    },
+    "status": {
+      "enum": [
+        "proposed",
+        "experimental",
+        "qualified",
+        "deprecated",
+        "unsupported"
+      ]
+    },
+    "learning_mode": {
+      "enum": [
+        "none",
+        "supervised",
+        "unsupervised",
+        "semi_supervised",
+        "application_configuration",
+        "weight_adaptation",
+        "agent_configuration",
+        "reinforcement_learning"
+      ]
+    },
+    "operations": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "prepare",
+          "analyse",
+          "train",
+          "optimise",
+          "evaluate",
+          "infer",
+          "simulate"
+        ]
+      },
+      "minItems": 1
+    },
+    "modalities": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1
+    },
+    "input_schema": {
+      "type": "object"
+    },
+    "output_schema": {
+      "type": "object"
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "package": {
+            "type": "string",
+            "minLength": 1
+          },
+          "revision": {
+            "type": "string",
+            "minLength": 1
+          },
+          "licence_status": {
+            "type": "string",
+            "minLength": 1
+          },
+          "documentation": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "format": "uri",
+                  "pattern": "^https://"
+                },
+                "package_version": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "checked_on": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "content_sha256": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^sha256:[a-f0-9]{64}$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "enum": [
+                    "reference_only",
+                    "captured_verified"
+                  ]
+                }
+              },
+              "required": [
+                "url",
+                "package_version",
+                "checked_on",
+                "content_sha256",
+                "status"
+              ]
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "package",
+          "revision",
+          "licence_status",
+          "documentation"
+        ]
+      },
+      "minItems": 1
+    },
+    "profiles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "profile_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "enum": [
+              "proposed",
+              "tested",
+              "unsupported"
+            ]
+          },
+          "requirements": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "profile_id",
+          "status",
+          "requirements"
+        ]
+      },
+      "minItems": 1
+    },
+    "evaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "oracle": {
+          "type": "string",
+          "minLength": 1
+        },
+        "independent_checks": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        },
+        "predictive_split_required": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "oracle",
+        "independent_checks",
+        "predictive_split_required"
+      ]
+    },
+    "lifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "preparation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "validation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "execution": {
+          "type": "string",
+          "minLength": 1
+        },
+        "checkpointing": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cancellation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "collection": {
+          "type": "string",
+          "minLength": 1
+        },
+        "failure": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "preparation",
+        "validation",
+        "execution",
+        "checkpointing",
+        "cancellation",
+        "collection",
+        "failure"
+      ]
+    },
+    "qualification_evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "revision": {
+            "type": "string",
+            "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+          },
+          "sha256": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^sha256:[a-f0-9]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "revision",
+          "sha256"
+        ]
+      },
+      "minItems": 0
+    },
+    "unsupported_behaviours": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1
+    }
+  },
+  "required": [
+    "schema_version",
+    "planning_only",
+    "id",
+    "revision",
+    "type",
+    "tenant_ref",
+    "project_ref",
+    "owner_ref",
+    "task_ids",
+    "family",
+    "status",
+    "learning_mode",
+    "operations",
+    "modalities",
+    "input_schema",
+    "output_schema",
+    "dependencies",
+    "profiles",
+    "evaluation",
+    "lifecycle",
+    "qualification_evidence_refs",
+    "unsupported_behaviours"
+  ],
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.example.invalid/tip/0.6.0/TaskCapabilitySpec.schema.json",
+  "title": "TaskCapabilitySpec — proposed planning contract",
+  "description": "Structural planning contract; no identity, rights, semantic, security, execution or performance guarantee.",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "planning_only": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "status": {
+            "const": "proposed"
+          },
+          "profiles": {
+            "items": {
+              "properties": {
+                "status": {
+                  "const": "proposed"
+                }
+              }
+            }
+          },
+          "qualification_evidence_refs": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "qualified"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "qualification_evidence_refs": {
+            "minItems": 1
+          },
+          "profiles": {
+            "contains": {
+              "properties": {
+                "status": {
+                  "const": "tested"
+                }
+              },
+              "required": [
+                "status"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "planning_only": {
+            "const": false
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "qualification_evidence_refs": {
+            "items": {
+              "properties": {
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^sha256:[a-f0-9]{64}$"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

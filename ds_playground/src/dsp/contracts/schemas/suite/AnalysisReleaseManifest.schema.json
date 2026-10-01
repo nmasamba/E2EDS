@@ -1,0 +1,575 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.example.invalid/tip/0.5.0/AnalysisReleaseManifest.schema.json",
+  "title": "AnalysisReleaseManifest — proposed planning contract",
+  "description": "Draft planning contract; structural validity does not establish rights, security, execution, correctness or approval.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.5.0"
+    },
+    "planning_only": {
+      "type": "boolean"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "revision": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "type": {
+      "const": "AnalysisReleaseManifest"
+    },
+    "tenant_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "project_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "release_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "output_kind": {
+      "const": "analysis_release"
+    },
+    "workload_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "revision",
+        "sha256"
+      ]
+    },
+    "data_product_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+          },
+          "revision": {
+            "type": "string",
+            "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+          },
+          "sha256": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^sha256:[a-f0-9]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "revision",
+          "sha256"
+        ]
+      },
+      "minItems": 1
+    },
+    "run_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "revision",
+        "sha256"
+      ]
+    },
+    "report_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "revision",
+        "sha256"
+      ]
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "role": {
+            "enum": [
+              "data_product_manifest",
+              "preparation_code",
+              "analysis_code",
+              "environment_lock",
+              "notebook",
+              "analysis_report_json",
+              "analysis_report_html",
+              "sbom",
+              "reproduction_guide"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "pattern": "^(?!/)(?!.*\\.\\.).+$"
+          },
+          "sha256": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^sha256:[a-f0-9]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence_status": {
+            "enum": [
+              "planned",
+              "produced",
+              "verified"
+            ]
+          }
+        },
+        "required": [
+          "role",
+          "path",
+          "sha256",
+          "evidence_status"
+        ]
+      },
+      "minItems": 9
+    },
+    "evaluation_outcome": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "INSUFFICIENT_EVIDENCE"
+      ]
+    },
+    "approval_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 160,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+      },
+      "minItems": 0
+    },
+    "rights_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "revision",
+        "sha256"
+      ]
+    },
+    "reproduction_profile": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reproduction_status": {
+      "enum": [
+        "planned",
+        "tested",
+        "unsupported"
+      ]
+    },
+    "signatures": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 0
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1
+    }
+  },
+  "required": [
+    "schema_version",
+    "planning_only",
+    "id",
+    "revision",
+    "type",
+    "tenant_ref",
+    "project_ref",
+    "release_version",
+    "output_kind",
+    "workload_ref",
+    "data_product_refs",
+    "run_ref",
+    "report_ref",
+    "artifacts",
+    "evaluation_outcome",
+    "approval_refs",
+    "rights_ref",
+    "reproduction_profile",
+    "reproduction_status",
+    "signatures",
+    "limitations"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "planning_only": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "evaluation_outcome": {
+            "const": "INSUFFICIENT_EVIDENCE"
+          },
+          "approval_refs": {
+            "maxItems": 0
+          },
+          "reproduction_status": {
+            "const": "planned"
+          },
+          "signatures": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "artifacts": {
+          "contains": {
+            "properties": {
+              "role": {
+                "const": "data_product_manifest"
+              }
+            },
+            "required": [
+              "role"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "artifacts": {
+          "contains": {
+            "properties": {
+              "role": {
+                "const": "preparation_code"
+              }
+            },
+            "required": [
+              "role"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "artifacts": {
+          "contains": {
+            "properties": {
+              "role": {
+                "const": "analysis_code"
+              }
+            },
+            "required": [
+              "role"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "artifacts": {
+          "contains": {
+            "properties": {
+              "role": {
+                "const": "environment_lock"
+              }
+            },
+            "required": [
+              "role"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "artifacts": {
+          "contains": {
+            "properties": {
+              "role": {
+                "const": "notebook"
+              }
+            },
+            "required": [
+              "role"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "artifacts": {
+          "contains": {
+            "properties": {
+              "role": {
+                "const": "analysis_report_json"
+              }
+            },
+            "required": [
+              "role"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "artifacts": {
+          "contains": {
+            "properties": {
+              "role": {
+                "const": "analysis_report_html"
+              }
+            },
+            "required": [
+              "role"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "artifacts": {
+          "contains": {
+            "properties": {
+              "role": {
+                "const": "sbom"
+              }
+            },
+            "required": [
+              "role"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "artifacts": {
+          "contains": {
+            "properties": {
+              "role": {
+                "const": "reproduction_guide"
+              }
+            },
+            "required": [
+              "role"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "planning_only": {
+            "const": false
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "workload_ref": {
+            "properties": {
+              "sha256": {
+                "type": "string",
+                "pattern": "^sha256:[a-f0-9]{64}$"
+              }
+            }
+          },
+          "data_product_refs": {
+            "items": {
+              "properties": {
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^sha256:[a-f0-9]{64}$"
+                }
+              }
+            }
+          },
+          "run_ref": {
+            "properties": {
+              "sha256": {
+                "type": "string",
+                "pattern": "^sha256:[a-f0-9]{64}$"
+              }
+            }
+          },
+          "report_ref": {
+            "properties": {
+              "sha256": {
+                "type": "string",
+                "pattern": "^sha256:[a-f0-9]{64}$"
+              }
+            }
+          },
+          "artifacts": {
+            "items": {
+              "properties": {
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^sha256:[a-f0-9]{64}$"
+                }
+              }
+            }
+          },
+          "approval_refs": {
+            "items": {}
+          },
+          "rights_ref": {
+            "properties": {
+              "sha256": {
+                "type": "string",
+                "pattern": "^sha256:[a-f0-9]{64}$"
+              }
+            }
+          },
+          "signatures": {
+            "items": {}
+          },
+          "limitations": {
+            "items": {}
+          }
+        }
+      }
+    }
+  ]
+}

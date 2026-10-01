@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.example.invalid/dsp/0.1.0/DataManifest.schema.json",
+  "title": "DataManifest \u2014 app-owned draft 0.1.0",
+  "description": "Identity of one immutable raw source snapshot. The suite describes this object in contracts.md without a schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "type",
+    "id",
+    "revision",
+    "source_name",
+    "sha256",
+    "bytes",
+    "captured_at",
+    "rights"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.1.0"
+    },
+    "type": {
+      "const": "DataManifest"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "revision": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "source_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "bytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "captured_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "rights": {
+      "enum": [
+        "owner_supplied_unreviewed"
+      ]
+    }
+  }
+}

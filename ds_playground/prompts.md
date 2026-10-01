@@ -88,7 +88,7 @@ ones that block nothing yet marked so. State G0 as PASS for scoped synthetic wor
 
 ---
 
-## Sprint 1 — M0: foundations and a thin real product (B02, B03, B05; R09, R11)
+## Sprint 1 — M0: foundations and a thin real product (B02, B03, B05; R11; D20, D23)
 
 Ships a CLI that profiles a CSV and exports a versioned, hash-verified pack, with the gate green on macOS and
 Linux. Order: infrastructure 1.1–1.3, thin slice 1.4, gate 1.5.
@@ -893,7 +893,7 @@ runtime, and exports checkpoints and manifests to persistent storage. Colab Comp
 | R06, R10 | 16 |
 | R07 | 4, 11 |
 | R08, R13 | 14 |
-| R09 | 1, 4 |
+| R09 | 4, 14 |
 | R11 | 1, 8, 10 |
 | R12 | 15 |
 | R14 | 13, 18 |
