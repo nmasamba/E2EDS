@@ -97,3 +97,17 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   numpy is not a dependency until model fitting needs it (Sprint 9).
 - **2026-10-01 — S1 — FINDING — Linux architecture coverage** — `make verify-linux` on this Mac runs
   linux/arm64. The docs' x86-64 profile is exercised only by the GitHub Actions `ubuntu-24.04` job.
+
+## Sprint 2
+
+- **2026-10-01 — S2 — ASSUMPTION — two ledger openers until 2.3** — the harness now exists, but `dsp profile`
+  still opens the ledger itself. SQLite's write lock keeps this safe; the single-writer rule is met when 2.3
+  moves the command behind the harness with scoped folder handles.
+- **2026-10-01 — S2 — DECISION — browser origins** — the harness refuses any request carrying an `Origin`
+  header. Prompt 2.2 allows exactly the desktop shell's origin.
+- **2026-10-01 — S2 — FINDING — test client deprecation** — Starlette 1.7.0 warns that using `httpx` with its
+  test client is deprecated in favour of `httpx2`. Not acted on: the pinned FastAPI works and the warning is
+  not an error.
+- **2026-10-01 — S2 — DEVIATION — socket guard** — the default test run now allows connections to 127.0.0.1
+  only (`--allow-hosts`), instead of disabling sockets outright, because harness tests use a real loopback
+  server. Every other host is still blocked.

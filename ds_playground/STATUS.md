@@ -4,9 +4,9 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 
 ## Now
 
-- **Sprint:** 1 — M0 foundations and thin slice
-- **Claimed prompt:** 1.5 (gate) — awaiting CI
-- **Branch:** `sprint-1-foundations`
+- **Sprint:** 2 — M1 desktop shell, discovery and plan (Sprint 1 is in PR #1, CI result pending)
+- **Claimed prompt:** 2.2 (shell scaffold); 2.1 (harness) is done
+- **Branch:** `sprint-2-desktop`, stacked on `sprint-1-foundations`
 
 ## Done
 
@@ -20,7 +20,8 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 |---|---|---|---|
 | 0 | Setup | done except the model download (0.3), still running | G0: PASS for synthetic scope |
 | 1 | M0 foundations and thin slice | built; gate green locally on macOS and linux/arm64 | see below |
-| 2–11 | M1 | not started | — |
+| 2 | M1 desktop, discovery, plan | 2.1 done (106 tests green on macOS and linux/arm64) | — |
+| 3–11 | M1 | not started | — |
 | 12–20 | M1B, M1C, M1R, M2, M3, M3Z, M4 | not started | — |
 
 ## Environment observed (2026-10-01, this Mac)
@@ -55,6 +56,6 @@ Nothing. Standing approvals are in `docs/decisions.md`.
 
 ## Handoff note
 
-Sprint 1 is built and committed on `sprint-1-foundations`. Next: confirm CI is green on both runners, then
-start Sprint 2 at prompt 2.1 (harness). Rust is installed but keg-only: prepend `/opt/homebrew/opt/rustup/bin`
+Sprint 1 is in PR https://github.com/nmasamba/E2EDS/pull/1; confirm its CI is green on both runners.
+Sprint 2 is on `sprint-2-desktop`: 2.1 (harness, `dsp status`) is done; continue at 2.2 (Tauri shell). Rust is installed but keg-only: prepend `/opt/homebrew/opt/rustup/bin`
 and `~/.cargo/bin` to PATH for cargo.

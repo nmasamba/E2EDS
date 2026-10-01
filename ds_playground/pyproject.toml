@@ -5,8 +5,11 @@ description = "DS Playground: analyse data and train models on demand"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "duckdb==1.5.5",
+    "fastapi==0.141.1",
+    "httpx==0.28.1",
     "jsonschema[format-nongpl]==4.26.0",
     "typer==0.27.2",
+    "uvicorn==0.54.0",
 ]
 
 [project.scripts]
@@ -49,7 +52,7 @@ strict = true
 files = ["src", "tools"]
 
 [tool.pytest.ini_options]
-addopts = "-q --strict-markers --disable-socket --allow-unix-socket"
+addopts = "-q --strict-markers --allow-hosts=127.0.0.1 --allow-unix-socket"
 testpaths = ["tests"]
 pythonpath = [".", "tools"]
 markers = [
