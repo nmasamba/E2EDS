@@ -1,0 +1,111 @@
+{
+  "schema_version": "0.5.0",
+  "planning_only": true,
+  "id": "compute-local-example",
+  "revision": "1.3.0",
+  "tenant_ref": "tenant-demo",
+  "project_ref": "project-support-demo",
+  "state": "proposed",
+  "provider": "local",
+  "provider_account_ref": null,
+  "connection_mode": "attach",
+  "profile_id": "local-attached-v1",
+  "adapter_contracts": {
+    "provisioner": null,
+    "executor": "runner-execution-v1",
+    "serving": "typed-service-v1"
+  },
+  "capabilities": {
+    "declared_families": [
+      "classical_ml",
+      "data_analysis"
+    ],
+    "declared_operations": [
+      "train",
+      "evaluate",
+      "infer",
+      "prepare",
+      "analyse"
+    ],
+    "execution_modes": [
+      "process"
+    ],
+    "checkpoint_mode": "restart_only",
+    "gpu_capable": false,
+    "external_billing_possible": false
+  },
+  "resource_requirements": {
+    "os": "linux",
+    "isa": "x86_64",
+    "cpu_cores_min": 4,
+    "memory_gib_min": 8,
+    "gpu_count_min": 0,
+    "gpu_vram_gib_min_each": 0,
+    "scratch_gib_min": 10
+  },
+  "observed_hardware": null,
+  "limits": {
+    "max_concurrent_attempts": 1,
+    "max_execution_seconds": 7200,
+    "automatic_paid_fallback": false,
+    "automatic_provider_fallback": false
+  },
+  "data_policy": {
+    "allowed_classes": [
+      "synthetic"
+    ],
+    "allowed_purposes": [
+      "demo_training",
+      "demo_evaluation",
+      "demo_inference"
+    ],
+    "allowed_regions": [],
+    "region_confirmation_required": false,
+    "customer_data_allowed": false,
+    "sealed_data_access": false
+  },
+  "credential_refs": [],
+  "artifact_store_ref": "store-local-example",
+  "budget_context_ref": null,
+  "operator_ref": "customer-local-user",
+  "payer_ref": "customer-local-user",
+  "resource_owner_ref": "customer-local-user",
+  "isolation": {
+    "trust_model": "customer_dedicated_vm",
+    "malicious_multitenant_approved": false
+  },
+  "cleanup": {
+    "authority": "job_process_only",
+    "delete_attached_resources": false,
+    "retained_storage_policy": "customer_managed",
+    "reconcile_interval_seconds": null,
+    "idle_stop_request_seconds": null,
+    "owner_ref": "customer-local-user"
+  },
+  "qualification": {
+    "status": "planned",
+    "report_ref": null,
+    "reviewer_ref": null
+  },
+  "limitations": [
+    "No host inspected or job run. Requirements are proposed, not observed.",
+    "Evaluation here means permitted development evaluation; sealed final evaluation requires a separate evaluator binding.",
+    "The local OS owner can bypass process/file separation; no hostile-host or independent sealing claim.",
+    "Billing policy is proposed and unapproved; selecting this binding cannot create an entitlement, provider budget or authority to move data.",
+    "Generated code requires a qualified restricted customer VM; no VM was inspected. D01 resources describe the runner, not the full D16 assistant host. Installed serving is independently qualified."
+  ],
+  "profile_scope": [
+    "training",
+    "development_evaluation",
+    "serving",
+    "data_preparation",
+    "data_analysis"
+  ],
+  "billing_mode": "local_resources",
+  "billing_policy_ref": {
+    "id": "billing-policy-local-example",
+    "revision": "1.0.0",
+    "sha256": null
+  },
+  "generated_code_policy": "restricted_dedicated_vm"
+}

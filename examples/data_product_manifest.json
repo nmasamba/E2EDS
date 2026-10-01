@@ -1,0 +1,204 @@
+{
+  "id": "gold-operations-v1",
+  "revision": "1.1.0",
+  "type": "DataProductManifest",
+  "planning_only": true,
+  "tenant_ref": "tenant-demo",
+  "project_ref": "project-operations-demo",
+  "schema_version": "0.6.0",
+  "owner_ref": "role-data-owner",
+  "state": "planned",
+  "source_refs": [
+    {
+      "id": "data-operations-orders-v1",
+      "revision": "1.0.0",
+      "sha256": null
+    },
+    {
+      "id": "data-operations-accounts-v1",
+      "revision": "1.0.0",
+      "sha256": null
+    },
+    {
+      "id": "data-operations-items-v1",
+      "revision": "1.0.0",
+      "sha256": null
+    },
+    {
+      "id": "data-operations-events-v1",
+      "revision": "1.0.0",
+      "sha256": null
+    },
+    {
+      "id": "data-operations-policies-v1",
+      "revision": "1.0.0",
+      "sha256": null
+    },
+    {
+      "id": "data-operations-documents-v1",
+      "revision": "1.0.0",
+      "sha256": null
+    }
+  ],
+  "transformation_refs": [
+    {
+      "id": "code-operations-prepare-v1",
+      "revision": "1.1.0",
+      "sha256": null
+    }
+  ],
+  "tables": [
+    {
+      "name": "orders",
+      "grain": "one row per order",
+      "artifact_path": "data/orders.parquet",
+      "sha256": null,
+      "primary_key": [
+        "order_id"
+      ],
+      "columns": [
+        {
+          "name": "order_id",
+          "logical_type": "string",
+          "nullable": false,
+          "units": "identifier",
+          "role": "row_id",
+          "prediction_time_available": true
+        },
+        {
+          "name": "account_num",
+          "logical_type": "string",
+          "nullable": false,
+          "units": "identifier",
+          "role": "entity_id",
+          "prediction_time_available": true
+        },
+        {
+          "name": "created_at",
+          "logical_type": "timestamp",
+          "nullable": false,
+          "units": "UTC RFC3339",
+          "role": "attribute",
+          "prediction_time_available": true
+        },
+        {
+          "name": "region",
+          "logical_type": "string",
+          "nullable": false,
+          "units": "category",
+          "role": "attribute",
+          "prediction_time_available": true
+        },
+        {
+          "name": "item_count",
+          "logical_type": "integer",
+          "nullable": false,
+          "units": "items",
+          "role": "attribute",
+          "prediction_time_available": true
+        },
+        {
+          "name": "service_level",
+          "logical_type": "string",
+          "nullable": false,
+          "units": "category",
+          "role": "attribute",
+          "prediction_time_available": true
+        },
+        {
+          "name": "quoted_transit_hours",
+          "logical_type": "number",
+          "nullable": false,
+          "units": "hours",
+          "role": "attribute",
+          "prediction_time_available": true
+        },
+        {
+          "name": "actual_transit_hours",
+          "logical_type": "number",
+          "nullable": true,
+          "units": "hours",
+          "role": "target",
+          "prediction_time_available": false
+        }
+      ],
+      "row_count": null,
+      "access_partition": "analysis_only"
+    }
+  ],
+  "linked_assets": [
+    {
+      "source_ref": {
+        "id": "data-operations-documents-v1",
+        "revision": "1.0.0",
+        "sha256": null
+      },
+      "modality": "pdf",
+      "coordinates": "document ID, page, bounding box and extracted-table cell",
+      "extraction_status": "planned"
+    },
+    {
+      "source_ref": {
+        "id": "data-operations-documents-v1",
+        "revision": "1.0.0",
+        "sha256": null
+      },
+      "modality": "image",
+      "coordinates": "asset ID and pixel bounding box",
+      "extraction_status": "planned"
+    },
+    {
+      "source_ref": {
+        "id": "data-operations-documents-v1",
+        "revision": "1.0.0",
+        "sha256": null
+      },
+      "modality": "text",
+      "coordinates": "source ID and Unicode offsets under fixed normalisation",
+      "extraction_status": "planned"
+    }
+  ],
+  "semantics": {
+    "time_convention": "UTC RFC3339; elapsed transit in hours",
+    "join_policy": "Pinned JoinPlan: aggregate items and outcomes, exact account joins, policy as-of cutoff, assets linked separately; preserve one row/order.",
+    "learned_preprocessing": "excluded_until_split"
+  },
+  "quality": {
+    "outcome": "INSUFFICIENT_EVIDENCE",
+    "checks": [
+      "grain/keys/types/units/UTC meaning",
+      "source and quarantine counts reconcile",
+      "orders-to-account join does not duplicate rows",
+      "as-of validity and available-at both satisfy cutoff",
+      "item aggregation and retained/quarantine counts reconcile",
+      "unmatched outcomes retained and counted; never a feature"
+    ],
+    "evidence_refs": [],
+    "reviewer_ref": null
+  },
+  "rights_ref": {
+    "id": "rights-operations-demo-v1",
+    "revision": "1.0.0",
+    "sha256": null
+  },
+  "access_policy_ref": {
+    "id": "data-policy-operations-v1",
+    "revision": "1.0.0",
+    "sha256": null
+  },
+  "limitations": [
+    "No source bytes or extracted tables exist; counts are design proposals.",
+    "Analysis-only sample is not a sealed predictive test cohort.",
+    "OCR qualification and exact parser/model rights remain unresolved."
+  ],
+  "collection_ref": {
+    "id": "collection-operations-v1",
+    "revision": "1.0.0",
+    "sha256": null
+  },
+  "join_plan_ref": {
+    "id": "join-operations-v1",
+    "revision": "1.0.0",
+    "sha256": null
+  }
+}

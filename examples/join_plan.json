@@ -1,0 +1,304 @@
+{
+  "schema_version": "0.6.0",
+  "planning_only": true,
+  "revision": "1.0.0",
+  "tenant_ref": "tenant-demo",
+  "project_ref": "project-operations-demo",
+  "owner_ref": "role-data-owner",
+  "id": "join-operations-v1",
+  "type": "JoinPlan",
+  "collection_ref": {
+    "id": "collection-operations-v1",
+    "revision": "1.0.0",
+    "sha256": null
+  },
+  "state": "proposed",
+  "anchor_alias": "orders",
+  "nodes": [
+    {
+      "id": "items_aggregate",
+      "operation": "aggregate",
+      "inputs": [
+        "items"
+      ],
+      "output_alias": "items_by_order",
+      "keys": [],
+      "group_by": [
+        "order_id"
+      ],
+      "aggregates": [
+        {
+          "output": "item_count",
+          "function": "sum",
+          "field": "quantity"
+        }
+      ],
+      "filter_expression": null,
+      "join_type": "none",
+      "cardinality": "not_applicable",
+      "output_grain": "one order",
+      "null_key_policy": "quarantine",
+      "unmatched_policy": "not_applicable",
+      "temporal": null,
+      "allowed_use": "prediction_time_features",
+      "projection": [
+        "order_id",
+        "item_count"
+      ],
+      "required_checks": [
+        "positive integer quantities",
+        "each included item available_at <= anchor created_at; reject later changes",
+        "group sums reconcile"
+      ]
+    },
+    {
+      "id": "events_aggregate",
+      "operation": "aggregate",
+      "inputs": [
+        "events"
+      ],
+      "output_alias": "event_outcomes",
+      "keys": [],
+      "group_by": [
+        "order_id"
+      ],
+      "aggregates": [
+        {
+          "output": "completion_at",
+          "function": "min",
+          "field": "event_at"
+        }
+      ],
+      "filter_expression": "event_type = 'delivered'",
+      "join_type": "none",
+      "cardinality": "not_applicable",
+      "output_grain": "one delivered order",
+      "null_key_policy": "quarantine",
+      "unmatched_policy": "not_applicable",
+      "temporal": null,
+      "allowed_use": "labels_only",
+      "projection": [
+        "order_id",
+        "completion_at"
+      ],
+      "required_checks": [
+        "delivery timestamp meaning confirmed",
+        "not a prediction-time input",
+        "duplicate/correction events reviewed"
+      ]
+    },
+    {
+      "id": "account_join",
+      "operation": "join",
+      "inputs": [
+        "orders",
+        "accounts"
+      ],
+      "output_alias": "orders_accounts",
+      "keys": [
+        {
+          "left": "account_num",
+          "right": "account_num",
+          "normalisation": "Preserve string values and leading zeros; reject type coercion unless DO confirms"
+        }
+      ],
+      "group_by": [],
+      "aggregates": [],
+      "filter_expression": null,
+      "join_type": "left",
+      "cardinality": "many_to_one",
+      "output_grain": "one order",
+      "null_key_policy": "quarantine",
+      "unmatched_policy": "quarantine",
+      "temporal": null,
+      "allowed_use": "analysis_only",
+      "projection": [
+        "orders.*",
+        "accounts.region"
+      ],
+      "required_checks": [
+        "accounts.account_num unique/non-null",
+        "orders.order_id unique",
+        "row count after quarantine equals retained anchor count"
+      ]
+    },
+    {
+      "id": "item_join",
+      "operation": "join",
+      "inputs": [
+        "orders_accounts",
+        "items_by_order"
+      ],
+      "output_alias": "orders_items",
+      "keys": [
+        {
+          "left": "order_id",
+          "right": "order_id",
+          "normalisation": "Preserve string values and leading zeros; reject type coercion unless DO confirms"
+        }
+      ],
+      "group_by": [],
+      "aggregates": [],
+      "filter_expression": null,
+      "join_type": "left",
+      "cardinality": "one_to_one",
+      "output_grain": "one order",
+      "null_key_policy": "quarantine",
+      "unmatched_policy": "quarantine",
+      "temporal": null,
+      "allowed_use": "analysis_only",
+      "projection": [
+        "orders_accounts.*",
+        "items_by_order.item_count"
+      ],
+      "required_checks": [
+        "schema/units/counts reconcile; no measurements yet"
+      ]
+    },
+    {
+      "id": "policy_join",
+      "operation": "asof_join",
+      "inputs": [
+        "orders_items",
+        "policies"
+      ],
+      "output_alias": "orders_policy",
+      "keys": [
+        {
+          "left": "account_num",
+          "right": "account_num",
+          "normalisation": "Preserve string values and leading zeros; reject type coercion unless DO confirms"
+        }
+      ],
+      "group_by": [],
+      "aggregates": [],
+      "filter_expression": null,
+      "join_type": "asof",
+      "cardinality": "many_to_one",
+      "output_grain": "one order",
+      "null_key_policy": "quarantine",
+      "unmatched_policy": "quarantine",
+      "temporal": {
+        "cutoff": "orders_items.created_at",
+        "effective_from": "policies.valid_from",
+        "effective_to": "policies.valid_to_exclusive",
+        "available_at": "policies.available_at",
+        "tie_policy": "reject_ambiguity"
+      },
+      "allowed_use": "analysis_only",
+      "projection": [
+        "orders_items.*",
+        "policies.service_level",
+        "policies.quoted_transit_hours"
+      ],
+      "required_checks": [
+        "effective_from <= cutoff < effective_to and available_at <= cutoff",
+        "no overlapping applicable policy intervals",
+        "at most one right match per anchor"
+      ]
+    },
+    {
+      "id": "outcome_join",
+      "operation": "join",
+      "inputs": [
+        "orders_policy",
+        "event_outcomes"
+      ],
+      "output_alias": "orders_gold",
+      "keys": [
+        {
+          "left": "order_id",
+          "right": "order_id",
+          "normalisation": "Preserve string values and leading zeros; reject type coercion unless DO confirms"
+        }
+      ],
+      "group_by": [],
+      "aggregates": [],
+      "filter_expression": null,
+      "join_type": "left",
+      "cardinality": "one_to_one",
+      "output_grain": "one order",
+      "null_key_policy": "quarantine",
+      "unmatched_policy": "retain_null_and_report",
+      "temporal": null,
+      "allowed_use": "analysis_only",
+      "projection": [
+        "orders_policy.*",
+        "completion_at - created_at as actual_transit_hours"
+      ],
+      "required_checks": [
+        "duration uses UTC hours; nonnegative",
+        "future outcome column excluded from predictors",
+        "missing outcomes retained and denominators reported"
+      ]
+    },
+    {
+      "id": "asset_links",
+      "operation": "asset_link",
+      "inputs": [
+        "documents",
+        "orders"
+      ],
+      "output_alias": "asset_links",
+      "keys": [
+        {
+          "left": "order_id",
+          "right": "order_id",
+          "normalisation": "Preserve string values and leading zeros; reject type coercion unless DO confirms"
+        }
+      ],
+      "group_by": [],
+      "aggregates": [],
+      "filter_expression": null,
+      "join_type": "link",
+      "cardinality": "many_to_one",
+      "output_grain": "one permitted asset-to-order association",
+      "null_key_policy": "quarantine",
+      "unmatched_policy": "retain_null_and_report",
+      "temporal": null,
+      "allowed_use": "asset_provenance",
+      "projection": [
+        "asset_id",
+        "order_id",
+        "source coordinates"
+      ],
+      "required_checks": [
+        "links do not multiply orders_gold rows",
+        "unrelated policy reference documents remain corpus sources",
+        "uncertain extraction explicitly flagged"
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "alias": "orders_gold",
+      "grain": "one row per retained order",
+      "primary_key": [
+        "order_id"
+      ],
+      "anchor_alias": "orders",
+      "max_rows_per_anchor": 1
+    }
+  ],
+  "excluded_inputs": [],
+  "limits": {
+    "max_output_rows_per_table": 100000,
+    "max_columns_per_table": 200,
+    "max_expansion_ratio": 2,
+    "memory_gib": 8,
+    "scratch_gib": 10,
+    "wall_time_seconds": 7200
+  },
+  "evidence_refs": [],
+  "outcome": "INSUFFICIENT_EVIDENCE",
+  "approval_refs": [],
+  "unresolved_decisions": [
+    "DO/DE confirm fixture key/temporal/source meaning",
+    "EO freezes checks/tolerances; PL qualifies actual materialisation"
+  ],
+  "limitations": [
+    "No profiling/materialisation executed.",
+    "Graph handles each source; assets retained separately from fact table.",
+    "Expressions are illustrative reviewable code, not trusted executable commands."
+  ]
+}

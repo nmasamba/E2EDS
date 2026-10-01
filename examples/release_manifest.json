@@ -1,0 +1,278 @@
+{
+  "schema_version": "0.4.0",
+  "planning_only": true,
+  "id": "rel-support-route-0.1.0",
+  "revision": "1.5.0",
+  "release_version": "0.1.0",
+  "workload_ref": {
+    "id": "wl-support-route-v1",
+    "revision": "1.4.0",
+    "sha256": null
+  },
+  "run_ref": {
+    "id": "run-route-example-001",
+    "revision": "1.5.0",
+    "sha256": null
+  },
+  "service_spec_ref": {
+    "id": "svc-support-route",
+    "revision": "1.2.0",
+    "sha256": null
+  },
+  "candidate_sha256": null,
+  "artifacts": [
+    {
+      "id": "artifact-pipeline",
+      "role": "pipeline",
+      "path": "pipeline.skops",
+      "media_type": "application/octet-stream",
+      "sha256": null,
+      "size_bytes": null,
+      "evidence_status": "planned"
+    },
+    {
+      "id": "artifact-model",
+      "role": "model",
+      "path": "model.skops",
+      "media_type": "application/octet-stream",
+      "sha256": null,
+      "size_bytes": null,
+      "evidence_status": "planned"
+    },
+    {
+      "id": "artifact-lock",
+      "role": "environment_lock",
+      "path": "requirements.lock",
+      "media_type": "text/plain",
+      "sha256": null,
+      "size_bytes": null,
+      "evidence_status": "planned"
+    },
+    {
+      "id": "artifact-entrypoint",
+      "role": "python_entrypoint",
+      "path": "predict.py",
+      "media_type": "text/x-python",
+      "sha256": null,
+      "size_bytes": null,
+      "evidence_status": "planned"
+    },
+    {
+      "id": "artifact-notebook",
+      "role": "notebook",
+      "path": "training.ipynb",
+      "media_type": "application/x-ipynb+json",
+      "sha256": null,
+      "size_bytes": null,
+      "evidence_status": "planned"
+    },
+    {
+      "id": "artifact-evaluation",
+      "role": "evaluation_report_json",
+      "path": "evaluation.json",
+      "media_type": "application/json",
+      "sha256": null,
+      "size_bytes": null,
+      "evidence_status": "planned"
+    },
+    {
+      "id": "artifact-html",
+      "role": "selection_report_html",
+      "path": "selection_report.html",
+      "media_type": "text/html",
+      "sha256": null,
+      "size_bytes": null,
+      "evidence_status": "planned"
+    },
+    {
+      "id": "artifact-sbom",
+      "role": "sbom",
+      "path": "sbom.spdx.json",
+      "media_type": "application/json",
+      "sha256": null,
+      "size_bytes": null,
+      "evidence_status": "planned"
+    },
+    {
+      "id": "artifact-service",
+      "role": "service_contract",
+      "path": "service_spec.json",
+      "media_type": "application/json",
+      "sha256": null,
+      "size_bytes": null,
+      "evidence_status": "planned"
+    },
+    {
+      "id": "artifact-openapi",
+      "role": "http_schema",
+      "path": "openapi.json",
+      "media_type": "application/json",
+      "sha256": null,
+      "size_bytes": null,
+      "evidence_status": "planned"
+    },
+    {
+      "id": "artifact-policy",
+      "role": "policy",
+      "path": "policy.json",
+      "media_type": "application/json",
+      "sha256": null,
+      "size_bytes": null,
+      "evidence_status": "planned"
+    }
+  ],
+  "dependencies": [
+    {
+      "id": "dep-sklearn",
+      "kind": "software",
+      "name": "scikit-learn",
+      "revision": "1.9.1",
+      "license": "BSD-3-Clause",
+      "redistribution_status": "proposed",
+      "depends_on": []
+    },
+    {
+      "id": "dep-python",
+      "kind": "system_runtime",
+      "name": "CPython",
+      "revision": "3.12.14",
+      "license": "PSF-2.0 with bundled notices; distribution review pending",
+      "redistribution_status": "unknown",
+      "depends_on": []
+    },
+    {
+      "id": "dep-skops",
+      "kind": "software",
+      "name": "skops",
+      "revision": "to-be-selected",
+      "license": "MIT upstream; exact package revision review pending",
+      "redistribution_status": "unknown",
+      "depends_on": [
+        "dep-sklearn"
+      ]
+    },
+    {
+      "id": "dep-fastapi",
+      "kind": "software",
+      "name": "FastAPI",
+      "revision": "0.141.1",
+      "license": "MIT",
+      "redistribution_status": "proposed",
+      "depends_on": [
+        "dep-pydantic"
+      ]
+    },
+    {
+      "id": "dep-pydantic",
+      "kind": "software",
+      "name": "Pydantic",
+      "revision": "2.13.5",
+      "license": "MIT",
+      "redistribution_status": "proposed",
+      "depends_on": [
+        "dep-python"
+      ]
+    },
+    {
+      "id": "dep-mcp",
+      "kind": "software",
+      "name": "MCP Python SDK",
+      "revision": "2.2.0",
+      "license": "MIT",
+      "redistribution_status": "proposed",
+      "depends_on": [
+        "dep-python"
+      ]
+    }
+  ],
+  "interfaces": {
+    "http_service_ref": "svc-support-route",
+    "mcp_service_ref": "svc-support-route",
+    "python_entrypoint": "predict.py",
+    "network_required_for_inference": false
+  },
+  "compatibility_profiles": [
+    {
+      "id": "cpu-linux-x86_64-py312",
+      "os": "Linux, initial candidate Ubuntu 24.04 LTS",
+      "isa": "x86_64",
+      "cpu_cores": 2,
+      "memory_gib": 4,
+      "gpu": null,
+      "status": "planned",
+      "test_report_ref": null
+    }
+  ],
+  "evaluation": {
+    "report_ref": {
+      "id": "report-route-example-001",
+      "revision": "1.0.0",
+      "sha256": null
+    },
+    "outcome": "INSUFFICIENT_EVIDENCE",
+    "evidence_grade": "planning"
+  },
+  "approval_refs": [],
+  "rights_ref": {
+    "id": "rights-support-demo-v1",
+    "revision": "1.0.0",
+    "sha256": null
+  },
+  "binding_schema_version": "0.3.0",
+  "signatures": [],
+  "limitations": [
+    "No training or evaluation has been run.",
+    "Artifact paths describe required future outputs; bytes and hashes do not exist.",
+    "Dependency graph is illustrative and incomplete until a resolved lock and SBOM are generated.",
+    "No compatibility profile is tested; external distribution is not authorised.",
+    "Compute bindings record development provenance only. No training provider, Colab runtime or ZeroGPU profile is certified as a serving environment by this manifest.",
+    "Assistant/runtime/code-task provenance is planned only. The routing runtime has no dependency on the development assistant."
+  ],
+  "execution_provenance": [
+    {
+      "run_ref": {
+        "id": "run-route-example-001",
+        "revision": "1.5.0",
+        "sha256": null
+      },
+      "execution_request_ref": {
+        "id": "execution-route-local-example",
+        "revision": "1.5.0",
+        "sha256": null
+      },
+      "compute_binding_ref": {
+        "id": "compute-local-example",
+        "revision": "1.3.0",
+        "sha256": null
+      },
+      "runtime_record_ref": null,
+      "evidence_status": "planned"
+    }
+  ],
+  "serving_qualification_policy": "independent_of_training_provider",
+  "development_provenance": {
+    "assistant_model_binding_ref": {
+      "id": "assistant-local-qwen-example",
+      "revision": "1.0.0",
+      "sha256": null
+    },
+    "conversation_ref": {
+      "id": "conversation-support-example",
+      "revision": "1.0.0",
+      "sha256": null
+    },
+    "code_task_refs": [
+      {
+        "id": "code-task-route-example",
+        "revision": "1.2.0",
+        "sha256": null
+      }
+    ],
+    "requirement_revision": "1.4.0",
+    "workflow_plan_ref": {
+      "id": "workflow-route-local-example",
+      "revision": "1.2.0",
+      "sha256": null
+    }
+  }
+}

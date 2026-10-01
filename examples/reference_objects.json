@@ -1,0 +1,424 @@
+{
+  "planning_only": true,
+  "objects": [
+    {
+      "id": "tenant-demo",
+      "revision": "1.0.0",
+      "type": "Tenant",
+      "status": "illustrative_trusted_seed"
+    },
+    {
+      "id": "project-support-demo",
+      "revision": "1.0.0",
+      "type": "Project",
+      "tenant_id": "tenant-demo"
+    },
+    {
+      "id": "data-support-demo-v1",
+      "revision": "1.0.0",
+      "type": "DataManifest",
+      "status": "planned",
+      "owner": "role-data-owner",
+      "sha256": null,
+      "source": "first-party synthetic scenarios to be authored; no actual snapshot",
+      "rows_proposed": 6000,
+      "groups_proposed": 1500,
+      "languages": [
+        "en"
+      ],
+      "classes": [
+        "billing",
+        "access",
+        "product",
+        "other"
+      ],
+      "permitted_purposes_proposed": [
+        "demo_training",
+        "demo_evaluation"
+      ],
+      "rights_ref": "rights-support-demo-v1",
+      "time_convention": "UTC RFC3339",
+      "schema": {
+        "case_id": "string",
+        "scenario_family_id": "string",
+        "text": "UTF-8 string",
+        "label": "billing|access|product|other",
+        "language": "en"
+      }
+    },
+    {
+      "id": "split-support-demo-v1",
+      "revision": "1.0.0",
+      "type": "SplitManifest",
+      "status": "planned",
+      "data_manifest_id": "data-support-demo-v1",
+      "group_key": "scenario_family_id",
+      "train_rows": 3600,
+      "tune_rows": 1200,
+      "tune_calibration_rows": 600,
+      "tune_selection_rows": 600,
+      "final_rows": 1200,
+      "membership_sha256": null,
+      "train_principal": "role-optimiser",
+      "final_principal": "role-evaluator",
+      "final_access_authorisations_proposed": 1
+    },
+    {
+      "id": "eval-support-route-v1",
+      "revision": "1.0.0",
+      "type": "EvaluationContract",
+      "status": "proposed",
+      "split_id": "split-support-demo-v1",
+      "owner": "role-evaluator",
+      "baseline": "fixed keyword rules with defer fallback",
+      "primary_metrics": [
+        {
+          "name": "macro_f1",
+          "denominator": "all eligible final cases per class then unweighted mean",
+          "point_min": 0.8,
+          "ci95_lower_min": 0.75
+        },
+        {
+          "name": "automatic_routing_precision",
+          "denominator": "non-abstained final cases",
+          "one_sided95_lower_min": 0.9,
+          "interval_method": "scenario-group bootstrap; Wilson only for independent cases"
+        },
+        {
+          "name": "coverage",
+          "denominator": "all eligible final cases",
+          "min": 0.5
+        }
+      ],
+      "uncertainty": "group bootstrap by scenario family; Wilson only if independence assumption defensible",
+      "finalist_policy": "one frozen finalist plus deterministic baseline; no final-set tuning",
+      "approval_refs": []
+    },
+    {
+      "id": "run-route-example-001",
+      "revision": "1.5.0",
+      "type": "RunManifest",
+      "state": "planned",
+      "workload_id": "wl-support-route-v1",
+      "attempts": [],
+      "checkpoints": [],
+      "output_artifacts": [],
+      "hardware_observations": null,
+      "usage_record_ids": [],
+      "compute_binding_ref": {
+        "id": "compute-local-example",
+        "revision": "1.3.0",
+        "sha256": null
+      },
+      "execution_request_ref": {
+        "id": "execution-route-local-example",
+        "revision": "1.5.0",
+        "sha256": null
+      },
+      "resource_lifecycle_state": "not_created",
+      "billing_reconciliation_state": "not_started",
+      "provider_job_id": null,
+      "provider_resource_ids": [],
+      "runtime_record_ref": null,
+      "workload_ref": {
+        "id": "wl-support-route-v1",
+        "revision": "1.4.0",
+        "sha256": null
+      },
+      "assistant_model_binding_ref": {
+        "id": "assistant-local-qwen-example",
+        "revision": "1.0.0",
+        "sha256": null
+      },
+      "conversation_ref": {
+        "id": "conversation-support-example",
+        "revision": "1.0.0",
+        "sha256": null
+      },
+      "code_task_refs": [
+        {
+          "id": "code-task-route-example",
+          "revision": "1.2.0",
+          "sha256": null
+        }
+      ],
+      "requirement_revision": "1.4.0",
+      "workflow_plan_ref": {
+        "id": "workflow-route-local-example",
+        "revision": "1.2.0",
+        "sha256": null
+      },
+      "planning_hardware_snapshot_refs": [
+        {
+          "id": "hardware-host-example",
+          "revision": "1.0.0",
+          "sha256": null
+        },
+        {
+          "id": "hardware-runner-example",
+          "revision": "1.1.0",
+          "sha256": null
+        }
+      ],
+      "admission_hardware_snapshot_refs": []
+    },
+    {
+      "id": "report-route-example-001",
+      "revision": "1.0.0",
+      "type": "EvaluationReport",
+      "run_id": "run-route-example-001",
+      "evaluation_contract_id": "eval-support-route-v1",
+      "outcome": "INSUFFICIENT_EVIDENCE",
+      "metrics": [],
+      "evaluated_cases": 0,
+      "limitations": [
+        "No candidate has been fitted or evaluated."
+      ],
+      "evaluator_attestation": null
+    },
+    {
+      "id": "policy-support-local-v1",
+      "revision": "1.0.0",
+      "type": "IdentityPolicy",
+      "status": "proposed",
+      "tenancy_source": "local owner-selected profile; trusted deployment binding, never document content",
+      "allowed_scopes": [
+        "support:route"
+      ],
+      "network_exposure": "loopback only until remote authentication is configured"
+    },
+    {
+      "id": "rights-support-demo-v1",
+      "revision": "1.0.0",
+      "type": "RightsRecord",
+      "status": "proposed",
+      "software_core_license_proposal": "Apache-2.0",
+      "synthetic_data_license_proposal": "CC0-1.0 after first-party provenance review",
+      "distribution_allowed": false,
+      "customer_data_publication_allowed": false
+    },
+    {
+      "id": "binding-support-local-example",
+      "revision": "1.3.0",
+      "type": "DeploymentBinding",
+      "state": "planned",
+      "release_id": "rel-support-route-0.1.0",
+      "profile_id": "cpu-linux-x86_64-py312",
+      "endpoint": "http://127.0.0.1:8080",
+      "secret_refs": [],
+      "identity_policy_id": "policy-support-local-v1",
+      "operator": "customer-local-user",
+      "payer": "customer-local-user",
+      "corpus_ref": null,
+      "configuration_revision": "1.2.0",
+      "compute_binding_ref": {
+        "id": "compute-local-example",
+        "revision": "1.3.0",
+        "sha256": null
+      },
+      "binding_schema_version": "0.3.0",
+      "serving_qualification_status": "planned",
+      "control_plane_required_per_request": false,
+      "training_provider_required": false,
+      "operator_acceptance_ref": null,
+      "development_assistant_required": false
+    },
+    {
+      "id": "listing-support-route-example",
+      "revision": "1.2.0",
+      "type": "CapabilityListing",
+      "status": "draft",
+      "visibility": "private",
+      "kind": "deployable_release",
+      "release_id": "rel-support-route-0.1.0",
+      "evidence_grade": "planning",
+      "supported_profiles": [],
+      "proposed_profiles": [
+        "cpu-linux-x86_64-py312"
+      ],
+      "price": null,
+      "compute_claim": "Provider-neutral workload intent; every provider/runtime profile requires separate qualification. No supported provider claim yet.",
+      "training_provider_is_serving_certification": false
+    },
+    {
+      "id": "regulatory-support-example",
+      "revision": "1.0.0",
+      "type": "RegulatoryProfile",
+      "status": "unreviewed",
+      "intended_use": "synthetic human-reviewed B2B support routing demonstration",
+      "proposed_market": "UK",
+      "provider_location": null,
+      "deployer_locations": [],
+      "output_use_locations": [],
+      "affected_people": [],
+      "personal_data": "none intended in synthetic demo; confirm generator provenance",
+      "classification": "unresolved; not a compliance certification"
+    },
+    {
+      "id": "control-map-support-example",
+      "revision": "1.0.0",
+      "type": "ObligationControlMapping",
+      "profile_id": "regulatory-support-example",
+      "status": "proposed",
+      "mappings": [
+        {
+          "control": "C02",
+          "requirement": "R05",
+          "evidence": "future G1 sealed-access negative test",
+          "owner": "role-evaluator",
+          "state": "not_implemented"
+        }
+      ]
+    },
+    {
+      "id": "store-local-example",
+      "revision": "1.0.0",
+      "type": "ArtifactStoreBinding",
+      "state": "planned",
+      "mode": "customer_local_private",
+      "locator": null,
+      "credentials": [],
+      "limitations": [
+        "No store exists or has been connected."
+      ]
+    },
+    {
+      "id": "store-customer-example",
+      "revision": "1.0.0",
+      "type": "ArtifactStoreBinding",
+      "state": "planned",
+      "mode": "customer_private_unresolved",
+      "locator": null,
+      "credentials": [],
+      "limitations": [
+        "No store exists or has been connected."
+      ]
+    },
+    {
+      "id": "store-public-demo-example",
+      "revision": "1.0.0",
+      "type": "ArtifactStoreBinding",
+      "state": "planned",
+      "mode": "rights_reviewed_demo_only",
+      "locator": null,
+      "credentials": [],
+      "limitations": [
+        "No store exists or has been connected."
+      ]
+    },
+    {
+      "id": "data-policy-support-demo-v1",
+      "revision": "1.0.0",
+      "type": "DataProcessingPolicy",
+      "status": "proposed",
+      "owner": "role-data-owner",
+      "permitted_classes": [
+        "synthetic"
+      ],
+      "permitted_purposes": [
+        "demo_training",
+        "demo_evaluation"
+      ],
+      "customer_data_allowed": false,
+      "training_access": "train_tune_only",
+      "region_decision": "Local synthetic-only use is proposed; remote account and processing locations require explicit review before transfer.",
+      "approved_binding_refs": [],
+      "approval_refs": []
+    },
+    {
+      "id": "billing-policy-local-example",
+      "revision": "1.0.0",
+      "type": "BillingPolicy",
+      "status": "proposed",
+      "owner": "role-finance",
+      "billing_mode": "local_resources",
+      "approved_budget_grant_ref": null,
+      "automatic_paid_fallback": false,
+      "quota_subject_verified": false,
+      "rate_card_ref": null,
+      "approval_refs": [],
+      "decision": "Local user supplies resources; no external charges requested."
+    },
+    {
+      "id": "billing-policy-runpod-example",
+      "revision": "1.0.0",
+      "type": "BillingPolicy",
+      "status": "proposed",
+      "owner": "role-finance",
+      "billing_mode": "customer_direct",
+      "approved_budget_grant_ref": null,
+      "automatic_paid_fallback": false,
+      "quota_subject_verified": false,
+      "rate_card_ref": null,
+      "approval_refs": [],
+      "decision": "Account, quota or prices and cleanup charges must be reviewed; no spending authority exists in this example."
+    },
+    {
+      "id": "billing-policy-colab-example",
+      "revision": "1.0.0",
+      "type": "BillingPolicy",
+      "status": "proposed",
+      "owner": "role-finance",
+      "billing_mode": "customer_direct",
+      "approved_budget_grant_ref": null,
+      "automatic_paid_fallback": false,
+      "quota_subject_verified": false,
+      "rate_card_ref": null,
+      "approval_refs": [],
+      "decision": "Account, quota or prices and cleanup charges must be reviewed; no spending authority exists in this example."
+    },
+    {
+      "id": "billing-policy-zerogpu-example",
+      "revision": "1.0.0",
+      "type": "BillingPolicy",
+      "status": "proposed",
+      "owner": "role-finance",
+      "billing_mode": "user_quota",
+      "approved_budget_grant_ref": null,
+      "automatic_paid_fallback": false,
+      "quota_subject_verified": false,
+      "rate_card_ref": null,
+      "approval_refs": [],
+      "decision": "Account, quota or prices and cleanup charges must be reviewed; no spending authority exists in this example."
+    },
+    {
+      "id": "conversation-support-example",
+      "revision": "1.0.0",
+      "type": "Conversation",
+      "planning_only": true,
+      "tenant_ref": "tenant-demo",
+      "project_ref": "project-support-demo",
+      "state": "planned",
+      "last_event_sequence": 0,
+      "events": [],
+      "retention_policy": "D08 plus D06 command deduplication; DO confirms content retention",
+      "workload_id": "wl-support-route-v1",
+      "immutable_header_scope": "identity_project_access_policy; excludes mutable event stream and current workload revision"
+    },
+    {
+      "id": "code-task-route-example",
+      "revision": "1.2.0",
+      "type": "CodeTask",
+      "planning_only": true,
+      "state": "planned",
+      "workload_ref": {
+        "id": "wl-support-route-v1",
+        "revision": "1.4.0",
+        "sha256": null
+      },
+      "requirement_revision": "1.4.0",
+      "source_sha256": null,
+      "dependency_lock_sha256": null,
+      "input_access": "train_tune_only",
+      "output_roles": [
+        "fitted_pipeline",
+        "training_notebook"
+      ],
+      "isolation_required": "restricted_dedicated_vm",
+      "source_review_state": "not_generated",
+      "dispatch_fence": null,
+      "attempts": [],
+      "result_ref": null
+    }
+  ]
+}

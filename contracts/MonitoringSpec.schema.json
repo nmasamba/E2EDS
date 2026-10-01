@@ -1,0 +1,398 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.example.invalid/tip/0.5.0/MonitoringSpec.schema.json",
+  "title": "MonitoringSpec — proposed planning contract",
+  "description": "Draft planning contract; structural validity does not establish rights, security, execution, correctness or approval.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.5.0"
+    },
+    "planning_only": {
+      "type": "boolean"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "revision": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "type": {
+      "const": "MonitoringSpec"
+    },
+    "tenant_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "project_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "target_kind": {
+      "enum": [
+        "data_product",
+        "analysis_release",
+        "service_binding"
+      ]
+    },
+    "target_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "revision",
+        "sha256"
+      ]
+    },
+    "owner_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "operator_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "payer_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "state": {
+      "enum": [
+        "draft",
+        "active",
+        "paused",
+        "retired"
+      ]
+    },
+    "mode": {
+      "enum": [
+        "manual",
+        "scheduled"
+      ]
+    },
+    "interval_seconds": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 60
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "metric": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+          },
+          "units": {
+            "type": "string",
+            "minLength": 1
+          },
+          "baseline_ref": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 160,
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                  },
+                  "revision": {
+                    "type": "string",
+                    "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+                  },
+                  "sha256": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^sha256:[a-f0-9]{64}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "revision",
+                  "sha256"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rule": {
+            "type": "string",
+            "minLength": 1
+          },
+          "decision_status": {
+            "enum": [
+              "proposed",
+              "approved"
+            ]
+          }
+        },
+        "required": [
+          "metric",
+          "units",
+          "baseline_ref",
+          "rule",
+          "decision_status"
+        ]
+      },
+      "minItems": 1
+    },
+    "on_violation": {
+      "const": "record_and_propose_change"
+    },
+    "auto_promote": {
+      "const": false
+    },
+    "access_policy_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "revision",
+        "sha256"
+      ]
+    },
+    "retention_days": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "max_external_charge_minor": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "currency": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}$"
+    },
+    "authorisation_context_ref": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "readOnly": true
+    }
+  },
+  "required": [
+    "schema_version",
+    "planning_only",
+    "id",
+    "revision",
+    "type",
+    "tenant_ref",
+    "project_ref",
+    "target_kind",
+    "target_ref",
+    "owner_ref",
+    "operator_ref",
+    "payer_ref",
+    "state",
+    "mode",
+    "interval_seconds",
+    "checks",
+    "on_violation",
+    "auto_promote",
+    "access_policy_ref",
+    "retention_days",
+    "max_external_charge_minor",
+    "currency",
+    "authorisation_context_ref"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "manual"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "interval_seconds": {
+            "type": "null"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "interval_seconds": {
+            "type": "integer",
+            "minimum": 60
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "planning_only": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "state": {
+            "const": "draft"
+          },
+          "authorisation_context_ref": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "active"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "authorisation_context_ref": {
+            "type": "string",
+            "minLength": 1
+          },
+          "checks": {
+            "items": {
+              "properties": {
+                "decision_status": {
+                  "const": "approved"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "planning_only": {
+            "const": false
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "target_ref": {
+            "properties": {
+              "sha256": {
+                "type": "string",
+                "pattern": "^sha256:[a-f0-9]{64}$"
+              }
+            }
+          },
+          "checks": {
+            "items": {
+              "properties": {
+                "baseline_ref": {
+                  "anyOf": [
+                    {
+                      "properties": {
+                        "sha256": {
+                          "type": "string",
+                          "pattern": "^sha256:[a-f0-9]{64}$"
+                        }
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "access_policy_ref": {
+            "properties": {
+              "sha256": {
+                "type": "string",
+                "pattern": "^sha256:[a-f0-9]{64}$"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

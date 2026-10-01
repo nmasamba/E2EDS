@@ -1,0 +1,213 @@
+{
+  "schema_version": "0.3.0",
+  "planning_only": true,
+  "id": "svc-support-route",
+  "revision": "1.2.0",
+  "api_version": "1.0.0",
+  "description": "Recommend a queue for a routine support document, with an abstention and human-review signal.",
+  "operations": [
+    {
+      "name": "route_document",
+      "description": "Classify one English support document into billing, access, product or other. Returns a recommendation only; creates no ticket or external action. Low-evidence inputs may abstain.",
+      "execution_mode": "sync",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "document": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20000
+              },
+              "language": {
+                "const": "en"
+              }
+            },
+            "required": [
+              "id",
+              "text",
+              "language"
+            ]
+          }
+        },
+        "required": [
+          "document"
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "document_id": {
+            "type": "string"
+          },
+          "route": {
+            "enum": [
+              "billing",
+              "access",
+              "product",
+              "other"
+            ]
+          },
+          "abstained": {
+            "type": "boolean"
+          },
+          "review_required": {
+            "type": "boolean"
+          },
+          "calibrated_probability": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "release_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+          },
+          "decision_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+          }
+        },
+        "required": [
+          "document_id",
+          "route",
+          "abstained",
+          "review_required",
+          "calibrated_probability",
+          "release_id",
+          "decision_id"
+        ]
+      },
+      "required_scopes": [
+        "support:route"
+      ],
+      "side_effects": "none",
+      "http": {
+        "method": "POST",
+        "path": "/v1/route"
+      },
+      "mcp_tool": "route_document",
+      "idempotency": "pure",
+      "deadline_seconds": 30
+    }
+  ],
+  "limits": {
+    "max_request_bytes": 65536,
+    "max_text_characters": 20000,
+    "max_response_bytes": 65536,
+    "list_page_default": 50,
+    "list_page_max": 200
+  },
+  "errors": [
+    {
+      "code": "INPUT_INVALID",
+      "http_status": 422,
+      "retryable": false
+    },
+    {
+      "code": "UNAUTHENTICATED",
+      "http_status": 401,
+      "retryable": false
+    },
+    {
+      "code": "FORBIDDEN",
+      "http_status": 403,
+      "retryable": false
+    },
+    {
+      "code": "NOT_FOUND",
+      "http_status": 404,
+      "retryable": false
+    },
+    {
+      "code": "IDEMPOTENCY_CONFLICT",
+      "http_status": 409,
+      "retryable": false
+    },
+    {
+      "code": "QUOTA_EXCEEDED",
+      "http_status": 429,
+      "retryable": true
+    },
+    {
+      "code": "BUDGET_EXHAUSTED",
+      "http_status": 409,
+      "retryable": false
+    },
+    {
+      "code": "DEADLINE_EXCEEDED",
+      "http_status": 504,
+      "retryable": true
+    },
+    {
+      "code": "DEPENDENCY_UNAVAILABLE",
+      "http_status": 503,
+      "retryable": true
+    },
+    {
+      "code": "INTERNAL_ERROR",
+      "http_status": 500,
+      "retryable": false
+    }
+  ],
+  "identity_policy_ref": {
+    "id": "policy-support-local-v1",
+    "revision": "1.0.0",
+    "sha256": null
+  },
+  "interfaces": {
+    "http": {
+      "openapi_version": "3.1.0",
+      "auth": "local_loopback_profile"
+    },
+    "mcp": {
+      "sdk": "modelcontextprotocol/python-sdk",
+      "sdk_version": "2.2.0",
+      "protocol_versions": [
+        "2026-07-28",
+        "2025-11-25"
+      ],
+      "transports": [
+        "stdio",
+        "streamable_http"
+      ],
+      "long_jobs": "explicit_job_tools",
+      "capabilities": [
+        "tools"
+      ]
+    }
+  },
+  "operating_profile_ref": "cpu-linux-x86_64-py312",
+  "uncertainty_policy": "Show calibrated model probabilities only if calibration evidence exists; otherwise use null and review requirements.",
+  "review_policy": "All demo outputs require human review. No external ticket mutation is exposed.",
+  "runtime_requirements": {
+    "hosted_control_plane_per_request": false,
+    "training_provider_required_at_inference": false,
+    "external_model_dependency": false,
+    "serving_qualification": "per_declared_deployment_profile",
+    "gradio_demo_compatibility": "not_claimed",
+    "offline_policy": "authorised_local_inference",
+    "development_assistant_required_at_inference": false
+  }
+}

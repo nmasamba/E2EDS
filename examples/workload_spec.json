@@ -1,0 +1,230 @@
+{
+  "schema_version": "0.6.0",
+  "planning_only": true,
+  "id": "wl-support-route-v1",
+  "revision": "1.4.0",
+  "tenant_ref": "tenant-demo",
+  "project_ref": "project-support-demo",
+  "family": "classical_ml",
+  "purpose": {
+    "task": "support_document_routing",
+    "intended_use": "Recommend a support queue to a human reviewer for routine B2B support intake.",
+    "prohibited_uses": [
+      "autonomous external actions",
+      "clinical decisions",
+      "credit or employment decisions"
+    ],
+    "outcome_owner": "role-product-owner"
+  },
+  "adaptation": {
+    "target": "model_and_preprocessing",
+    "method": "tfidf_logistic_regression",
+    "base_model_ref": null,
+    "trainable_parameters": [
+      "tfidf_vocabulary",
+      "tfidf_idf",
+      "classifier_coefficients",
+      "calibration_parameters"
+    ],
+    "environment_ref": null
+  },
+  "data_manifest_ref": {
+    "id": "data-support-demo-v1",
+    "revision": "1.0.0",
+    "sha256": null
+  },
+  "split_manifest_ref": {
+    "id": "split-support-demo-v1",
+    "revision": "1.0.0",
+    "sha256": null
+  },
+  "evaluation_contract_ref": {
+    "id": "eval-support-route-v1",
+    "revision": "1.0.0",
+    "sha256": null
+  },
+  "search_space": [
+    {
+      "parameter": "classifier.C",
+      "values": [
+        0.1,
+        1,
+        10
+      ]
+    },
+    {
+      "parameter": "tfidf.ngram_range",
+      "values": [
+        "1,1",
+        "1,2"
+      ]
+    },
+    {
+      "parameter": "classifier.class_weight",
+      "values": [
+        null,
+        "balanced"
+      ]
+    }
+  ],
+  "requested_resources": {
+    "cpu_cores": 4,
+    "memory_gib": 8,
+    "gpu_count": 0,
+    "scratch_gib": 10,
+    "max_trials": 12,
+    "max_concurrent_trials": 1,
+    "wall_time_seconds": 7200,
+    "max_external_charge_minor": 0,
+    "currency": "GBP"
+  },
+  "requested_permissions": [
+    "dataset:read_train",
+    "dataset:read_tune",
+    "artifact:write_candidate"
+  ],
+  "target_profiles": [
+    "cpu-linux-x86_64-py312"
+  ],
+  "assumptions": [
+    {
+      "field": "/purpose/intended_use",
+      "value": "human-reviewed B2B support intake",
+      "source": {
+        "kind": "planning_author",
+        "ref": "requirements_and_decisions.md#intake-and-assumption-provenance"
+      },
+      "extraction_confidence": null,
+      "materiality": "high",
+      "confirmation_status": "proposed",
+      "confirmed_by": null
+    }
+  ],
+  "authorisation_context_ref": null,
+  "required_outputs": [
+    "fitted_pipeline",
+    "training_notebook",
+    "evaluation_report_json",
+    "selection_report_html",
+    "python_entrypoint",
+    "http_interface",
+    "mcp_interface",
+    "release_manifest",
+    "code_task_provenance",
+    "conversation_decision_summary"
+  ],
+  "execution_requirements": {
+    "allowed_execution_modes": [
+      "process",
+      "batch",
+      "interactive"
+    ],
+    "allowed_connection_modes": [
+      "attach",
+      "provision",
+      "interactive"
+    ],
+    "required_operations": [
+      "train",
+      "evaluate"
+    ],
+    "data_access": "train_tune_only",
+    "data_processing_policy_ref": {
+      "id": "data-policy-support-demo-v1",
+      "revision": "1.0.0",
+      "sha256": null
+    },
+    "checkpoint_policy": "trial_boundary_or_restart",
+    "provider_fallback": "requires_new_admission",
+    "minimum_isolation": "customer_controlled",
+    "no_external_charge_only": true
+  },
+  "assistant_model_binding_ref": {
+    "id": "assistant-local-qwen-example",
+    "revision": "1.0.0",
+    "sha256": null
+  },
+  "conversation_ref": {
+    "id": "conversation-support-example",
+    "revision": "1.0.0",
+    "sha256": null
+  },
+  "intent_constraints": {
+    "field_roles": [
+      {
+        "field": "case_id",
+        "role": "row_id",
+        "data_type": "string",
+        "nullable": false,
+        "public_output": "authorised_join_only"
+      },
+      {
+        "field": "scenario_family_id",
+        "role": "split_group",
+        "data_type": "string",
+        "nullable": false,
+        "public_output": "excluded"
+      },
+      {
+        "field": "text",
+        "role": "predictor",
+        "data_type": "string",
+        "nullable": false,
+        "public_output": "excluded"
+      },
+      {
+        "field": "label",
+        "role": "target",
+        "data_type": "string",
+        "nullable": false,
+        "public_output": "task_output"
+      }
+    ],
+    "split_group_fields": [
+      "scenario_family_id"
+    ],
+    "features": {
+      "allowed_fields": [
+        "text"
+      ],
+      "excluded_fields": [
+        "case_id",
+        "scenario_family_id",
+        "label"
+      ],
+      "count_basis": "source_fields",
+      "hard_max_count": 1,
+      "soft_objective": "minimise_count_among_feasible",
+      "quality_policy": "frozen_evaluation_contract"
+    },
+    "output_transforms": [],
+    "privacy_status": "not_requested"
+  },
+  "field_provenance": [
+    {
+      "field": "/intent_constraints",
+      "source_kind": "planning_example",
+      "message_id": "message-intake-example",
+      "source_span": "Use the text only; keep case_id for joins and group by scenario family.",
+      "extraction_confidence": null,
+      "materiality": "high",
+      "confirmation_status": "proposed",
+      "confirmed_by": null
+    }
+  ],
+  "interaction_mode": "conversational",
+  "task_kind": "classification",
+  "output_kind": "service_release",
+  "input_modalities": [
+    "text"
+  ],
+  "data_product_refs": [],
+  "dataset_collection_ref": null,
+  "join_plan_ref": null,
+  "task_capability_ref": {
+    "id": "cap-support-classification-v1",
+    "revision": "1.0.0",
+    "sha256": null
+  },
+  "requested_delivery": "filesystem_bundle"
+}

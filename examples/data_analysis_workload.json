@@ -1,0 +1,181 @@
+{
+  "schema_version": "0.6.0",
+  "planning_only": true,
+  "id": "wl-operations-analysis-v1",
+  "revision": "1.1.0",
+  "tenant_ref": "tenant-demo",
+  "project_ref": "project-operations-demo",
+  "family": "data_analysis",
+  "purpose": {
+    "task": "operations_data_understanding",
+    "intended_use": "Explain the authorised six-source synthetic operations collection, reviewed joins, missingness and descriptive transit summaries.",
+    "prohibited_uses": [
+      "causal or predictive accuracy claims from EDA",
+      "real external actions"
+    ],
+    "outcome_owner": "role-analysis-owner"
+  },
+  "adaptation": {
+    "target": "analysis_code",
+    "method": "bounded_python_sql_descriptive_analysis",
+    "base_model_ref": null,
+    "trainable_parameters": [],
+    "environment_ref": null
+  },
+  "data_manifest_ref": null,
+  "split_manifest_ref": null,
+  "evaluation_contract_ref": {
+    "id": "eval-operations-analysis-v1",
+    "revision": "1.1.0",
+    "sha256": null
+  },
+  "search_space": [],
+  "requested_resources": {
+    "cpu_cores": 4,
+    "memory_gib": 8,
+    "gpu_count": 0,
+    "scratch_gib": 10,
+    "max_trials": 0,
+    "max_concurrent_trials": 0,
+    "wall_time_seconds": 7200,
+    "max_external_charge_minor": 0,
+    "currency": "GBP"
+  },
+  "requested_permissions": [
+    "dataset:read_analysis",
+    "artifact:write_candidate"
+  ],
+  "target_profiles": [
+    "cpu-linux-x86_64-py312"
+  ],
+  "assumptions": [
+    {
+      "field": "/purpose/intended_use",
+      "value": "descriptive analysis only",
+      "source": {
+        "kind": "planning_author",
+        "ref": "reference_workload.md"
+      },
+      "extraction_confidence": null,
+      "materiality": "high",
+      "confirmation_status": "proposed",
+      "confirmed_by": null
+    }
+  ],
+  "authorisation_context_ref": null,
+  "required_outputs": [
+    "data_product_manifest",
+    "preparation_code",
+    "analysis_code",
+    "environment_lock",
+    "notebook",
+    "analysis_report_json",
+    "analysis_report_html",
+    "sbom",
+    "reproduction_guide",
+    "analysis_release_manifest"
+  ],
+  "execution_requirements": {
+    "allowed_execution_modes": [
+      "process",
+      "batch",
+      "interactive"
+    ],
+    "allowed_connection_modes": [
+      "attach",
+      "provision",
+      "interactive"
+    ],
+    "required_operations": [
+      "analyse"
+    ],
+    "data_access": "permitted_snapshot",
+    "data_processing_policy_ref": {
+      "id": "data-policy-operations-v1",
+      "revision": "1.0.0",
+      "sha256": null
+    },
+    "checkpoint_policy": "stage_boundary_or_restart",
+    "provider_fallback": "requires_new_admission",
+    "minimum_isolation": "customer_controlled",
+    "no_external_charge_only": true
+  },
+  "assistant_model_binding_ref": null,
+  "conversation_ref": null,
+  "intent_constraints": {
+    "field_roles": [
+      {
+        "field": "order_id",
+        "role": "row_id",
+        "data_type": "string",
+        "nullable": false,
+        "public_output": "authorised_join_only"
+      },
+      {
+        "field": "account_num",
+        "role": "entity_id",
+        "data_type": "string",
+        "nullable": false,
+        "public_output": "authorised_join_only"
+      }
+    ],
+    "split_group_fields": [],
+    "features": {
+      "allowed_fields": [],
+      "excluded_fields": [
+        "order_id",
+        "account_num"
+      ],
+      "count_basis": "source_fields",
+      "hard_max_count": null,
+      "soft_objective": "none",
+      "quality_policy": "frozen_evaluation_contract"
+    },
+    "output_transforms": [],
+    "privacy_status": "requires_review"
+  },
+  "field_provenance": [
+    {
+      "field": "/output_kind",
+      "source_kind": "planning_example",
+      "message_id": null,
+      "source_span": "Prepare these files and help me understand the data; save a reproducible analysis.",
+      "extraction_confidence": null,
+      "materiality": "high",
+      "confirmation_status": "proposed",
+      "confirmed_by": null
+    }
+  ],
+  "interaction_mode": "headless",
+  "task_kind": "exploratory_analysis",
+  "output_kind": "analysis_release",
+  "input_modalities": [
+    "tabular",
+    "text",
+    "pdf",
+    "image"
+  ],
+  "data_product_refs": [
+    {
+      "id": "gold-operations-v1",
+      "revision": "1.1.0",
+      "sha256": null
+    }
+  ],
+  "dataset_collection_ref": {
+    "id": "collection-operations-v1",
+    "revision": "1.0.0",
+    "sha256": null
+  },
+  "join_plan_ref": {
+    "id": "join-operations-v1",
+    "revision": "1.0.0",
+    "sha256": null
+  },
+  "task_capability_ref": {
+    "id": "cap-operations-eda-v1",
+    "revision": "1.0.0",
+    "sha256": null
+  },
+  "requested_delivery": "filesystem_bundle"
+}

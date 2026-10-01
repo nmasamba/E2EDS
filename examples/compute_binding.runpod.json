@@ -1,0 +1,106 @@
+{
+  "schema_version": "0.5.0",
+  "planning_only": true,
+  "id": "compute-runpod-example",
+  "revision": "1.3.0",
+  "tenant_ref": "tenant-demo",
+  "project_ref": "project-support-demo",
+  "state": "proposed",
+  "provider": "runpod",
+  "provider_account_ref": "account-runpod-placeholder",
+  "connection_mode": "provision",
+  "profile_id": "runpod-provisioned-v1",
+  "adapter_contracts": {
+    "provisioner": "runpod-provisioner-v1",
+    "executor": "runner-execution-v1",
+    "serving": null
+  },
+  "capabilities": {
+    "declared_families": [
+      "classical_ml"
+    ],
+    "declared_operations": [
+      "train",
+      "evaluate"
+    ],
+    "execution_modes": [
+      "batch"
+    ],
+    "checkpoint_mode": "restart_only",
+    "gpu_capable": true,
+    "external_billing_possible": true
+  },
+  "resource_requirements": {
+    "os": "linux",
+    "isa": "x86_64",
+    "cpu_cores_min": 4,
+    "memory_gib_min": 8,
+    "gpu_count_min": 0,
+    "gpu_vram_gib_min_each": 0,
+    "scratch_gib_min": 10
+  },
+  "observed_hardware": null,
+  "limits": {
+    "max_concurrent_attempts": 1,
+    "max_execution_seconds": 7200,
+    "automatic_paid_fallback": false,
+    "automatic_provider_fallback": false
+  },
+  "data_policy": {
+    "allowed_classes": [
+      "synthetic"
+    ],
+    "allowed_purposes": [
+      "demo_training",
+      "demo_evaluation"
+    ],
+    "allowed_regions": [],
+    "region_confirmation_required": true,
+    "customer_data_allowed": false,
+    "sealed_data_access": false
+  },
+  "credential_refs": [
+    "secret-ref:customer/runpod/provisioning"
+  ],
+  "artifact_store_ref": "store-customer-example",
+  "budget_context_ref": null,
+  "operator_ref": "role-platform-operator",
+  "payer_ref": "customer-account-owner",
+  "resource_owner_ref": "customer-account-owner",
+  "isolation": {
+    "trust_model": "customer_provider_review_required",
+    "malicious_multitenant_approved": false
+  },
+  "cleanup": {
+    "authority": "platform_created_resources_only",
+    "delete_attached_resources": false,
+    "retained_storage_policy": "retain_approved_evidence_delete_temporary",
+    "reconcile_interval_seconds": 60,
+    "idle_stop_request_seconds": 300,
+    "owner_ref": "role-platform-operator"
+  },
+  "qualification": {
+    "status": "planned",
+    "report_ref": null,
+    "reviewer_ref": null
+  },
+  "limitations": [
+    "No account, region, price, resource or grant exists in this planning example.",
+    "The reference workload has a zero external-charge cap; paid execution is blocked until a new reviewed workload revision and trusted grant.",
+    "V1 classification uses CPU; GPU capability is a future adapter declaration, not verified device availability or qualified SFT.",
+    "Unknown region and unqualified isolation block customer data; serving support requires separate qualification.",
+    "Billing policy is proposed and unapproved; selecting this binding cannot create an entitlement, provider budget or authority to move data.",
+    "Initial profile accepts reviewed recipe artifacts only; arbitrary live assistant-generated code is denied until a separately qualified isolation profile exists."
+  ],
+  "profile_scope": [
+    "training",
+    "development_evaluation"
+  ],
+  "billing_mode": "customer_direct",
+  "billing_policy_ref": {
+    "id": "billing-policy-runpod-example",
+    "revision": "1.0.0",
+    "sha256": null
+  },
+  "generated_code_policy": "denied"
+}

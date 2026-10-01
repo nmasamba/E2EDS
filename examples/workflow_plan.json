@@ -1,0 +1,161 @@
+{
+  "id": "workflow-route-local-example",
+  "revision": "1.2.0",
+  "type": "WorkflowPlan",
+  "schema_version": "0.5.0",
+  "planning_only": true,
+  "tenant_ref": "tenant-demo",
+  "project_ref": "project-support-demo",
+  "state": "proposed",
+  "workload_ref": {
+    "id": "wl-support-route-v1",
+    "revision": "1.4.0",
+    "sha256": null
+  },
+  "assistant_model_binding_ref": {
+    "id": "assistant-local-qwen-example",
+    "revision": "1.0.0",
+    "sha256": null
+  },
+  "selected_compute_binding_ref": {
+    "id": "compute-local-example",
+    "revision": "1.3.0",
+    "sha256": null
+  },
+  "hardware_snapshot_refs": [
+    {
+      "id": "hardware-host-example",
+      "revision": "1.0.0",
+      "sha256": null
+    },
+    {
+      "id": "hardware-runner-example",
+      "revision": "1.1.0",
+      "sha256": null
+    }
+  ],
+  "ruleset_revision": "hardware-policy-proposed-1.0.0",
+  "requirement_revision": "1.4.0",
+  "feasibility_outcome": "INSUFFICIENT_EVIDENCE",
+  "qualification_evidence_refs": [],
+  "authorises_execution": false,
+  "selected_option_id": "local_cpu_v1",
+  "recommendation": "Provisionally use the D16 local CPU assistant plus D01 restricted runner; one routing trial at a time. Qualify and recheck before admission.",
+  "allocations": [
+    {
+      "role": "assistant",
+      "physical_domain_id": "host-demo",
+      "cpu_cap": 2,
+      "memory_cap_gib": 12,
+      "gpu_count": 0,
+      "profile_id": "assistant-local-cpu-v1"
+    },
+    {
+      "role": "workload",
+      "physical_domain_id": "host-demo",
+      "cpu_cap": 4,
+      "memory_cap_gib": 8,
+      "gpu_count": 0,
+      "profile_id": "runner-local-restricted-vm-v1"
+    },
+    {
+      "role": "host_reserve",
+      "physical_domain_id": "host-demo",
+      "cpu_cap": 2,
+      "memory_cap_gib": 12,
+      "gpu_count": 0,
+      "profile_id": "host-headroom-proposed-v1"
+    }
+  ],
+  "operating_bounds": {
+    "trial_concurrency": 1,
+    "max_trials": 12,
+    "max_task_seconds": 7200,
+    "currency": "GBP",
+    "max_external_charge_minor": 0
+  },
+  "runtime_estimate_seconds": null,
+  "alternatives": [
+    {
+      "option_id": "smaller_local_assistant",
+      "disposition": "unqualified",
+      "reason": "A different model/context and serial profile need adequacy, runtime and capacity evidence."
+    },
+    {
+      "option_id": "runpod_customer_compute",
+      "disposition": "blocked",
+      "reason": "Zero external-charge cap, no grant and unqualified binding."
+    },
+    {
+      "option_id": "local_gpu_offload",
+      "disposition": "unknown",
+      "reason": "No accelerator was observed or qualified."
+    }
+  ],
+  "required_conditions": [
+    "Replace fixture snapshots with scoped authenticated observations.",
+    "Qualify assistant/model/runtime and restricted VM.",
+    "Refresh capacity and reserve within trusted local authority; no external spending.",
+    "Keep data rights, splits and evaluation contract unchanged."
+  ],
+  "protected_evaluation_ref": {
+    "id": "eval-support-route-v1",
+    "revision": "1.0.0",
+    "sha256": null
+  },
+  "refresh_policy": {
+    "on_dispatch": true,
+    "on_resume": true,
+    "display_stale_after_seconds": 60
+  },
+  "stages": [
+    {
+      "id": "goal",
+      "completion_evidence": "Reviewed intended use and material constraints",
+      "mandatory": true
+    },
+    {
+      "id": "environment",
+      "completion_evidence": "Scoped discovery and viable provisional placement; refresh before admission",
+      "mandatory": true
+    },
+    {
+      "id": "data",
+      "completion_evidence": "Rights, source/split manifests and baseline",
+      "mandatory": true
+    },
+    {
+      "id": "plan",
+      "completion_evidence": "Current immutable plan and required authority",
+      "mandatory": true
+    },
+    {
+      "id": "develop",
+      "completion_evidence": "Committed fitted candidate and lineage",
+      "mandatory": true
+    },
+    {
+      "id": "self_check",
+      "completion_evidence": "Actual development-check results",
+      "mandatory": true
+    },
+    {
+      "id": "evaluate",
+      "completion_evidence": "Independent EO report with explicit outcome",
+      "mandatory": true
+    },
+    {
+      "id": "report_release",
+      "completion_evidence": "Full bundle and G2/profile G3 evidence; report export may precede approval",
+      "mandatory": true
+    },
+    {
+      "id": "operate",
+      "completion_evidence": "Declared operator and recipient handoff under scoped G3/G4",
+      "mandatory": true
+    }
+  ],
+  "supersedes_ref": null,
+  "workload_family": "classical_ml",
+  "output_kind": "service_release"
+}

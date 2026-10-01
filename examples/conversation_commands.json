@@ -1,0 +1,130 @@
+{
+  "planning_only": true,
+  "note": "Illustrative messages against the same current draft revision; none was submitted or applied. Applying the patch would create a new revision and require a later resume command targeting that revision.",
+  "commands": [
+    {
+      "schema_version": "0.3.0",
+      "planning_only": true,
+      "id": "command-intake-example",
+      "revision": "1.2.0",
+      "tenant_ref": "tenant-demo",
+      "project_ref": "project-support-demo",
+      "type": "ConversationCommand",
+      "conversation_ref": {
+        "id": "conversation-support-example",
+        "revision": "1.0.0",
+        "sha256": null
+      },
+      "client_message_id": "message-intake-example",
+      "source": "direct_user_message",
+      "text": "Route support documents for human review. Use the text only; keep case_id for joins and group by scenario family.",
+      "operation": "instruction",
+      "workload_ref": {
+        "id": "wl-support-route-v1",
+        "revision": "1.4.0",
+        "sha256": null
+      },
+      "expected_requirement_revision": "1.4.0",
+      "proposed_patch": [],
+      "state": "planned",
+      "authorisation_context_ref": null,
+      "receipt_event_ref": null,
+      "effect_ref": null
+    },
+    {
+      "schema_version": "0.3.0",
+      "planning_only": true,
+      "id": "command-pause-example",
+      "revision": "1.2.0",
+      "tenant_ref": "tenant-demo",
+      "project_ref": "project-support-demo",
+      "type": "ConversationCommand",
+      "conversation_ref": {
+        "id": "conversation-support-example",
+        "revision": "1.0.0",
+        "sha256": null
+      },
+      "client_message_id": "message-pause-example",
+      "source": "direct_user_message",
+      "text": "Pause now.",
+      "operation": "pause",
+      "workload_ref": {
+        "id": "wl-support-route-v1",
+        "revision": "1.4.0",
+        "sha256": null
+      },
+      "expected_requirement_revision": "1.4.0",
+      "proposed_patch": [],
+      "state": "planned",
+      "authorisation_context_ref": null,
+      "receipt_event_ref": null,
+      "effect_ref": null
+    },
+    {
+      "schema_version": "0.3.0",
+      "planning_only": true,
+      "id": "command-change-example",
+      "revision": "1.2.0",
+      "tenant_ref": "tenant-demo",
+      "project_ref": "project-support-demo",
+      "type": "ConversationCommand",
+      "conversation_ref": {
+        "id": "conversation-support-example",
+        "revision": "1.0.0",
+        "sha256": null
+      },
+      "client_message_id": "message-change-example",
+      "source": "direct_user_message",
+      "text": "Keep only unigrams before resuming.",
+      "operation": "change_requirements",
+      "workload_ref": {
+        "id": "wl-support-route-v1",
+        "revision": "1.4.0",
+        "sha256": null
+      },
+      "expected_requirement_revision": "1.4.0",
+      "proposed_patch": [
+        {
+          "op": "replace",
+          "path": "/search_space/1/values",
+          "value": [
+            "1,1"
+          ]
+        }
+      ],
+      "state": "planned",
+      "authorisation_context_ref": null,
+      "receipt_event_ref": null,
+      "effect_ref": null
+    },
+    {
+      "schema_version": "0.3.0",
+      "planning_only": true,
+      "id": "command-status-example",
+      "revision": "1.2.0",
+      "tenant_ref": "tenant-demo",
+      "project_ref": "project-support-demo",
+      "type": "ConversationCommand",
+      "conversation_ref": {
+        "id": "conversation-support-example",
+        "revision": "1.0.0",
+        "sha256": null
+      },
+      "client_message_id": "message-status-example",
+      "source": "direct_user_message",
+      "text": "What has completed, and what remains?",
+      "operation": "status",
+      "workload_ref": {
+        "id": "wl-support-route-v1",
+        "revision": "1.4.0",
+        "sha256": null
+      },
+      "expected_requirement_revision": "1.4.0",
+      "proposed_patch": [],
+      "state": "planned",
+      "authorisation_context_ref": null,
+      "receipt_event_ref": null,
+      "effect_ref": null
+    }
+  ]
+}

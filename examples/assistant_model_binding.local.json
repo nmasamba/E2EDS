@@ -1,0 +1,75 @@
+{
+  "schema_version": "0.3.0",
+  "planning_only": true,
+  "id": "assistant-local-qwen-example",
+  "revision": "1.0.0",
+  "tenant_ref": "tenant-demo",
+  "project_ref": "project-support-demo",
+  "state": "proposed",
+  "mode": "local_supervised",
+  "profile_id": "assistant-local-cpu-v1",
+  "runtime": {
+    "name": "llama.cpp",
+    "release": "b11104",
+    "source_revision": "217f81c266a7b7c986ee3d2c58e1cccee05a0744",
+    "release_status": "prerelease_candidate",
+    "observed_licence": "MIT",
+    "revision_licence_status": "capture_pending",
+    "binary_sha256": null
+  },
+  "model": {
+    "repository": "Qwen/Qwen3-8B-GGUF",
+    "revision": "7c41481f57cb95916b40956ab2f0b139b296d974",
+    "filename": "Qwen3-8B-Q4_K_M.gguf",
+    "quantisation": "Q4_K_M",
+    "upstream_expected_sha256": "sha256:d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785",
+    "locally_verified_sha256": null,
+    "observed_licence": "Apache-2.0",
+    "revision_licence_status": "capture_pending",
+    "local_path_ref": "local-model://qwen3-8b-q4-k-m"
+  },
+  "endpoint": {
+    "host": "127.0.0.1",
+    "port": 8081,
+    "api_key_ref": "secret://local/assistant-api-key"
+  },
+  "template": {
+    "sha256": null,
+    "enable_thinking": false,
+    "source": "pinned_model_metadata_or_reviewed_override"
+  },
+  "limits": {
+    "context_tokens": 8192,
+    "max_input_tokens": 6144,
+    "max_output_tokens": 2048,
+    "concurrent_generations": 1,
+    "cpu_threads": 2,
+    "model_memory_gib": 12,
+    "generation_deadline_seconds": 300,
+    "max_model_calls_per_task": 20,
+    "max_code_repairs_per_task": 2,
+    "max_generation_seconds_per_task": 1800,
+    "max_external_charge_minor": 0,
+    "currency": "GBP"
+  },
+  "decoding": {
+    "temperature": 0.7,
+    "top_p": 0.8,
+    "top_k": 20,
+    "min_p": 0
+  },
+  "privacy": {
+    "network": "loopback_only",
+    "prompt_content_logging": false,
+    "automatic_downloads": false,
+    "remote_fallback": false,
+    "built_in_model_server_tools": false
+  },
+  "operator_ref": "customer-local-user",
+  "payer_ref": "customer-local-user",
+  "qualification": {
+    "status": "planned",
+    "report_ref": null,
+    "observed_hardware_ref": null
+  }
+}

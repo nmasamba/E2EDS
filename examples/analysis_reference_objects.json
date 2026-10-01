@@ -1,0 +1,312 @@
+{
+  "planning_only": true,
+  "objects": [
+    {
+      "id": "project-operations-demo",
+      "revision": "1.0.0",
+      "type": "Project",
+      "tenant_id": "tenant-demo",
+      "planning_only": true
+    },
+    {
+      "id": "data-operations-raw-v1",
+      "revision": "1.0.0",
+      "type": "DataManifest",
+      "planning_only": true,
+      "tenant_ref": "tenant-demo",
+      "project_ref": "project-operations-demo",
+      "state": "planned",
+      "source": "Synthetic operations CSV, policy TXT/PDF and receipt PNG/JPEG fixtures to be authored; no bytes exist",
+      "proposed_rows": 2000,
+      "proposed_accounts": 400,
+      "rights_ref": {
+        "id": "rights-operations-demo-v1",
+        "revision": "1.0.0",
+        "sha256": null
+      },
+      "permitted_purposes_proposed": [
+        "analysis",
+        "demo_training",
+        "demo_evaluation"
+      ],
+      "contains_sealed_predictive_cohort": false
+    },
+    {
+      "id": "code-operations-prepare-v1",
+      "revision": "1.1.0",
+      "type": "CodeArtifact",
+      "planning_only": true,
+      "tenant_ref": "tenant-demo",
+      "project_ref": "project-operations-demo",
+      "state": "planned",
+      "languages": [
+        "python",
+        "sql"
+      ],
+      "sha256": null,
+      "purpose": "Implement reviewed JoinPlan with exact/as-of/aggregate semantics, lineage and output checks; no learned feature transforms",
+      "join_plan_ref": {
+        "id": "join-operations-v1",
+        "revision": "1.0.0",
+        "sha256": null
+      }
+    },
+    {
+      "id": "data-policy-operations-v1",
+      "revision": "1.0.0",
+      "type": "DataProcessingPolicy",
+      "planning_only": true,
+      "tenant_ref": "tenant-demo",
+      "project_ref": "project-operations-demo",
+      "state": "proposed",
+      "raw_telemetry": false,
+      "outbound_network": false,
+      "customer_data_allowed": false,
+      "sources": "synthetic-only fixtures; no account grant"
+    },
+    {
+      "id": "rights-operations-demo-v1",
+      "revision": "1.0.0",
+      "type": "RightsRecord",
+      "planning_only": true,
+      "tenant_ref": "tenant-demo",
+      "project_ref": "project-operations-demo",
+      "state": "proposed",
+      "distribution_approved": false,
+      "intended_licence": "CC0-1.0 subject to authored-fixture review; code/dependencies separate"
+    },
+    {
+      "id": "eval-operations-analysis-v1",
+      "revision": "1.1.0",
+      "type": "EvaluationContract",
+      "planning_only": true,
+      "tenant_ref": "tenant-demo",
+      "project_ref": "project-operations-demo",
+      "state": "proposed",
+      "task_kind": "exploratory_analysis",
+      "predictive_claims": false,
+      "checks": [
+        "grain/keys/types/units/UTC meaning",
+        "source and quarantine counts reconcile",
+        "orders-to-account join does not duplicate rows",
+        "material aggregates independently recomputed",
+        "all claims cite code/input revisions; no causal claims",
+        "JoinPlan grain/cardinality/null/unmatched/available-at rules independently checked"
+      ],
+      "thresholds": "Exact structural checks; numeric tolerance and business meaning frozen by EO/DO before execution",
+      "final_test_required": false,
+      "owner_ref": "role-evaluation-owner"
+    },
+    {
+      "id": "run-operations-analysis-001",
+      "revision": "1.1.0",
+      "type": "RunManifest",
+      "planning_only": true,
+      "tenant_ref": "tenant-demo",
+      "project_ref": "project-operations-demo",
+      "state": "planned",
+      "workload_ref": {
+        "id": "wl-operations-analysis-v1",
+        "revision": "1.1.0",
+        "sha256": null
+      },
+      "data_product_refs": [
+        {
+          "id": "gold-operations-v1",
+          "revision": "1.1.0",
+          "sha256": null
+        }
+      ],
+      "attempts": [],
+      "produced_artifacts": [],
+      "note": "No WorkflowPlan or ExecutionRequest admitted; this fixture models a requested output, not an execution grant."
+    },
+    {
+      "id": "report-operations-analysis-001",
+      "revision": "1.1.0",
+      "type": "EvaluationReport",
+      "planning_only": true,
+      "tenant_ref": "tenant-demo",
+      "project_ref": "project-operations-demo",
+      "run_ref": {
+        "id": "run-operations-analysis-001",
+        "revision": "1.1.0",
+        "sha256": null
+      },
+      "evaluation_contract_ref": {
+        "id": "eval-operations-analysis-v1",
+        "revision": "1.1.0",
+        "sha256": null
+      },
+      "outcome": "INSUFFICIENT_EVIDENCE",
+      "measurements": {},
+      "limitations": [
+        "No data, code execution or independent recomputation exists."
+      ]
+    },
+    {
+      "id": "monitor-operations-analysis-v1",
+      "revision": "1.1.0",
+      "type": "MonitoringSpec",
+      "planning_only": true,
+      "tenant_ref": "tenant-demo",
+      "project_ref": "project-operations-demo",
+      "schema_version": "0.5.0",
+      "target_kind": "analysis_release",
+      "target_ref": {
+        "id": "analysis-operations-0.1.0",
+        "revision": "1.1.0",
+        "sha256": null
+      },
+      "owner_ref": "role-analysis-owner",
+      "operator_ref": "role-platform-operator",
+      "payer_ref": "role-customer",
+      "state": "draft",
+      "mode": "manual",
+      "interval_seconds": null,
+      "checks": [
+        {
+          "metric": "source_revision_changed",
+          "units": "boolean",
+          "baseline_ref": {
+            "id": "collection-operations-v1",
+            "revision": "1.0.0",
+            "sha256": null
+          },
+          "rule": "Changed collection membership/source/JoinPlan revision marks affected output stale and proposes bounded rerun; no automatic training",
+          "decision_status": "proposed"
+        },
+        {
+          "metric": "reproduction_check",
+          "units": "pass_fail_inconclusive",
+          "baseline_ref": {
+            "id": "report-operations-analysis-001",
+            "revision": "1.1.0",
+            "sha256": null
+          },
+          "rule": "Recompute material aggregates under frozen method/tolerance and compare authorised report; no results yet",
+          "decision_status": "proposed"
+        }
+      ],
+      "on_violation": "record_and_propose_change",
+      "auto_promote": false,
+      "access_policy_ref": {
+        "id": "data-policy-operations-v1",
+        "revision": "1.0.0",
+        "sha256": null
+      },
+      "retention_days": 30,
+      "max_external_charge_minor": 0,
+      "currency": "GBP",
+      "authorisation_context_ref": null
+    },
+    {
+      "id": "data-operations-orders-v1",
+      "revision": "1.0.0",
+      "type": "DataManifest",
+      "planning_only": true,
+      "tenant_ref": "tenant-demo",
+      "project_ref": "project-operations-demo",
+      "state": "planned",
+      "source": "Synthetic orders fixture to be authored; no bytes exist",
+      "grain": "one order",
+      "role": "anchor",
+      "rights_ref": {
+        "id": "rights-operations-demo-v1",
+        "revision": "1.0.0",
+        "sha256": null
+      },
+      "contains_sealed_predictive_cohort": false
+    },
+    {
+      "id": "data-operations-accounts-v1",
+      "revision": "1.0.0",
+      "type": "DataManifest",
+      "planning_only": true,
+      "tenant_ref": "tenant-demo",
+      "project_ref": "project-operations-demo",
+      "state": "planned",
+      "source": "Synthetic accounts fixture to be authored; no bytes exist",
+      "grain": "one account in fixture",
+      "role": "dimension",
+      "rights_ref": {
+        "id": "rights-operations-demo-v1",
+        "revision": "1.0.0",
+        "sha256": null
+      },
+      "contains_sealed_predictive_cohort": false
+    },
+    {
+      "id": "data-operations-items-v1",
+      "revision": "1.0.0",
+      "type": "DataManifest",
+      "planning_only": true,
+      "tenant_ref": "tenant-demo",
+      "project_ref": "project-operations-demo",
+      "state": "planned",
+      "source": "Synthetic items fixture to be authored; no bytes exist",
+      "grain": "one order item line",
+      "role": "child_fact",
+      "rights_ref": {
+        "id": "rights-operations-demo-v1",
+        "revision": "1.0.0",
+        "sha256": null
+      },
+      "contains_sealed_predictive_cohort": false
+    },
+    {
+      "id": "data-operations-events-v1",
+      "revision": "1.0.0",
+      "type": "DataManifest",
+      "planning_only": true,
+      "tenant_ref": "tenant-demo",
+      "project_ref": "project-operations-demo",
+      "state": "planned",
+      "source": "Synthetic events fixture to be authored; no bytes exist",
+      "grain": "one delivery event",
+      "role": "outcome",
+      "rights_ref": {
+        "id": "rights-operations-demo-v1",
+        "revision": "1.0.0",
+        "sha256": null
+      },
+      "contains_sealed_predictive_cohort": false
+    },
+    {
+      "id": "data-operations-policies-v1",
+      "revision": "1.0.0",
+      "type": "DataManifest",
+      "planning_only": true,
+      "tenant_ref": "tenant-demo",
+      "project_ref": "project-operations-demo",
+      "state": "planned",
+      "source": "Synthetic policies fixture to be authored; no bytes exist",
+      "grain": "one account policy validity interval",
+      "role": "dimension",
+      "rights_ref": {
+        "id": "rights-operations-demo-v1",
+        "revision": "1.0.0",
+        "sha256": null
+      },
+      "contains_sealed_predictive_cohort": false
+    },
+    {
+      "id": "data-operations-documents-v1",
+      "revision": "1.0.0",
+      "type": "DataManifest",
+      "planning_only": true,
+      "tenant_ref": "tenant-demo",
+      "project_ref": "project-operations-demo",
+      "state": "planned",
+      "source": "Synthetic documents fixture to be authored; no bytes exist",
+      "grain": "one source document or receipt asset",
+      "role": "asset_collection",
+      "rights_ref": {
+        "id": "rights-operations-demo-v1",
+        "revision": "1.0.0",
+        "sha256": null
+      },
+      "contains_sealed_predictive_cohort": false
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "schema_version": "0.6.0",
+  "planning_only": true,
+  "revision": "1.0.0",
+  "tenant_ref": "tenant-demo",
+  "project_ref": "project-operations-demo",
+  "owner_ref": "role-analysis-owner",
+  "id": "output-operations-local-v1",
+  "type": "OutputBinding",
+  "state": "proposed",
+  "mode": "filesystem",
+  "output_ref": {
+    "id": "analysis-operations-0.1.0",
+    "revision": "1.1.0",
+    "sha256": null
+  },
+  "root_handle": "output-root-operations-example",
+  "relative_directory": "operations-analysis/0.1.0",
+  "conflict_policy": "new_version_or_fail",
+  "commit_policy": "same_filesystem_atomic_rename_or_unsupported",
+  "include_data": "only_with_export_rights",
+  "max_export_bytes": 1073741824,
+  "secret_refs_in_bundle": false,
+  "start_endpoint": false,
+  "authorisation_context_ref": null,
+  "receipt_ref": null,
+  "operator_ref": "role-customer",
+  "payer_ref": "role-customer"
+}

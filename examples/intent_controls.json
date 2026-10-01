@@ -1,0 +1,87 @@
+{
+  "planning_only": true,
+  "schema_version": "0.3.0",
+  "scope": "Future regression adapter illustration, not a runnable WorkloadSpec or existing dataset. Field list, units and tie rule are proposals.",
+  "source_text": "Keep a minimal feature set; use account_num as the ID; anonymise regression results by rounding to the nearest 10.",
+  "intent_constraints": {
+    "field_roles": [
+      {
+        "field": "record_id",
+        "role": "row_id",
+        "data_type": "string",
+        "nullable": false,
+        "public_output": "authorised_join_only"
+      },
+      {
+        "field": "account_num",
+        "role": "entity_id",
+        "data_type": "string",
+        "nullable": false,
+        "public_output": "authorised_join_only"
+      },
+      {
+        "field": "usage_units",
+        "role": "predictor",
+        "data_type": "number",
+        "nullable": false,
+        "public_output": "excluded"
+      },
+      {
+        "field": "target_amount",
+        "role": "target",
+        "data_type": "number",
+        "nullable": false,
+        "public_output": "task_output"
+      }
+    ],
+    "split_group_fields": [
+      "account_num"
+    ],
+    "features": {
+      "allowed_fields": [
+        "usage_units"
+      ],
+      "excluded_fields": [
+        "record_id",
+        "account_num",
+        "target_amount"
+      ],
+      "count_basis": "source_fields",
+      "hard_max_count": null,
+      "soft_objective": "minimise_count_among_feasible",
+      "quality_policy": "frozen_evaluation_contract"
+    },
+    "output_transforms": [
+      {
+        "operation": "round_to_increment",
+        "output_field": "prediction",
+        "increment": 10,
+        "units": "target units; to be confirmed",
+        "ties": "away_from_zero",
+        "raw_value_public": false,
+        "privacy_claim": "precision_only"
+      }
+    ],
+    "privacy_status": "requires_review"
+  },
+  "confirmation_status": "proposed",
+  "limitations": [
+    "Rounding alone does not establish anonymity; authorised identifier joins remain linkable.",
+    "Confirm target units, feature-count meaning and accepted quality constraints before execution.",
+    "Repeated account numbers identify an entity; record_id remains the row identity."
+  ],
+  "rounding_examples": [
+    {
+      "raw": 124,
+      "public": 120
+    },
+    {
+      "raw": 125,
+      "public": 130
+    },
+    {
+      "raw": -125,
+      "public": -130
+    }
+  ]
+}

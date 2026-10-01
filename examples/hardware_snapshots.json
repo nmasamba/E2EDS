@@ -1,0 +1,136 @@
+{
+  "planning_only": true,
+  "snapshots": [
+    {
+      "id": "hardware-host-example",
+      "revision": "1.0.0",
+      "type": "HardwareSnapshot",
+      "schema_version": "0.4.0",
+      "planning_only": true,
+      "tenant_ref": "tenant-demo",
+      "project_ref": "project-support-demo",
+      "scope": "assistant_host",
+      "compute_binding_ref": null,
+      "resource_domain_id": "host-demo",
+      "parent_resource_domain_id": null,
+      "evidence_source": "illustrative_fixture",
+      "observed_at": null,
+      "collector_revision": "collector-proposed-1.0.0",
+      "system": {
+        "os": "linux",
+        "architecture": "x86_64",
+        "cpu_features": []
+      },
+      "cpu": {
+        "visible_logical_processors": 8,
+        "effective_cpu_quota": 8,
+        "available_to_plan_cpus": null
+      },
+      "memory": {
+        "total_gib": 32,
+        "available_gib": null,
+        "effective_limit_gib": 32
+      },
+      "storage": [
+        {
+          "role": "combined",
+          "domain_id": "host-disk-demo",
+          "available_gib": 30,
+          "effective_quota_gib": null
+        }
+      ],
+      "accelerators": {
+        "inventory_status": "illustrative_fixture",
+        "devices": []
+      },
+      "isolation_readiness": "unknown",
+      "isolation_evidence_ref": null,
+      "probes": [
+        {
+          "name": "effective_capacity",
+          "status": "not_run",
+          "safe_summary": "Illustrative contract values; this machine has not been inspected."
+        },
+        {
+          "name": "runtime_readiness",
+          "status": "not_run",
+          "safe_summary": "No assistant or runner runtime was loaded."
+        }
+      ],
+      "limitations": [
+        "Fictional planning fixture, not detected user hardware.",
+        "Available capacity, runtime compatibility, disk overhead and isolation require actual qualification.",
+        "Guest allocations consume the parent host and are not additive capacity."
+      ],
+      "sharing_policy": "local_only"
+    },
+    {
+      "id": "hardware-runner-example",
+      "revision": "1.1.0",
+      "type": "HardwareSnapshot",
+      "schema_version": "0.4.0",
+      "planning_only": true,
+      "tenant_ref": "tenant-demo",
+      "project_ref": "project-support-demo",
+      "scope": "execution_runner",
+      "compute_binding_ref": {
+        "id": "compute-local-example",
+        "revision": "1.3.0",
+        "sha256": null
+      },
+      "resource_domain_id": "guest-demo",
+      "parent_resource_domain_id": "host-demo",
+      "evidence_source": "illustrative_fixture",
+      "observed_at": null,
+      "collector_revision": "collector-proposed-1.0.0",
+      "system": {
+        "os": "linux",
+        "architecture": "x86_64",
+        "cpu_features": []
+      },
+      "cpu": {
+        "visible_logical_processors": 4,
+        "effective_cpu_quota": 4,
+        "available_to_plan_cpus": null
+      },
+      "memory": {
+        "total_gib": 8,
+        "available_gib": null,
+        "effective_limit_gib": 8
+      },
+      "storage": [
+        {
+          "role": "scratch",
+          "domain_id": "host-disk-demo",
+          "available_gib": 10,
+          "effective_quota_gib": 10
+        }
+      ],
+      "accelerators": {
+        "inventory_status": "illustrative_fixture",
+        "devices": []
+      },
+      "isolation_readiness": "unknown",
+      "isolation_evidence_ref": null,
+      "probes": [
+        {
+          "name": "effective_capacity",
+          "status": "not_run",
+          "safe_summary": "Illustrative contract values; this machine has not been inspected."
+        },
+        {
+          "name": "runtime_readiness",
+          "status": "not_run",
+          "safe_summary": "No assistant or runner runtime was loaded."
+        }
+      ],
+      "limitations": [
+        "Fictional planning fixture, not detected user hardware.",
+        "Available capacity, runtime compatibility, disk overhead and isolation require actual qualification.",
+        "Guest allocations consume the parent host and are not additive capacity."
+      ],
+      "sharing_policy": "local_only"
+    }
+  ],
+  "note": "No collector ran. Numeric values illustrate D16/D01 and are not observations or qualification evidence."
+}

@@ -1,0 +1,203 @@
+{
+  "planning_only": true,
+  "capabilities": [
+    {
+      "schema_version": "0.6.0",
+      "planning_only": true,
+      "revision": "1.0.0",
+      "tenant_ref": "tenant-demo",
+      "project_ref": "project-operations-demo",
+      "owner_ref": "role-ml-lead",
+      "id": "cap-operations-eda-v1",
+      "type": "TaskCapabilitySpec",
+      "task_ids": [
+        "exploratory_analysis",
+        "core.exploratory_analysis"
+      ],
+      "family": "data_analysis",
+      "status": "proposed",
+      "learning_mode": "none",
+      "operations": [
+        "prepare",
+        "analyse",
+        "evaluate"
+      ],
+      "modalities": [
+        "tabular",
+        "text",
+        "pdf",
+        "image"
+      ],
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "input_manifest_id"
+        ],
+        "properties": {
+          "input_manifest_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "required": [
+          "output_manifest_id"
+        ],
+        "properties": {
+          "output_manifest_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "dependencies": [
+        {
+          "package": "duckdb",
+          "revision": "1.5.5",
+          "licence_status": "See dated source register; exact distribution/notices require build review",
+          "documentation": [
+            {
+              "url": "https://duckdb.org/docs/stable/clients/python/overview",
+              "package_version": "1.5.5",
+              "checked_on": "2026-09-28",
+              "content_sha256": null,
+              "status": "reference_only"
+            }
+          ]
+        }
+      ],
+      "profiles": [
+        {
+          "profile_id": "cpu-linux-x86_64-py312",
+          "status": "proposed",
+          "requirements": [
+            "Actual dependency/ABI/profile qualification required",
+            "D01/D21 memory/time; D20/D22 data bounds"
+          ]
+        }
+      ],
+      "evaluation": {
+        "oracle": "Independent recomputation and data-contract checks, no predictive claims",
+        "independent_checks": [
+          "EO-owned contract, material findings checked independently",
+          "Rights and data/target semantics remain necessary"
+        ],
+        "predictive_split_required": false
+      },
+      "lifecycle": {
+        "preparation": "Resolve exact permitted inputs/relationships; no sealed previews.",
+        "validation": "Check schema/meaning/rights/resources/task registration.",
+        "execution": "Execute pinned reviewed code through existing runner.",
+        "checkpointing": "Stage boundary or restart; no arbitrary mid-fit checkpoint claim.",
+        "cancellation": "Fence dispatch; drain/stop and reconcile committed artifacts.",
+        "collection": "Idempotent output commit with code/data/docs lineage.",
+        "failure": "Typed failed/inconclusive result; bounded eligible retry only."
+      },
+      "qualification_evidence_refs": [],
+      "unsupported_behaviours": [
+        "Causal conclusions",
+        "Unbounded materialisation",
+        "Automatically serving a report as model inference"
+      ]
+    },
+    {
+      "schema_version": "0.6.0",
+      "planning_only": true,
+      "revision": "1.0.0",
+      "tenant_ref": "tenant-demo",
+      "project_ref": "project-support-demo",
+      "owner_ref": "role-ml-lead",
+      "id": "cap-support-classification-v1",
+      "type": "TaskCapabilitySpec",
+      "task_ids": [
+        "classification",
+        "sklearn.text_classification"
+      ],
+      "family": "classical_ml",
+      "status": "proposed",
+      "learning_mode": "supervised",
+      "operations": [
+        "train",
+        "evaluate",
+        "infer"
+      ],
+      "modalities": [
+        "text"
+      ],
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "input_manifest_id"
+        ],
+        "properties": {
+          "input_manifest_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "required": [
+          "output_manifest_id"
+        ],
+        "properties": {
+          "output_manifest_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "dependencies": [
+        {
+          "package": "scikit-learn",
+          "revision": "1.9.1",
+          "licence_status": "See dated source register; exact distribution/notices require build review",
+          "documentation": [
+            {
+              "url": "https://scikit-learn.org/stable/user_guide.html",
+              "package_version": "1.9.1",
+              "checked_on": "2026-09-29",
+              "content_sha256": null,
+              "status": "reference_only"
+            }
+          ]
+        }
+      ],
+      "profiles": [
+        {
+          "profile_id": "cpu-linux-x86_64-py312",
+          "status": "proposed",
+          "requirements": [
+            "Actual dependency/ABI/profile qualification required",
+            "D01/D21 memory/time; D20/D22 data bounds"
+          ]
+        }
+      ],
+      "evaluation": {
+        "oracle": "Frozen independent classification evaluation",
+        "independent_checks": [
+          "EO-owned contract, material findings checked independently",
+          "Rights and data/target semantics remain necessary"
+        ],
+        "predictive_split_required": true
+      },
+      "lifecycle": {
+        "preparation": "Resolve exact permitted inputs/relationships; no sealed previews.",
+        "validation": "Check schema/meaning/rights/resources/task registration.",
+        "execution": "Execute pinned reviewed code through existing runner.",
+        "checkpointing": "Stage boundary or restart; no arbitrary mid-fit checkpoint claim.",
+        "cancellation": "Fence dispatch; drain/stop and reconcile committed artifacts.",
+        "collection": "Idempotent output commit with code/data/docs lineage.",
+        "failure": "Typed failed/inconclusive result; bounded eligible retry only."
+      },
+      "qualification_evidence_refs": [],
+      "unsupported_behaviours": [
+        "No universal scikit-learn estimator support",
+        "No qualification from Python import alone"
+      ]
+    }
+  ]
+}

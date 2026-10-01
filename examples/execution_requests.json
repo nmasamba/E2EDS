@@ -1,0 +1,178 @@
+{
+  "planning_only": true,
+  "requests": [
+    {
+      "id": "execution-route-local-example",
+      "revision": "1.5.0",
+      "type": "ExecutionRequest",
+      "planning_only": true,
+      "state": "planned",
+      "tenant_ref": "tenant-demo",
+      "project_ref": "project-support-demo",
+      "workload_ref": {
+        "id": "wl-support-route-v1",
+        "revision": "1.4.0",
+        "sha256": null
+      },
+      "compute_binding_ref": {
+        "id": "compute-local-example",
+        "revision": "1.3.0",
+        "sha256": null
+      },
+      "operation": "train",
+      "idempotency_key": "demo-route-local-001",
+      "authorisation_context_ref": null,
+      "admission_expectation": "PREFLIGHT_AND_TRUSTED_LOCAL_ADMISSION_MISSING",
+      "schema_version": "0.5.0",
+      "data_access": "train_tune_only",
+      "conversation_ref": {
+        "id": "conversation-support-example",
+        "revision": "1.0.0",
+        "sha256": null
+      },
+      "assistant_model_binding_ref": {
+        "id": "assistant-local-qwen-example",
+        "revision": "1.0.0",
+        "sha256": null
+      },
+      "source_code_task_ref": {
+        "id": "code-task-route-example",
+        "revision": "1.2.0",
+        "sha256": null
+      },
+      "requirement_revision": "1.4.0",
+      "workflow_plan_ref": {
+        "id": "workflow-route-local-example",
+        "revision": "1.2.0",
+        "sha256": null
+      }
+    },
+    {
+      "id": "execution-route-runpod-example",
+      "revision": "1.5.0",
+      "type": "ExecutionRequest",
+      "planning_only": true,
+      "state": "planned",
+      "tenant_ref": "tenant-demo",
+      "project_ref": "project-support-demo",
+      "workload_ref": {
+        "id": "wl-support-route-v1",
+        "revision": "1.4.0",
+        "sha256": null
+      },
+      "compute_binding_ref": {
+        "id": "compute-runpod-example",
+        "revision": "1.3.0",
+        "sha256": null
+      },
+      "operation": "train",
+      "idempotency_key": "demo-route-runpod-001",
+      "authorisation_context_ref": null,
+      "admission_expectation": "ZERO_EXTERNAL_BUDGET_AND_UNQUALIFIED_BINDING",
+      "schema_version": "0.5.0",
+      "data_access": "train_tune_only",
+      "conversation_ref": {
+        "id": "conversation-support-example",
+        "revision": "1.0.0",
+        "sha256": null
+      },
+      "assistant_model_binding_ref": {
+        "id": "assistant-local-qwen-example",
+        "revision": "1.0.0",
+        "sha256": null
+      },
+      "source_code_task_ref": {
+        "id": "code-task-route-example",
+        "revision": "1.2.0",
+        "sha256": null
+      },
+      "requirement_revision": "1.4.0",
+      "workflow_plan_ref": null
+    },
+    {
+      "id": "execution-route-colab-example",
+      "revision": "1.5.0",
+      "type": "ExecutionRequest",
+      "planning_only": true,
+      "state": "planned",
+      "tenant_ref": "tenant-demo",
+      "project_ref": "project-support-demo",
+      "workload_ref": {
+        "id": "wl-support-route-v1",
+        "revision": "1.4.0",
+        "sha256": null
+      },
+      "compute_binding_ref": {
+        "id": "compute-colab-example",
+        "revision": "1.3.0",
+        "sha256": null
+      },
+      "operation": "train",
+      "idempotency_key": "demo-route-colab-001",
+      "authorisation_context_ref": null,
+      "admission_expectation": "PROFILE_REGION_AND_NO_CHARGE_ACCOUNT_MODE_UNVERIFIED",
+      "schema_version": "0.5.0",
+      "data_access": "train_tune_only",
+      "conversation_ref": {
+        "id": "conversation-support-example",
+        "revision": "1.0.0",
+        "sha256": null
+      },
+      "assistant_model_binding_ref": {
+        "id": "assistant-local-qwen-example",
+        "revision": "1.0.0",
+        "sha256": null
+      },
+      "source_code_task_ref": {
+        "id": "code-task-route-example",
+        "revision": "1.2.0",
+        "sha256": null
+      },
+      "requirement_revision": "1.4.0",
+      "workflow_plan_ref": null
+    },
+    {
+      "id": "execution-route-zerogpu-example",
+      "revision": "1.5.0",
+      "type": "ExecutionRequest",
+      "planning_only": true,
+      "state": "planned",
+      "tenant_ref": "tenant-demo",
+      "project_ref": "project-support-demo",
+      "workload_ref": {
+        "id": "wl-support-route-v1",
+        "revision": "1.4.0",
+        "sha256": null
+      },
+      "compute_binding_ref": {
+        "id": "compute-zerogpu-example",
+        "revision": "1.3.0",
+        "sha256": null
+      },
+      "operation": "train",
+      "idempotency_key": "demo-route-zerogpu-001",
+      "authorisation_context_ref": null,
+      "admission_expectation": "UNSUPPORTED_TRAIN_OPERATION_AND_WORKLOAD_FAMILY",
+      "schema_version": "0.5.0",
+      "data_access": "train_tune_only",
+      "conversation_ref": {
+        "id": "conversation-support-example",
+        "revision": "1.0.0",
+        "sha256": null
+      },
+      "assistant_model_binding_ref": {
+        "id": "assistant-local-qwen-example",
+        "revision": "1.0.0",
+        "sha256": null
+      },
+      "source_code_task_ref": {
+        "id": "code-task-route-example",
+        "revision": "1.2.0",
+        "sha256": null
+      },
+      "requirement_revision": "1.4.0",
+      "workflow_plan_ref": null
+    }
+  ],
+  "note": "Unexecuted draft 0.4.0 requests, revision 1.3.0, against unchanged workload 1.2.0. Only the local case has a provisional WorkflowPlan; all require current scoped evidence and authority. Other plans remain absent, Runpod is blocked by zero external budget, and ZeroGPU cannot train V1."
+}

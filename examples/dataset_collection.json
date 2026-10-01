@@ -1,0 +1,96 @@
+{
+  "schema_version": "0.6.0",
+  "planning_only": true,
+  "revision": "1.0.0",
+  "tenant_ref": "tenant-demo",
+  "project_ref": "project-operations-demo",
+  "owner_ref": "role-data-owner",
+  "id": "collection-operations-v1",
+  "type": "DatasetCollectionManifest",
+  "state": "planned",
+  "membership": {
+    "mode": "inline",
+    "entries": [
+      {
+        "alias": "orders",
+        "data_manifest_ref": {
+          "id": "data-operations-orders-v1",
+          "revision": "1.0.0",
+          "sha256": null
+        },
+        "role": "anchor",
+        "declared_grain": "one order"
+      },
+      {
+        "alias": "accounts",
+        "data_manifest_ref": {
+          "id": "data-operations-accounts-v1",
+          "revision": "1.0.0",
+          "sha256": null
+        },
+        "role": "dimension",
+        "declared_grain": "one account in fixture"
+      },
+      {
+        "alias": "items",
+        "data_manifest_ref": {
+          "id": "data-operations-items-v1",
+          "revision": "1.0.0",
+          "sha256": null
+        },
+        "role": "child_fact",
+        "declared_grain": "one order item line"
+      },
+      {
+        "alias": "events",
+        "data_manifest_ref": {
+          "id": "data-operations-events-v1",
+          "revision": "1.0.0",
+          "sha256": null
+        },
+        "role": "outcome",
+        "declared_grain": "one delivery event"
+      },
+      {
+        "alias": "policies",
+        "data_manifest_ref": {
+          "id": "data-operations-policies-v1",
+          "revision": "1.0.0",
+          "sha256": null
+        },
+        "role": "dimension",
+        "declared_grain": "one account policy validity interval"
+      },
+      {
+        "alias": "documents",
+        "data_manifest_ref": {
+          "id": "data-operations-documents-v1",
+          "revision": "1.0.0",
+          "sha256": null
+        },
+        "role": "asset_collection",
+        "declared_grain": "one source document or receipt asset"
+      }
+    ]
+  },
+  "rights_ref": {
+    "id": "rights-operations-demo-v1",
+    "revision": "1.0.0",
+    "sha256": null
+  },
+  "access_policy_ref": {
+    "id": "data-policy-operations-v1",
+    "revision": "1.0.0",
+    "sha256": null
+  },
+  "discovery": {
+    "profiled_members": 0,
+    "complete": false,
+    "evidence_refs": []
+  },
+  "limitations": [
+    "Six proposed source members, not six executed profiles.",
+    "No bytes, rights approval or discovery measurement exists.",
+    "Paged membership is an alternative for large collections; no project member-count maximum."
+  ]
+}

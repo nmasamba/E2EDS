@@ -1,0 +1,103 @@
+{
+  "id": "analysis-operations-0.1.0",
+  "revision": "1.1.0",
+  "type": "AnalysisReleaseManifest",
+  "planning_only": true,
+  "tenant_ref": "tenant-demo",
+  "project_ref": "project-operations-demo",
+  "schema_version": "0.5.0",
+  "release_version": "0.1.0",
+  "output_kind": "analysis_release",
+  "workload_ref": {
+    "id": "wl-operations-analysis-v1",
+    "revision": "1.1.0",
+    "sha256": null
+  },
+  "data_product_refs": [
+    {
+      "id": "gold-operations-v1",
+      "revision": "1.1.0",
+      "sha256": null
+    }
+  ],
+  "run_ref": {
+    "id": "run-operations-analysis-001",
+    "revision": "1.1.0",
+    "sha256": null
+  },
+  "report_ref": {
+    "id": "report-operations-analysis-001",
+    "revision": "1.1.0",
+    "sha256": null
+  },
+  "artifacts": [
+    {
+      "role": "data_product_manifest",
+      "path": "data/manifest.json",
+      "sha256": null,
+      "evidence_status": "planned"
+    },
+    {
+      "role": "preparation_code",
+      "path": "src/prepare.py",
+      "sha256": null,
+      "evidence_status": "planned"
+    },
+    {
+      "role": "analysis_code",
+      "path": "src/analyse.py",
+      "sha256": null,
+      "evidence_status": "planned"
+    },
+    {
+      "role": "environment_lock",
+      "path": "environment.lock",
+      "sha256": null,
+      "evidence_status": "planned"
+    },
+    {
+      "role": "notebook",
+      "path": "analysis.ipynb",
+      "sha256": null,
+      "evidence_status": "planned"
+    },
+    {
+      "role": "analysis_report_json",
+      "path": "report.json",
+      "sha256": null,
+      "evidence_status": "planned"
+    },
+    {
+      "role": "analysis_report_html",
+      "path": "report.html",
+      "sha256": null,
+      "evidence_status": "planned"
+    },
+    {
+      "role": "sbom",
+      "path": "sbom.json",
+      "sha256": null,
+      "evidence_status": "planned"
+    },
+    {
+      "role": "reproduction_guide",
+      "path": "REPRODUCE.md",
+      "sha256": null,
+      "evidence_status": "planned"
+    }
+  ],
+  "evaluation_outcome": "INSUFFICIENT_EVIDENCE",
+  "approval_refs": [],
+  "rights_ref": {
+    "id": "rights-operations-demo-v1",
+    "revision": "1.0.0",
+    "sha256": null
+  },
+  "reproduction_profile": "cpu-linux-x86_64-py312",
+  "reproduction_status": "planned",
+  "signatures": [],
+  "limitations": [
+    "No release bytes are present; filenames describe future artifacts.",
+    "No ServiceSpec or endpoint is required for this descriptive output."
+  ]
+}
