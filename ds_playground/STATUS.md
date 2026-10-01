@@ -4,7 +4,7 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 
 ## Now
 
-- **Sprint:** 2 — M1 desktop shell, discovery and plan (Sprint 1 is in PR #1, CI result pending)
+- **Sprint:** 2 — M1 desktop shell, discovery and plan (Sprint 1 is in PR #1, CI green, awaiting the owner's merge)
 - **Claimed prompt:** 2.2 (shell scaffold); 2.1 (harness) is done
 - **Branch:** `sprint-2-desktop`, stacked on `sprint-1-foundations`
 
@@ -43,11 +43,12 @@ it). Absent: Tesseract (no OCR profile is planned without owner approval).
 - Live run on both: `dsp profile orders.csv --out out/` on the 2,000-order fixture exported `v1` (3 files),
   `dsp verify` printed `verified`, a second run produced `v2`, and `manifest.json` has the same SHA-256 on
   macOS and Linux (`6aeb5ad8…5cadf`).
+- CI on PR #1: both jobs passed (`ubuntu-24.04` x86-64 and macOS).
 - Gate outcome: **PASS** for Sprint 1 scope. No acceptance scenario (A##) is in scope for this sprint.
 
 ## Open defects and gaps
 
-- Linux x86-64 is verified only by CI, not locally (see `docs/decisions.md`).
+- Linux x86-64 is verified by CI only; the local container run is linux/arm64.
 - The assistant model download (Sprint 0.3) is still running; its SHA-256 has not been verified yet.
 
 ## Waiting on the owner
@@ -56,6 +57,6 @@ Nothing. Standing approvals are in `docs/decisions.md`.
 
 ## Handoff note
 
-Sprint 1 is in PR https://github.com/nmasamba/E2EDS/pull/1; confirm its CI is green on both runners.
+Sprint 1 is in PR https://github.com/nmasamba/E2EDS/pull/1 with CI green; the owner merges it.
 Sprint 2 is on `sprint-2-desktop`: 2.1 (harness, `dsp status`) is done; continue at 2.2 (Tauri shell). Rust is installed but keg-only: prepend `/opt/homebrew/opt/rustup/bin`
 and `~/.cargo/bin` to PATH for cargo.
