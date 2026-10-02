@@ -5,9 +5,8 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 ## Now
 
 - **Sprint:** 2 — M1 desktop shell, discovery and plan (Sprint 1 is merged to `main` through PR #1)
-- **Claimed prompt:** none. 2.1 (harness) is merged through PR #2; 2.2 (shell scaffold) is done and waiting in
-  PR #3. Next is 2.3 (scoped folder grants).
-- **Branch:** `sprint-2-shell`, from `main` at `880e1fb`, with PR #3 open against `main`
+- **Claimed prompt:** 2.3 (scoped folder grants). 2.1 (PR #2) and 2.2 (PR #3) are merged to `main`.
+- **Branch:** `sprint-2-grants`, from `main` at `0b18301`
 
 ## Done
 
@@ -21,7 +20,7 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 |---|---|---|---|
 | 0 | Setup | done | G0: PASS for synthetic scope |
 | 1 | M0 foundations and thin slice | merged to `main` (PR #1) | PASS, see below |
-| 2 | M1 desktop, discovery, plan | 2.1 merged; 2.2 done in PR #3 (see below); 2.3–2.8 not started | — |
+| 2 | M1 desktop, discovery, plan | 2.1 and 2.2 merged; 2.3 in progress; 2.4–2.8 not started | — |
 | 3–11 | M1 | not started | — |
 | 12–20 | M1B, M1C, M1R, M2, M3, M3Z, M4 | not started | — |
 
