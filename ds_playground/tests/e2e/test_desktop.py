@@ -44,6 +44,14 @@ def harness(state_dir: Path) -> httpx.Client:
     return client
 
 
+def xdotool(*arguments: str) -> str:
+    """Run one xdotool command against the virtual display and return what it printed."""
+    done = subprocess.run(
+        ["xdotool", *arguments], check=True, capture_output=True, text=True, timeout=60
+    )
+    return done.stdout
+
+
 CLICK_ADD_SOURCE = (
     "[...document.querySelectorAll('button')]"
     ".find((button) => button.textContent.startsWith('Add source folder')).click()"
@@ -62,7 +70,7 @@ def test_the_built_app_starts_its_bundled_harness_and_connects(
 
     On Linux the window is driven through WebDriver: it must show "connected", refuse a command
     its capability does not grant, and turn a folder chosen in the real native dialog (typed in
-    with xdotool) into a grant shown by name. macOS has no WebDriver for its webview and its
+    with xdotool, which needs a window manager on the display) into a grant shown by name. macOS has no WebDriver for its webview and its
     dialog cannot be scripted here, so there only the harness the app started is checked. On both,
     the bundled harness then profiles a real file through grants and refuses a path outside them.
     """
@@ -107,17 +115,13 @@ def test_the_built_app_starts_its_bundled_harness_and_connects(
                     denied = run(CALL_UNGRANTED_COMMAND, "async")
                     assert "not allowed" in denied, denied
                     run(CLICK_ADD_SOURCE)
-                    search = ["xdotool", "search", "--sync", "--name", "Choose a source folder"]
-                    found = subprocess.run(
-                        search, check=True, capture_output=True, text=True, timeout=60
-                    )
-                    dialog = found.stdout.split()[0]
-                    typing = ["key", "ctrl+l", "type", "--delay", "20", f"{picked}\n"]
-                    subprocess.run(
-                        ["xdotool", "windowfocus", "--sync", dialog, *typing],
-                        check=True,
-                        timeout=60,
-                    )
+                    dialog = xdotool(
+                        "search", "--sync", "--onlyvisible", "--name", "Choose a source folder"
+                    ).split()[-1]
+                    xdotool("windowactivate", "--sync", dialog)
+                    xdotool("key", "--clearmodifiers", "ctrl+l")
+                    xdotool("type", "--delay", "50", str(picked))
+                    xdotool("key", "Return")
                     listed = eventually(lambda: shown("Source folder: orders 2026"))
                     assert str(picked.parent) not in listed
                 finally:
