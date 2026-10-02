@@ -20,6 +20,9 @@ class Ledger(Protocol):
     ) -> None:
         """Append one event and its immutable objects atomically, or raise."""
 
+    def current(self, ctx: TrustedContext, kind: str) -> list[dict[str, Any]]:
+        """Return the latest revision of every object of one kind in this tenant."""
+
 
 class Store(Protocol):
     """Content-addressed artifact storage with attempt-scoped staging."""

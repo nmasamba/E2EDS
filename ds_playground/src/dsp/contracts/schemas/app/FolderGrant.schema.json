@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.example.invalid/dsp/0.1.0/FolderGrant.schema.json",
+  "title": "FolderGrant — app-owned draft 0.1.0",
+  "description": "The owner's grant of one local folder (or one source file), addressed by an opaque handle. The machine path lives only here; every other object, event and interface carries the handle. Revoking creates a successor revision.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "type",
+    "id",
+    "revision",
+    "purpose",
+    "state",
+    "root",
+    "label",
+    "granted_by",
+    "granted_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.1.0"
+    },
+    "type": {
+      "const": "FolderGrant"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "revision": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "purpose": {
+      "enum": [
+        "source_root",
+        "output_root"
+      ]
+    },
+    "state": {
+      "enum": [
+        "active",
+        "revoked"
+      ]
+    },
+    "root": {
+      "type": "string",
+      "pattern": "^/"
+    },
+    "label": {
+      "type": "string"
+    },
+    "granted_by": {
+      "type": "string",
+      "minLength": 1
+    },
+    "granted_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}
