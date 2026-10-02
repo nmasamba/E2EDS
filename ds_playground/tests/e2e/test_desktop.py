@@ -70,9 +70,10 @@ def test_the_built_app_starts_its_bundled_harness_and_connects(
 
     On Linux the window is driven through WebDriver: it must show "connected", refuse a command
     its capability does not grant, and turn a folder chosen in the real native dialog (typed in
-    with xdotool, which needs a window manager on the display) into a grant shown by name. macOS has no WebDriver for its webview and its
-    dialog cannot be scripted here, so there only the harness the app started is checked. On both,
-    the bundled harness then profiles a real file through grants and refuses a path outside them.
+    with xdotool, which needs a window manager on the display) into a grant shown by name. macOS
+    has no WebDriver for its webview and its dialog cannot be scripted here, so there only the
+    harness the app started is checked. On both, the bundled harness then profiles a real file
+    through grants and refuses a path outside them.
     """
     environment = {**os.environ, "DSP_HOME": str(state_dir)}
     if sys.platform == "darwin":
