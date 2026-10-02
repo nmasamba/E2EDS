@@ -14,6 +14,7 @@ import uvicorn
 
 from dsp.contracts.errors import DspError, ErrorCode
 from dsp.harness.app import create_app
+from dsp.harness.workspace import mount
 
 
 def home() -> Path:
@@ -43,7 +44,9 @@ def serve(state_dir: Path, host: str = "127.0.0.1", dev: bool = False) -> None:
     descriptor = os.open(state_dir / "harness.json", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(descriptor, "w") as handle:
         json.dump({"port": port, "token": token, "pid": os.getpid()}, handle)
-    config = uvicorn.Config(create_app(token, port, dev), log_level="warning")
+    app = create_app(token, port, dev)
+    mount(app, state_dir)
+    config = uvicorn.Config(app, log_level="warning")
     uvicorn.Server(config).run(sockets=[listener])
 
 

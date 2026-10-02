@@ -1,23 +1,13 @@
-from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated
-from uuid import uuid4
+from typing import Annotated, Any
 
 import typer
 
-from dsp.adapters import export_fs
-from dsp.adapters.duckdb_profile import profile_csv
-from dsp.adapters.ledger_sqlite import SqliteLedger
-from dsp.adapters.store_fs import ContentStore
-from dsp.application.packs import profile_and_export, verify_pack
-from dsp.contracts.errors import DspError, TrustedContext
+from dsp.application.packs import verify_pack
+from dsp.contracts.errors import DspError, ErrorCode
 from dsp.harness.instance import connect, home
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
-
-
-def _now() -> str:
-    return datetime.now(UTC).isoformat()
 
 
 def _fail(error: DspError) -> typer.Exit:
@@ -25,28 +15,41 @@ def _fail(error: DspError) -> typer.Exit:
     return typer.Exit(2)
 
 
+def _call(method: str, route: str, **body: str) -> Any:
+    """Send one request to the harness, starting it if needed, and return its JSON answer."""
+    response = connect(home()).request(method, route, json=body or None)
+    answer = response.json()
+    if response.is_error:
+        raise DspError(ErrorCode(answer["code"]), answer["message"])
+    return answer
+
+
+def _line(grant: dict[str, str]) -> str:
+    return f"{grant['handle']} {grant['purpose']} {grant['label']}"
+
+
 @app.command()
 def profile(
     file: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
     out: Annotated[Path, typer.Option(exists=True, file_okay=False, help="Output folder.")],
 ) -> None:
-    """Profile a CSV file and export a hash-verified pack to a new version folder."""
-    state = home()
+    """Profile a CSV file and export a hash-verified pack to a new version folder.
+
+    Naming the file and the folder here grants the harness that file and that folder.
+    """
     try:
-        receipt = profile_and_export(
-            TrustedContext.local(),
-            file,
-            out,
-            ledger=SqliteLedger(state / "ledger.sqlite", _now),
-            store=ContentStore(state / "store"),
-            exporter=export_fs,
-            profiler=profile_csv,
-            clock=_now,
-            new_id=lambda: uuid4().hex,
+        source = _call("POST", "/v1/grants", purpose="source_root", path=str(file.resolve()))
+        output = _call("POST", "/v1/grants", purpose="output_root", path=str(out.resolve()))
+        result = _call(
+            "POST",
+            "/v1/profiles",
+            source_handle=source["handle"],
+            relative_path=".",
+            output_handle=output["handle"],
         )
     except DspError as error:
         raise _fail(error) from error
-    typer.echo(f"exported {out / receipt['version']} ({len(receipt['files'])} files)")
+    typer.echo(f"exported {out / result['version']} ({result['files']} files)")
 
 
 @app.command()
@@ -66,7 +69,39 @@ def verify(directory: Annotated[Path, typer.Argument(exists=True, file_okay=Fals
 def status() -> None:
     """Start or reconnect to the local harness and report it."""
     try:
-        info = connect(home()).get("/v1/status").json()
+        info = _call("GET", "/v1/status")
     except DspError as error:
         raise _fail(error) from error
     typer.echo(f"harness running (pid {info['pid']}, version {info['version']})")
+
+
+@app.command()
+def grant(
+    folder: Annotated[Path, typer.Argument(exists=True)],
+    purpose: Annotated[str, typer.Option(help="source_root or output_root.")],
+) -> None:
+    """Grant the harness a folder to read data from, or a folder to export into."""
+    try:
+        typer.echo(_line(_call("POST", "/v1/grants", purpose=purpose, path=str(folder.resolve()))))
+    except DspError as error:
+        raise _fail(error) from error
+
+
+@app.command()
+def grants() -> None:
+    """List the active grants: handle, purpose and folder name."""
+    try:
+        for active in _call("GET", "/v1/grants")["grants"]:
+            typer.echo(_line(active))
+    except DspError as error:
+        raise _fail(error) from error
+
+
+@app.command()
+def revoke(handle: str) -> None:
+    """Revoke a grant by its handle."""
+    try:
+        _call("POST", f"/v1/grants/{handle}/revoke")
+    except DspError as error:
+        raise _fail(error) from error
+    typer.echo(f"revoked {handle}")

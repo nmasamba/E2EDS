@@ -5,6 +5,7 @@ from html import escape
 from pathlib import Path
 from typing import Any
 
+from dsp.application.grants import resolve
 from dsp.contracts.canonical import canonical_json, file_digest
 from dsp.contracts.errors import DspError, ErrorCode, TrustedContext
 from dsp.contracts.schemas import validate
@@ -124,6 +125,41 @@ def profile_and_export(
     validate("ExportReceipt", receipt)
     ledger.commit(ctx, aggregate, 2, f"{job}:exported", "export.committed", receipt, [receipt])
     return receipt
+
+
+def profile_granted(
+    ctx: TrustedContext,
+    source_handle: str,
+    relative_path: str,
+    output_handle: str,
+    *,
+    ledger: Ledger,
+    store: Store,
+    exporter: Exporter,
+    profiler: Callable[[Path], dict[str, Any]],
+    clock: Callable[[], str],
+    new_id: Callable[[], str],
+) -> dict[str, Any]:
+    """Profile a file named under a source grant and export the pack into an output grant.
+
+    Both grants are checked here, when they are used, so a revoked handle or a path that leaves
+    its granted folder exports nothing.
+    """
+    source = resolve(ctx, source_handle, relative_path, "source_root", ledger=ledger)
+    out_root = resolve(ctx, output_handle, ".", "output_root", ledger=ledger)
+    if not source.is_file():
+        raise DspError(ErrorCode.NOT_FOUND, "no such file under the granted folder")
+    return profile_and_export(
+        ctx,
+        source,
+        out_root,
+        ledger=ledger,
+        store=store,
+        exporter=exporter,
+        profiler=profiler,
+        clock=clock,
+        new_id=new_id,
+    )
 
 
 def verify_pack(directory: Path) -> list[str]:

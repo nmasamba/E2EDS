@@ -21,9 +21,8 @@ CTX = TrustedContext.local()
 
 
 @pytest.fixture
-def out(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """An existing output folder, with DSP_HOME pointed at a temporary directory."""
-    monkeypatch.setenv("DSP_HOME", str(tmp_path / "home"))
+def out(tmp_path: Path, home: Path) -> Path:
+    """An existing output folder, with DSP_HOME pointed at a temporary profile."""
     folder = tmp_path / "out"
     folder.mkdir()
     return folder
@@ -119,7 +118,8 @@ def test_bounds_are_refused_without_truncation(tmp_path: Path, out: Path) -> Non
     assert (result.exit_code, list(out.iterdir())) == (2, [])
     assert "INPUT_INVALID" in result.output
     events = SqliteLedger(Path(os.environ["DSP_HOME"]) / "ledger.sqlite", str).events(CTX)
-    assert [event["type"] for event in events] == ["job.started", "job.failed"]
+    jobs = [event["type"] for event in events if event["aggregate"].startswith("job:")]
+    assert jobs == ["job.started", "job.failed"]
 
 
 def test_empty_and_unreadable_input_is_refused(tmp_path: Path, out: Path) -> None:
