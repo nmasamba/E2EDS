@@ -46,10 +46,20 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
 
 @pytest.fixture
 def evidence() -> Callable[..., None]:
-    """Write an acceptance scenario's evidence record when the run asks for one (`make sat`)."""
+    """Write an acceptance scenario's evidence record when the run asks for one (`make sat`).
+
+    ``outcome`` is PASS only when the run showed the whole scenario as the suite words it;
+    a scenario with parts that cannot be exercised yet is INSUFFICIENT_EVIDENCE, with the reasons.
+    """
 
     def write(
-        scenario: str, slug: str, fixture: str, expected: str, actual: str, *limits: str
+        scenario: str,
+        slug: str,
+        outcome: str,
+        fixture: str,
+        expected: str,
+        actual: str,
+        *limits: str,
     ) -> None:
         if folder := os.environ.get("DSP_EVIDENCE"):
             platform = f"{sys.platform}-{os.uname().machine}"
@@ -61,7 +71,7 @@ def evidence() -> Callable[..., None]:
                 "commit": os.environ.get("DSP_COMMIT", "unrecorded"),
                 "expected": expected,
                 "actual": actual,
-                "outcome": "PASS",
+                "outcome": outcome,
                 "limits": list(limits),
             }
             Path(folder).mkdir(parents=True, exist_ok=True)

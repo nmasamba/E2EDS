@@ -268,11 +268,14 @@ def test_the_built_app_works_and_survives_close_kill_crash_and_a_second_instance
     evidence(
         "A44",
         "desktop-lifecycle",
+        "INSUFFICIENT_EVIDENCE",
         "built desktop bundle on a temporary profile",
-        "one authenticated harness per profile; history preserved across second instance, kill, "
-        "reopen and harness crash; quit stops the owned harness; close only detaches",
+        "launch without model or terminal, select scoped folders, inspect the graph by keyboard, "
+        "pause during busy work, close, quit, crash, sleep and reopen; one authenticated harness, "
+        "history preserved, workers reconciled, renderer confined",
         seen,
-        "sleep and wake not exercised",
-        "no jobs exist yet, so pause-then-quit has nothing to pause",
+        "everything exercised passed, but jobs, pause, workers and the relationship graph do not "
+        "exist until later sprints, and sleep and wake were not exercised",
+        "choosing a folder in the native dialog was checked by the owner by hand, not by this run",
         *([] if LINUX else ["the Quit menu item and window close are not scripted on macOS"]),
     )

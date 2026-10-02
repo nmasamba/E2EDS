@@ -100,6 +100,7 @@ def test_a31_bootstrap_and_truthful_discovery(
     evidence(
         "A31",
         "truthful-discovery",
+        "PASS",
         "real probes, with the accelerator probe denied, the memory probe silent, sockets blocked",
         "partial findings within D19 with unknowns and reasons; setup and controls stay usable; "
         "no install, elevation or external call",
@@ -168,10 +169,14 @@ def test_a32_hardware_does_not_confer_eligibility(evidence: Callable[..., None])
     evidence(
         "A32",
         "hardware-is-not-eligibility",
+        "INSUFFICIENT_EVIDENCE",
         "the suite's reference workload and bindings against five inventories",
-        "feasibility respects actual scope and evidence; zero-budget paid options stay blocked; "
-        "fixture and manual inventories cannot qualify a runtime",
+        "feasibility respects actual scope and evidence, preserves quality, data and rights "
+        "constraints, and leaves zero-budget paid options blocked; fixture and manual inventories "
+        "cannot qualify a runtime",
         json.dumps(seen),
-        "shared-memory pools are covered by a unit test of the Apple GPU's memory domain, "
-        "not by a plan here",
+        "every case exercised gave the expected disposition, but the rule table does not yet "
+        "filter on operation, region, egress, isolation policy or data rights, because the "
+        "policy and rights objects they need do not exist until later sprints",
+        "several small accelerators and shared-memory pools are covered by unit tests, not here",
     )
