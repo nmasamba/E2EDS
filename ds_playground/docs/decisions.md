@@ -77,6 +77,12 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   for the general data workflow" table has rows R24–R27 pasted into it, and R23, ADR25 and O20 appear out of
   numeric order. The IDs themselves are intact.
 
+- **2026-10-02 — S0 — FINDING — model download truncation** — the transfer ended early three times (4.70, 4.79
+  and 5.01 of 5.03 GB), once with curl reporting success, and each partial file had a different SHA-256. The
+  source's headers confirmed the expected size and digest, so the transfer was resumed until the size matched;
+  the complete file's digest equals the pinned one. Lesson for Sprint 5: verify size **and** digest before any
+  load, and never treat a finished download command as a finished download.
+
 ## Sprint 1
 
 - **2026-10-01 — S1 — DECISION — no typed models yet** — objects are plain dicts validated against the JSON
