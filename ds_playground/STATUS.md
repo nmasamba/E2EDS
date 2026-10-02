@@ -5,8 +5,8 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 ## Now
 
 - **Sprint:** 2 — M1 desktop shell, discovery and plan (Sprint 1 is merged to `main` through PR #1)
-- **Claimed prompt:** 2.2 (shell scaffold); 2.1 (harness) is done
-- **Branch:** `sprint-2-desktop`, with a pull request open against `main` for prompt 2.1
+- **Claimed prompt:** 2.2 (shell scaffold); 2.1 (harness) is merged to `main` through PR #2
+- **Branch:** `sprint-2-shell`, from `main` at `880e1fb`
 
 ## Done
 
@@ -60,6 +60,6 @@ Nothing. Standing approvals are in `docs/decisions.md`.
 
 ## Handoff note
 
-Sprint 1 is merged to `main` (PR #1).
-Sprint 2 is on `sprint-2-desktop`: 2.1 (harness, `dsp status`) is done; continue at 2.2 (Tauri shell). Rust is installed but keg-only: prepend `/opt/homebrew/opt/rustup/bin`
+Sprint 1 (PR #1) and prompt 2.1 (PR #2: harness, `dsp status`) are merged to `main`. Prompt 2.2 (Tauri shell)
+is in progress on `sprint-2-shell`. Rust is installed but keg-only: prepend `/opt/homebrew/opt/rustup/bin`
 and `~/.cargo/bin` to PATH for cargo.
