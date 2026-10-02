@@ -1,4 +1,4 @@
-.PHONY: install format test-fast sat verify verify-linux harness-bin
+.PHONY: install format test-fast sat verify verify-linux harness-bin desktop-dev desktop-build
 
 # rustup from Homebrew is keg-only on macOS; the extra entries are harmless elsewhere.
 export PATH := /opt/homebrew/opt/rustup/bin:$(HOME)/.cargo/bin:$(PATH)
@@ -29,3 +29,9 @@ harness-bin:    ## freeze the harness into one executable, named for the target 
 	uv run --frozen --group build pyinstaller --noconfirm --onefile --copy-metadata dsp \
 		--name dsp-harness-$$(rustc --print host-tuple) --distpath desktop/src-tauri/binaries \
 		--workpath build/pyinstaller --specpath build/pyinstaller src/dsp/harness/__main__.py
+
+desktop-dev: harness-bin    ## open the desktop window against the dev server
+	cd desktop && pnpm install --frozen-lockfile && pnpm tauri dev
+
+desktop-build: harness-bin  ## build the app bundle (.app on macOS; deb and AppImage on Linux)
+	cd desktop && pnpm install --frozen-lockfile && pnpm tauri build

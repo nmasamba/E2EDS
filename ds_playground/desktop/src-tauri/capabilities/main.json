@@ -1,0 +1,6 @@
+{
+  "identifier": "main",
+  "description": "The main window may ask for the harness address and credential, and nothing else.",
+  "windows": ["main"],
+  "permissions": ["allow-harness"]
+}
