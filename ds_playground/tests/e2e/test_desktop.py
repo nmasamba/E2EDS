@@ -114,12 +114,13 @@ def test_the_built_app_starts_its_bundled_harness_and_connects(
                     denied = run(CALL_UNGRANTED_COMMAND, "async")
                     assert "not allowed" in denied, denied
                     run(CLICK_ADD_SOURCE)
-                    search = ("search", "--onlyvisible", "--name", "Choose a source folder")
-                    dialog = xdotool(*search, "--sync").split()[-1]
+                    visible = ("--onlyvisible", "--name", "Choose a source folder")
+                    dialog = xdotool("search", "--sync", *visible).split()[-1]
                     xdotool("windowactivate", "--sync", dialog, "key", "Escape")
 
                     def dismissed() -> str:
-                        still_open = subprocess.run(["xdotool", *search], capture_output=True)
+                        found = ["xdotool", "search", *visible]
+                        still_open = subprocess.run(found, capture_output=True)
                         assert still_open.returncode, "the folder dialog is still open"
                         return shown("No folders granted yet.")
 
