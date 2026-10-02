@@ -23,7 +23,7 @@ async function connect(): Promise<Status> {
       const response = await fetch(`${base_url}/v1/status`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      const body = await response.json();
+      const body: { version: string; pid: number; message: string } = await response.json();
       return response.ok
         ? { state: "connected", version: body.version, pid: body.pid }
         : { state: "unavailable", reason: body.message };

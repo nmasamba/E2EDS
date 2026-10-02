@@ -5,8 +5,9 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 ## Now
 
 - **Sprint:** 2 — M1 desktop shell, discovery and plan (Sprint 1 is merged to `main` through PR #1)
-- **Claimed prompt:** 2.2 (shell scaffold); 2.1 (harness) is merged to `main` through PR #2
-- **Branch:** `sprint-2-shell`, from `main` at `880e1fb`
+- **Claimed prompt:** none. 2.1 (harness) is merged through PR #2; 2.2 (shell scaffold) is done and waiting in
+  PR #3. Next is 2.3 (scoped folder grants).
+- **Branch:** `sprint-2-shell`, from `main` at `880e1fb`, with PR #3 open against `main`
 
 ## Done
 
@@ -20,7 +21,7 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 |---|---|---|---|
 | 0 | Setup | done | G0: PASS for synthetic scope |
 | 1 | M0 foundations and thin slice | merged to `main` (PR #1) | PASS, see below |
-| 2 | M1 desktop, discovery, plan | 2.1 done (106 tests green on macOS and linux/arm64) | — |
+| 2 | M1 desktop, discovery, plan | 2.1 merged; 2.2 done in PR #3 (see below); 2.3–2.8 not started | — |
 | 3–11 | M1 | not started | — |
 | 12–20 | M1B, M1C, M1R, M2, M3, M3Z, M4 | not started | — |
 
@@ -50,9 +51,29 @@ suite's pinned digest and the size and digest the source reports for revision `7
 - CI on PR #1: both jobs passed (`ubuntu-24.04` x86-64 and macOS).
 - Gate outcome: **PASS** for Sprint 1 scope. No acceptance scenario (A##) is in scope for this sprint.
 
+## Prompt 2.2 — desktop shell (2026-10-02)
+
+- `make verify` on macOS arm64: **132 passed, 1 deselected** (the `desktop` test), coverage 95.70%.
+- `make verify-linux` (container, linux/arm64): **132 passed, 1 deselected**, coverage 95.70%.
+- `make desktop-build` on macOS: `DS Playground.app` (29.28 MiB) with the frozen harness beside the shell
+  binary. Launched through LaunchServices on a temporary `DSP_HOME`, its own harness answered `/v1/status`
+  in 1.04 s, with no terminal and no uv.
+- `make desktop-dev` on macOS: the window opened and its sidecar ran with `--dev`.
+- `make e2e` on macOS: renderer **4 passed** (Playwright + axe on a real harness), desktop **1 passed**.
+- CI on `a0a1e77` (run 37003990879): `verify` green on `ubuntu-24.04` and macOS; `desktop` green on both. On
+  Linux it built `DS Playground_0.1.0_amd64.deb` (21.10 MiB) and the AppImage, then under a virtual display
+  launched the app unpacked from the deb through WebDriver, read "Harness connected" with the harness's
+  version and process, and quit: renderer 4 passed, desktop 1 passed.
+
 ## Open defects and gaps
 
 - Linux x86-64 is verified by CI only; the local container run is linux/arm64.
+- macOS: the window's text is not read by any automated test (no WebDriver for WKWebView); the end-to-end
+  test checks the harness the app started. The window's requests were checked once by hand
+  (`docs/decisions.md`, 2026-10-02).
+- Linux: the desktop end-to-end test has run only in CI (x86-64). The AppImage is built but never launched;
+  the test launches the app unpacked from the deb. No Linux arm64 bundle is built.
+- The Quit menu item is not exercised by a test on either OS.
 
 ## Waiting on the owner
 
@@ -61,5 +82,11 @@ Nothing. Standing approvals are in `docs/decisions.md`.
 ## Handoff note
 
 Sprint 1 (PR #1) and prompt 2.1 (PR #2: harness, `dsp status`) are merged to `main`. Prompt 2.2 (Tauri shell)
-is in progress on `sprint-2-shell`. Rust is installed but keg-only: prepend `/opt/homebrew/opt/rustup/bin`
-and `~/.cargo/bin` to PATH for cargo.
+is done on `sprint-2-shell` and waiting for the owner in PR #3; merging is the owner's. **Next is prompt 2.3**
+(scoped folder grants), on a new branch from `main` once PR #3 is merged.
+
+Desktop notes for the next session: the Makefile puts the keg-only Rust on PATH for its own targets; outside
+make, prepend `/opt/homebrew/opt/rustup/bin` and `~/.cargo/bin`. `make e2e` needs `make desktop-build` first
+and Playwright's Chromium (`pnpm --dir desktop exec playwright install chromium`). The dev window is refused
+by a harness that was not spawned with `--dev`, so stop any running harness before `make desktop-dev`. The
+harness keeps running after the window quits until 2.7 defines the lifecycle.

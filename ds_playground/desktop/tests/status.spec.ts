@@ -16,7 +16,9 @@ async function startHarness(): Promise<Harness> {
   });
   for (let attempt = 0; attempt < 300; attempt++) {
     try {
-      const state = JSON.parse(readFileSync(join(home, "harness.json"), "utf8"));
+      const state: { port: number; token: string; pid: number } = JSON.parse(
+        readFileSync(join(home, "harness.json"), "utf8"),
+      );
       const harness = { base_url: `http://127.0.0.1:${state.port}`, token: state.token, pid: state.pid };
       await fetch(`${harness.base_url}/v1/status`);
       return harness;
