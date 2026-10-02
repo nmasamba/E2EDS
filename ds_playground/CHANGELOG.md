@@ -1,0 +1,10 @@
+# Changelog
+
+## Sprint 1 — foundations (2026-10-01)
+
+- `dsp profile <file.csv> --out <folder>`: full-file CSV profile exported as a new, hash-verified version
+  folder; `dsp verify <folder>` checks a pack against its manifest.
+- Contracts: the suite's sixteen JSON Schemas vendored and digest-checked; all suite examples validate.
+  App-owned schemas for DataManifest, PackManifest and ExportReceipt.
+- SQLite ledger with compare-and-swap appends and idempotent event commits; content-addressed artifact store.
+- Gate (`make verify`, `make verify-linux`) and CI on Linux and macOS.

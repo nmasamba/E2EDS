@@ -1,0 +1,421 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.3.0"
+    },
+    "planning_only": {
+      "type": "boolean"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "revision": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "api_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 20
+    },
+    "operations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 20
+          },
+          "execution_mode": {
+            "enum": [
+              "sync",
+              "async"
+            ]
+          },
+          "input_schema": {
+            "type": "object"
+          },
+          "output_schema": {
+            "type": "object"
+          },
+          "required_scopes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*:[a-z][a-z0-9_]*$"
+            },
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "side_effects": {
+            "enum": [
+              "none",
+              "proposal_only",
+              "consequential"
+            ]
+          },
+          "http": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "method": {
+                "enum": [
+                  "GET",
+                  "POST",
+                  "DELETE"
+                ]
+              },
+              "path": {
+                "type": "string",
+                "pattern": "^/v[0-9]+/"
+              }
+            },
+            "required": [
+              "method",
+              "path"
+            ]
+          },
+          "mcp_tool": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "idempotency": {
+            "enum": [
+              "pure",
+              "key_required"
+            ]
+          },
+          "deadline_seconds": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "execution_mode",
+          "input_schema",
+          "output_schema",
+          "required_scopes",
+          "side_effects",
+          "http",
+          "mcp_tool",
+          "idempotency",
+          "deadline_seconds"
+        ]
+      },
+      "minItems": 1
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_request_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_text_characters": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_response_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "list_page_default": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "list_page_max": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "max_request_bytes",
+        "max_text_characters",
+        "max_response_bytes",
+        "list_page_default",
+        "list_page_max"
+      ]
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string",
+            "pattern": "^[A-Z_]+$"
+          },
+          "http_status": {
+            "type": "integer",
+            "minimum": 400,
+            "maximum": 599
+          },
+          "retryable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "code",
+          "http_status",
+          "retryable"
+        ]
+      },
+      "minItems": 1
+    },
+    "identity_policy_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "revision",
+        "sha256"
+      ]
+    },
+    "interfaces": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "http": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "openapi_version": {
+              "type": "string",
+              "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+            },
+            "auth": {
+              "enum": [
+                "oauth2_bearer",
+                "local_loopback_profile"
+              ]
+            }
+          },
+          "required": [
+            "openapi_version",
+            "auth"
+          ]
+        },
+        "mcp": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sdk": {
+              "type": "string"
+            },
+            "sdk_version": {
+              "type": "string",
+              "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+            },
+            "protocol_versions": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+              },
+              "minItems": 1
+            },
+            "transports": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "stdio",
+                  "streamable_http"
+                ]
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            },
+            "long_jobs": {
+              "enum": [
+                "explicit_job_tools",
+                "negotiated_tasks"
+              ]
+            },
+            "capabilities": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "sdk",
+            "sdk_version",
+            "protocol_versions",
+            "transports",
+            "long_jobs",
+            "capabilities"
+          ]
+        }
+      },
+      "required": [
+        "http",
+        "mcp"
+      ]
+    },
+    "operating_profile_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "uncertainty_policy": {
+      "type": "string",
+      "minLength": 20
+    },
+    "review_policy": {
+      "type": "string",
+      "minLength": 20
+    },
+    "runtime_requirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "hosted_control_plane_per_request": {
+          "const": false
+        },
+        "training_provider_required_at_inference": {
+          "const": false
+        },
+        "external_model_dependency": {
+          "type": "boolean"
+        },
+        "serving_qualification": {
+          "const": "per_declared_deployment_profile"
+        },
+        "gradio_demo_compatibility": {
+          "enum": [
+            "not_claimed",
+            "separately_qualified"
+          ]
+        },
+        "offline_policy": {
+          "enum": [
+            "authorised_local_inference",
+            "declared_external_dependency_required"
+          ]
+        },
+        "development_assistant_required_at_inference": {
+          "const": false
+        }
+      },
+      "required": [
+        "hosted_control_plane_per_request",
+        "training_provider_required_at_inference",
+        "external_model_dependency",
+        "serving_qualification",
+        "gradio_demo_compatibility",
+        "offline_policy",
+        "development_assistant_required_at_inference"
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "planning_only",
+    "id",
+    "revision",
+    "api_version",
+    "description",
+    "operations",
+    "limits",
+    "errors",
+    "identity_policy_ref",
+    "interfaces",
+    "operating_profile_ref",
+    "uncertainty_policy",
+    "review_policy",
+    "runtime_requirements"
+  ],
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.example.invalid/tip/0.3.0/ServiceSpec.schema.json",
+  "title": "ServiceSpec \u2014 proposed planning contract",
+  "description": "Embedded schemas are JSON Schema 2020-12. Semantic operations and permissions must be shared by transports. Draft 0.3.0 makes provider-neutral execution and independent serving explicit. Structural validity is not admission, qualification or approval. Draft 0.3.0 adds conversational/local-assistant and generated-code policy semantics where relevant.",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "planning_only": {
+            "const": false
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "identity_policy_ref": {
+            "properties": {
+              "sha256": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "runtime_requirements": {
+            "properties": {
+              "external_model_dependency": {
+                "const": true
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "runtime_requirements": {
+            "properties": {
+              "offline_policy": {
+                "const": "declared_external_dependency_required"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

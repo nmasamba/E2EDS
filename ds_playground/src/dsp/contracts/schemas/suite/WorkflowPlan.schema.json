@@ -1,0 +1,631 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.example.invalid/tip/0.5.0/WorkflowPlan.schema.json",
+  "title": "WorkflowPlan — planning contract",
+  "description": "Proposed contract, not implemented enforcement. Trusted fields come from authenticated system context. Draft 0.5.0 makes non-training zero-trial analysis and output-kind stage meaning explicit; referenced workload must agree under semantic validation.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "revision": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "type": {
+      "const": "WorkflowPlan"
+    },
+    "schema_version": {
+      "const": "0.5.0"
+    },
+    "planning_only": {
+      "type": "boolean"
+    },
+    "tenant_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+      "readOnly": true
+    },
+    "project_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+      "readOnly": true
+    },
+    "state": {
+      "enum": [
+        "proposed",
+        "stale",
+        "superseded",
+        "rejected"
+      ]
+    },
+    "workload_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "revision",
+        "sha256"
+      ]
+    },
+    "assistant_model_binding_ref": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+            },
+            "revision": {
+              "type": "string",
+              "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+            },
+            "sha256": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^sha256:[a-f0-9]{64}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "revision",
+            "sha256"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "selected_compute_binding_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "revision",
+        "sha256"
+      ]
+    },
+    "hardware_snapshot_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+          },
+          "revision": {
+            "type": "string",
+            "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+          },
+          "sha256": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^sha256:[a-f0-9]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "revision",
+          "sha256"
+        ]
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "ruleset_revision": {
+      "type": "string",
+      "minLength": 1
+    },
+    "requirement_revision": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "feasibility_outcome": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "INSUFFICIENT_EVIDENCE"
+      ]
+    },
+    "qualification_evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+          },
+          "revision": {
+            "type": "string",
+            "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+          },
+          "sha256": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^sha256:[a-f0-9]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "revision",
+          "sha256"
+        ]
+      }
+    },
+    "authorises_execution": {
+      "const": false
+    },
+    "selected_option_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "recommendation": {
+      "type": "string",
+      "minLength": 1
+    },
+    "allocations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "role": {
+            "enum": [
+              "assistant",
+              "workload",
+              "host_reserve"
+            ]
+          },
+          "physical_domain_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "cpu_cap": {
+            "type": "number",
+            "minimum": 0
+          },
+          "memory_cap_gib": {
+            "type": "number",
+            "minimum": 0
+          },
+          "gpu_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "profile_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "role",
+          "physical_domain_id",
+          "cpu_cap",
+          "memory_cap_gib",
+          "gpu_count",
+          "profile_id"
+        ]
+      }
+    },
+    "operating_bounds": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "trial_concurrency": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_trials": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_task_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "currency": {
+          "const": "GBP"
+        },
+        "max_external_charge_minor": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "trial_concurrency",
+        "max_trials",
+        "max_task_seconds",
+        "currency",
+        "max_external_charge_minor"
+      ]
+    },
+    "runtime_estimate_seconds": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "alternatives": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "option_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "disposition": {
+            "enum": [
+              "eligible",
+              "blocked",
+              "unqualified",
+              "unknown"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "option_id",
+          "disposition",
+          "reason"
+        ]
+      }
+    },
+    "required_conditions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1
+    },
+    "protected_evaluation_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "revision",
+        "sha256"
+      ]
+    },
+    "refresh_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "on_dispatch": {
+          "const": true
+        },
+        "on_resume": {
+          "const": true
+        },
+        "display_stale_after_seconds": {
+          "const": 60
+        }
+      },
+      "required": [
+        "on_dispatch",
+        "on_resume",
+        "display_stale_after_seconds"
+      ]
+    },
+    "stages": {
+      "type": "array",
+      "minItems": 9,
+      "maxItems": 9,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "enum": [
+              "goal",
+              "environment",
+              "data",
+              "plan",
+              "develop",
+              "self_check",
+              "evaluate",
+              "report_release",
+              "operate"
+            ]
+          },
+          "completion_evidence": {
+            "type": "string",
+            "minLength": 1
+          },
+          "mandatory": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "completion_evidence",
+          "mandatory"
+        ]
+      }
+    },
+    "supersedes_ref": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+            },
+            "revision": {
+              "type": "string",
+              "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+            },
+            "sha256": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^sha256:[a-f0-9]{64}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "revision",
+            "sha256"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "workload_family": {
+      "enum": [
+        "data_analysis",
+        "classical_ml",
+        "genai_application",
+        "genai_training",
+        "agent"
+      ]
+    },
+    "output_kind": {
+      "enum": [
+        "analysis_release",
+        "service_release"
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "revision",
+    "type",
+    "schema_version",
+    "planning_only",
+    "tenant_ref",
+    "project_ref",
+    "state",
+    "workload_ref",
+    "assistant_model_binding_ref",
+    "selected_compute_binding_ref",
+    "hardware_snapshot_refs",
+    "ruleset_revision",
+    "requirement_revision",
+    "feasibility_outcome",
+    "qualification_evidence_refs",
+    "authorises_execution",
+    "selected_option_id",
+    "recommendation",
+    "allocations",
+    "operating_bounds",
+    "runtime_estimate_seconds",
+    "alternatives",
+    "required_conditions",
+    "protected_evaluation_ref",
+    "refresh_policy",
+    "stages",
+    "supersedes_ref",
+    "workload_family",
+    "output_kind"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "planning_only": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "state": {
+            "const": "proposed"
+          },
+          "feasibility_outcome": {
+            "const": "INSUFFICIENT_EVIDENCE"
+          },
+          "qualification_evidence_refs": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "feasibility_outcome": {
+            "const": "PASS"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "planning_only": {
+            "const": false
+          },
+          "qualification_evidence_refs": {
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "workload_family": {
+            "const": "data_analysis"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "output_kind": {
+            "const": "analysis_release"
+          },
+          "operating_bounds": {
+            "properties": {
+              "max_trials": {
+                "const": 0
+              },
+              "trial_concurrency": {
+                "const": 0
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "operating_bounds": {
+            "properties": {
+              "max_trials": {
+                "minimum": 1
+              },
+              "trial_concurrency": {
+                "minimum": 1
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
