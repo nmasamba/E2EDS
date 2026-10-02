@@ -2,6 +2,7 @@ import json
 import os
 import signal
 import subprocess
+import threading
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -365,12 +366,7 @@ def test_an_open_stream_does_not_keep_a_stopping_harness_alive(state_dir: Path) 
     with client.stream("GET", "/v1/events/stream", timeout=30) as live:
         os.kill(pid, signal.SIGTERM)
         assert list(live.iter_lines()) == []
-    for _ in range(50):
-        if subprocess.run(["ps", "-p", str(pid)], capture_output=True).returncode:
-            break
-        time.sleep(0.1)
-    else:
-        pytest.fail("the harness is still running")
+    assert gone(pid)
     (state_dir / "harness.json").unlink()
 
 
@@ -389,6 +385,67 @@ def test_a_plan_from_unobserved_hardware_says_unknown(
         "local-native-draft is unknown: its hardware has not been observed."
     )
     assert proposed["feasibility_outcome"] == "INSUFFICIENT_EVIDENCE"
+
+
+def gone(pid: int) -> bool:
+    """Wait up to five seconds for a process to exit."""
+    for _ in range(50):
+        if subprocess.run(["ps", "-p", str(pid)], capture_output=True).returncode:
+            return True
+        time.sleep(0.1)
+    return False
+
+
+def test_quit_drains_work_in_progress_before_the_harness_stops(
+    state_dir: Path, folders: dict[str, Path]
+) -> None:
+    """A44, D24: a stop request lets the profile already running finish and export, then exits."""
+    client = connect(state_dir)
+    pid = client.get("/v1/status").json()["pid"]
+    write_orders(folders["data"] / "large.csv", orders=60_000, accounts=500)
+    source = client.post(
+        "/v1/grants", json={"purpose": "source_root", "path": str(folders["data"])}
+    ).json()["handle"]
+    output = client.post(
+        "/v1/grants", json={"purpose": "output_root", "path": str(folders["out"])}
+    ).json()["handle"]
+    finished: dict[str, Any] = {}
+
+    def work() -> None:
+        body = {"source_handle": source, "relative_path": "large.csv", "output_handle": output}
+        finished["answer"] = connect(state_dir).post("/v1/profiles", json=body, timeout=60)
+        finished["at"] = time.monotonic()
+
+    worker = threading.Thread(target=work)
+    worker.start()
+    for _ in range(100):  # wait until the job is recorded as started, so the stop arrives mid-work
+        if any(
+            event["type"] == "job.started" for event in client.get("/v1/events").json()["events"]
+        ):
+            break
+        time.sleep(0.02)
+    refused = client.post("/v1/shutdown", headers={"Origin": SHELL_ORIGIN})
+    stopping = client.post("/v1/shutdown")
+    asked = time.monotonic()
+    worker.join(60)
+    assert (refused.status_code, stopping.json()) == (403, {"status": "stopping"})
+    assert asked < finished["at"]
+    assert finished["answer"].json() == {"version": "v1", "files": 3}
+    assert verify_pack(folders["out"] / "v1") == []
+    assert gone(pid)
+    (state_dir / "harness.json").unlink()
+
+
+def test_dsp_stop_stops_the_harness_and_the_next_command_starts_a_new_one(home: Path) -> None:
+    """A44, R26: `dsp stop` is the CLI's Quit; state survives into the harness that starts next."""
+    first = connect(home).get("/v1/status").json()["pid"]
+    assert run("hardware").exit_code == 0
+    assert run("stop").output.strip() == "harness stopping"
+    assert gone(first)
+    again = connect(home)
+    assert again.get("/v1/status").json()["pid"] != first
+    kinds = [event["type"] for event in again.get("/v1/events").json()["events"]]
+    assert kinds == ["discovery.finished", "plan.proposed"]
 
 
 def run(*arguments: object) -> Any:

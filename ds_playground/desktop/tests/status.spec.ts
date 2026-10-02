@@ -5,11 +5,10 @@ import { join } from "node:path";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
-type Harness = { base_url: string; token: string; pid: number };
+type Harness = { base_url: string; token: string; pid: number; home: string };
 
-/** Start a real harness on a temporary DSP_HOME and wait until it answers. */
-async function startHarness(): Promise<Harness> {
-  const home = mkdtempSync(join(tmpdir(), "dsp-renderer-"));
+/** Start a real harness on a DSP_HOME, a new temporary one by default, and wait for its answer. */
+async function startHarness(home = mkdtempSync(join(tmpdir(), "dsp-renderer-"))): Promise<Harness> {
   spawn("uv", ["run", "--frozen", "--project", "..", "python", "-m", "dsp.harness", "--dev"], {
     env: { ...process.env, DSP_HOME: home },
     stdio: "ignore",
@@ -19,7 +18,8 @@ async function startHarness(): Promise<Harness> {
       const state: { port: number; token: string; pid: number } = JSON.parse(
         readFileSync(join(home, "harness.json"), "utf8"),
       );
-      const harness = { base_url: `http://127.0.0.1:${state.port}`, token: state.token, pid: state.pid };
+      const base_url = `http://127.0.0.1:${state.port}`;
+      const harness = { base_url, token: state.token, pid: state.pid, home };
       await fetch(`${harness.base_url}/v1/status`);
       return harness;
     } catch {
@@ -32,23 +32,28 @@ async function startHarness(): Promise<Harness> {
 type Pick = (purpose: string) => Promise<unknown>;
 
 /**
- * A browser has no Tauri runtime: answer the shell's two commands the way the shell would. The
- * folder picker is played by ``pick``, which runs here in Node, outside the page, as Rust does.
+ * A browser has no Tauri runtime: answer the shell's two commands the way the shell would. Both
+ * run here in Node, outside the page, as Rust does: ``answer`` is read afresh on every call, and
+ * the folder picker is played by ``pick``.
  */
 async function open(page: Page, answer: { base_url: string; token: string }, pick?: Pick) {
   await page.exposeFunction("shellPick", pick ?? (async () => null));
-  await page.addInitScript((harness) => {
-    const shell = window as unknown as { shellPick: (purpose: string) => Promise<unknown> };
+  await page.exposeFunction("shellHarness", () => ({ ...answer }));
+  await page.addInitScript(() => {
+    const shell = window as unknown as {
+      shellPick: (purpose: string) => Promise<unknown>;
+      shellHarness: () => Promise<unknown>;
+    };
     Object.assign(window, {
       __TAURI_INTERNALS__: {
         invoke: async (command: string, args: { purpose: string }) => {
-          if (command === "harness") return harness;
+          if (command === "harness") return shell.shellHarness();
           if (command !== "grant_folder") return Promise.reject(`${command} not allowed`);
           return shell.shellPick(args.purpose).catch((error: Error) => Promise.reject(error.message));
         },
       },
     });
-  }, answer);
+  });
   await page.goto("/");
 }
 
@@ -336,15 +341,31 @@ test("A31: what could not be observed is shown as unknown with its reason", asyn
   await expectNoAxeViolations(page);
 });
 
-test("R20: a lost connection keeps the last known state and says so", async ({ page }) => {
+test("R20, A44: a lost harness keeps the last known state, and a restarted one is rejoined", async ({
+  page,
+}) => {
   const own = await startHarness();
   await open(page, own);
   await expect(stage(page, "Environment and context")).toContainText("● Completed");
-  process.kill(own.pid);
+  process.kill(own.pid, "SIGKILL");
   await expect(page.getByRole("status")).toHaveText(/○ Connection lost; last known state as of /, {
     timeout: 15_000,
   });
   await expect(stage(page, "Environment and context")).toContainText("● Completed");
   await expect(page.getByRole("region", { name: "Environment" })).toContainText("GiB total");
   await expectNoAxeViolations(page);
+
+  const restarted = await startHarness(own.home);
+  expect(restarted.pid).not.toBe(own.pid);
+  Object.assign(own, restarted);
+  await expect(page.getByRole("status")).toHaveText("● Harness connected", { timeout: 15_000 });
+  await expect(stage(page, "Environment and context")).toContainText("● Completed");
+  const events = await fetch(`${own.base_url}/v1/events`, {
+    headers: { Authorization: `Bearer ${own.token}` },
+  }).then((response) => response.json());
+  expect(events.events.map((event: { type: string }) => event.type)).toEqual([
+    "discovery.finished",
+    "plan.proposed",
+  ]);
+  process.kill(own.pid);
 });

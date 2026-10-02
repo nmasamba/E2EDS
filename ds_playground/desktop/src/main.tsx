@@ -234,10 +234,14 @@ function ProposedPlan({ plan }: { plan: Plan | null }) {
 /**
  * The workspace is a projection of the harness's ledger: it polls for events after its cursor
  * and derives everything shown from them. When a poll fails it keeps the last known state and
- * says so; it never assumes work stopped.
+ * says so; it never assumes work stopped. It reconnects, and replays from its cursor, when the
+ * harness answers again.
  */
 function Workspace(props: { harness: Harness; version: string; pid: number }) {
-  const { harness, version, pid } = props;
+  const { version, pid } = props;
+  const [harness, setHarness] = useState(props.harness);
+  const address = useRef(harness);
+  address.current = harness;
   const [log, setLog] = useState<LedgerEvent[]>([]);
   const [lostAt, setLostAt] = useState("");
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
@@ -246,12 +250,12 @@ function Workspace(props: { harness: Harness; version: string; pid: number }) {
   const cursor = useRef(0);
   const started = useRef(false);
 
-  const observe = () => void call(harness, "/v1/hardware", "POST").catch(() => undefined);
+  const observe = () => void call(address.current, "/v1/hardware", "POST").catch(() => undefined);
   useEffect(() => {
     const poll = async () => {
       try {
         type Batch = { events: LedgerEvent[]; cursor: number; reset: boolean };
-        const batch = await call<Batch>(harness, `/v1/events?after=${cursor.current}`);
+        const batch = await call<Batch>(address.current, `/v1/events?after=${cursor.current}`);
         cursor.current = batch.cursor;
         setLog((log) => merge(log, batch.events, batch.reset));
         setLostAt("");
@@ -260,6 +264,8 @@ function Workspace(props: { harness: Harness; version: string; pid: number }) {
         started.current = true;
       } catch {
         setLostAt((since) => since || new Date().toLocaleTimeString());
+        // The harness may have been restarted on a new port: ask the shell where it is now.
+        void invoke<Harness>("harness").then(setHarness, () => undefined);
       }
       setNow(Date.now());
     };

@@ -145,3 +145,13 @@ def plan() -> None:
         typer.echo(f"{option['option_id']} is {option['disposition']}: {option['reason']}")
     for condition in proposed["required_conditions"]:
         typer.echo(f"needs: {condition}")
+
+
+@app.command()
+def stop() -> None:
+    """Stop the local harness after the work already in progress has finished."""
+    try:
+        _call("POST", "/v1/shutdown")
+    except DspError as error:
+        raise _fail(error) from error
+    typer.echo("harness stopping")

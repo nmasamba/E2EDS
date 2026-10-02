@@ -40,4 +40,5 @@ desktop-build: harness-bin  ## build the app bundle (.app on macOS; deb and AppI
 e2e:            ## renderer and shell tests on a real harness, then the built app; run desktop-build first
 	cd desktop && pnpm test
 	cd desktop/src-tauri && cargo test --release --features tauri/custom-protocol
-	uv run pytest -m desktop tests/e2e
+	DSP_EVIDENCE=docs/evidence DSP_COMMIT=$$(git rev-parse --short HEAD) \
+		uv run pytest -m desktop tests/e2e

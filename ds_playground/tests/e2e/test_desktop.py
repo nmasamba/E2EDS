@@ -2,10 +2,11 @@
 
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from importlib.metadata import version
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from fixtures.operations import write_orders
 pytestmark = pytest.mark.desktop
 
 BUNDLE = Path(__file__).parents[2] / "desktop/src-tauri/target/release/bundle"
+LINUX = sys.platform != "darwin"
 
 
 def eventually[T](probe: Callable[[], T]) -> T:
@@ -52,6 +54,69 @@ def xdotool(*arguments: str) -> str:
     return done.stdout
 
 
+@pytest.fixture(scope="module")
+def binary(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """The built app's executable: inside the .app on macOS, unpacked from the deb on Linux."""
+    if not LINUX:
+        (found,) = BUNDLE.glob("macos/*.app/Contents/MacOS/dsp-desktop")
+        return found
+    (deb,) = BUNDLE.glob("deb/*.deb")
+    installed = tmp_path_factory.mktemp("deb")
+    subprocess.run(["dpkg-deb", "--extract", deb, installed], check=True)
+    return installed / "usr/bin/dsp-desktop"
+
+
+@pytest.fixture
+def launch(binary: Path, state_dir: Path) -> Iterator[Callable[[], subprocess.Popen[bytes]]]:
+    """Start the built app on the temporary profile; every app started is stopped afterwards."""
+    started: list[subprocess.Popen[bytes]] = []
+
+    def start() -> subprocess.Popen[bytes]:
+        app = subprocess.Popen([binary], env={**os.environ, "DSP_HOME": str(state_dir)})
+        started.append(app)
+        return app
+
+    yield start
+    for app in started:
+        app.kill()
+        app.wait(10)
+
+
+def stopped(pid: int) -> None:
+    """Fail unless the process has exited."""
+    running = subprocess.run(["ps", "-p", str(pid)], capture_output=True).returncode == 0
+    assert not running, f"process {pid} is still running"
+
+
+def press(keys: str) -> None:
+    """Send a key combination to the app's main window through the window manager."""
+    window = xdotool("search", "--sync", "--onlyvisible", "--name", "^DS Playground$")
+    xdotool("windowactivate", "--sync", window.split()[-1], "key", keys)
+
+
+def kinds(client: httpx.Client) -> list[str]:
+    """The types of every event in the ledger, in commit order."""
+    return [event["type"] for event in client.get("/v1/events").json()["events"]]
+
+
+def record(scenario: str, expected: str, actual: str, limits: list[str]) -> None:
+    """Write the evidence record for an acceptance scenario when `make e2e` asks for one."""
+    if folder := os.environ.get("DSP_EVIDENCE"):
+        evidence = {
+            "id": scenario,
+            "sprint": 2,
+            "os": f"{sys.platform}-{os.uname().machine}",
+            "fixture": "built desktop bundle on a temporary profile",
+            "commit": os.environ.get("DSP_COMMIT", "unrecorded"),
+            "expected": expected,
+            "actual": actual,
+            "outcome": "PASS",
+            "limits": limits,
+        }
+        name = f"{scenario}-desktop-lifecycle-{sys.platform}.json"
+        (Path(folder) / name).write_text(json.dumps(evidence, indent=2) + "\n")
+
+
 CLICK_ADD_SOURCE = (
     "[...document.querySelectorAll('button')]"
     ".find((button) => button.textContent.startsWith('Add source folder')).click()"
@@ -63,82 +128,90 @@ CALL_UNGRANTED_COMMAND = (
 )
 
 
-def test_the_built_app_starts_its_bundled_harness_and_connects(
-    state_dir: Path, tmp_path_factory: pytest.TempPathFactory
-) -> None:
-    """R26, C23: launched on a fresh profile with no terminal or uv, the app works end to end.
+def inspect_window(binary: Path, state_dir: Path) -> None:
+    """Drive the real window through WebDriver (Linux only: macOS has none for its webview).
 
-    On Linux the window is driven through WebDriver: it must show "connected", refuse a command
-    its capability does not grant, open the real native folder dialog and, when that is cancelled
-    (xdotool, which needs a window manager on the display), grant nothing. Choosing a folder in
-    the dialog is not automated on either OS. macOS has no WebDriver for its webview, so there
-    only the harness the app started is checked. On both, the bundled harness then profiles a
-    real file through grants and refuses a path outside them.
+    It must show "connected", the work trail and the observed environment, refuse a command its
+    capability does not grant, and open the real native folder dialog and grant nothing when that
+    is cancelled. Choosing a folder in the dialog is not automated.
     """
-    environment = {**os.environ, "DSP_HOME": str(state_dir)}
-    if sys.platform == "darwin":
-        (binary,) = BUNDLE.glob("macos/*.app/Contents/MacOS/dsp-desktop")
-        app = subprocess.Popen([binary], env=environment)
-        try:
-            bundled = eventually(lambda: harness(state_dir))
-            assert app.poll() is None
-        finally:
-            app.terminate()
-            app.wait(10)
-    else:
-        (deb,) = BUNDLE.glob("deb/*.deb")
-        installed = tmp_path_factory.mktemp("deb")
-        subprocess.run(["dpkg-deb", "--extract", deb, installed], check=True)
-        options = {"tauri:options": {"application": str(installed / "usr/bin/dsp-desktop")}}
-        driver = subprocess.Popen(["tauri-driver"], env=environment)
-        try:
-            with httpx.Client(base_url="http://127.0.0.1:4444", timeout=60) as web:
-                eventually(lambda: web.get("/status").raise_for_status())
-                created = web.post("/session", json={"capabilities": {"alwaysMatch": options}})
-                session = created.raise_for_status().json()["value"]["sessionId"]
+    options = {"tauri:options": {"application": str(binary)}}
+    driver = subprocess.Popen(["tauri-driver"], env={**os.environ, "DSP_HOME": str(state_dir)})
+    try:
+        with httpx.Client(base_url="http://127.0.0.1:4444", timeout=60) as web:
+            eventually(lambda: web.get("/status").raise_for_status())
+            created = web.post("/session", json={"capabilities": {"alwaysMatch": options}})
+            session = created.raise_for_status().json()["value"]["sessionId"]
 
-                def run(script: str, mode: str = "sync") -> str:
-                    reply = web.post(
-                        f"/session/{session}/execute/{mode}", json={"script": script, "args": []}
-                    )
-                    value: str = reply.raise_for_status().json()["value"]
-                    return value
+            def run(script: str, mode: str = "sync") -> str:
+                reply = web.post(
+                    f"/session/{session}/execute/{mode}", json={"script": script, "args": []}
+                )
+                value: str = reply.raise_for_status().json()["value"]
+                return value
 
-                def shown(expected: str) -> str:
-                    text = run("return document.body.innerText")
-                    assert expected in text, text
-                    return text
+            def shown(expected: str) -> str:
+                text = run("return document.body.innerText")
+                assert expected in text, text
+                return text
 
-                try:
-                    text = eventually(lambda: shown("Harness connected"))
-                    denied = run(CALL_UNGRANTED_COMMAND, "async")
-                    assert "not allowed" in denied, denied
-                    run(CLICK_ADD_SOURCE)
-                    visible = ("--onlyvisible", "--name", "Choose a source folder")
-                    dialog = xdotool("search", "--sync", *visible).split()[-1]
-                    xdotool("windowactivate", "--sync", dialog, "key", "Escape")
+            try:
+                eventually(lambda: shown("Harness connected"))
+                text = eventually(lambda: shown("Waiting for you · INSUFFICIENT_EVIDENCE"))
+                answer = harness(state_dir).get("/v1/status").json()
+                assert f"version {answer['version']} · process {answer['pid']}" in text
+                assert "Environment and context\n● Completed" in text
+                assert "Outcome: INSUFFICIENT_EVIDENCE. local-native-draft is unqualified" in text
+                snapshot = harness(state_dir).get("/v1/hardware").json()
+                assert f"{snapshot['cpu']['visible_logical_processors']} visible" in text
+                denied = run(CALL_UNGRANTED_COMMAND, "async")
+                assert "not allowed" in denied, denied
+                run(CLICK_ADD_SOURCE)
+                visible = ("--onlyvisible", "--name", "Choose a source folder")
+                dialog = xdotool("search", "--sync", *visible).split()[-1]
+                xdotool("windowactivate", "--sync", dialog, "key", "Escape")
 
-                    def dismissed() -> str:
-                        found = ["xdotool", "search", *visible]
-                        still_open = subprocess.run(found, capture_output=True)
-                        assert still_open.returncode, "the folder dialog is still open"
-                        return shown("No folders granted yet.")
+                def dismissed() -> str:
+                    found = ["xdotool", "search", *visible]
+                    still_open = subprocess.run(found, capture_output=True)
+                    assert still_open.returncode, "the folder dialog is still open"
+                    return shown("No folders granted yet.")
 
-                    assert "Could not update folders" not in eventually(dismissed)
-                finally:
-                    web.delete(f"/session/{session}")  # quits the app
-        finally:
-            driver.terminate()
-            driver.wait(10)
-        bundled = harness(state_dir)
-        assert bundled.get("/v1/grants").json() == {"grants": []}
-        answer = bundled.get("/v1/status").json()
-        assert f"version {answer['version']} · process {answer['pid']}" in text
-    assert bundled.get("/v1/status").json() | {"pid": 0} == {
-        "status": "ok",
-        "pid": 0,
-        "version": version("dsp"),
-    }
+                assert "Could not update folders" not in eventually(dismissed)
+            finally:
+                web.delete(f"/session/{session}")  # quits the app
+    finally:
+        driver.terminate()
+        driver.wait(10)
+    assert harness(state_dir).get("/v1/grants").json() == {"grants": []}
+
+
+def test_the_built_app_works_and_survives_close_kill_crash_and_a_second_instance(
+    binary: Path,
+    launch: Callable[[], subprocess.Popen[bytes]],
+    state_dir: Path,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """A44, R26, R20, D24: the built app, with no terminal or uv, on a fresh profile.
+
+    Its own window makes the first discovery, which shows the real webview reached the bundled
+    harness. One harness then serves the profile across a second instance, a killed shell, a
+    reopen and a harness crash. On Linux the window is also inspected through WebDriver and the
+    real Quit shortcut and a real window close are pressed with xdotool; on macOS none of those
+    can be scripted, so Quit is exercised only as the request the shell sends.
+    """
+    if LINUX:
+        inspect_window(binary, state_dir)
+    first = launch()
+    bundled = eventually(lambda: harness(state_dir))
+    owner = bundled.get("/v1/status").json()
+    assert owner | {"pid": 0} == {"status": "ok", "pid": 0, "version": version("dsp")}
+
+    def opened() -> None:
+        assert kinds(bundled) == ["discovery.finished", "plan.proposed"]
+
+    eventually(opened)
+    assert bundled.get("/v1/hardware").json()["evidence_source"] == "observed"
 
     work = tmp_path_factory.mktemp("work")
     write_orders(work / "orders.csv", orders=50, accounts=10)
@@ -156,3 +229,64 @@ def test_the_built_app_starts_its_bundled_harness_and_connects(
     assert verify_pack(work / "out" / "v1") == []
     escape = bundled.post("/v1/profiles", json=request | {"relative_path": "../out"})
     assert (escape.status_code, sorted(p.name for p in (work / "out").iterdir())) == (403, ["v1"])
+    history = kinds(bundled)
+
+    second = launch()  # a second instance attaches to the same harness
+    time.sleep(3)
+    assert (first.poll(), second.poll()) == (None, None)
+    assert harness(state_dir).get("/v1/status").json()["pid"] == owner["pid"]
+
+    first.kill()  # the shell dies; the harness and its state do not
+    second.terminate()
+    first.wait(10)
+    second.wait(10)
+    assert bundled.get("/v1/status").json()["pid"] == owner["pid"]
+
+    third = launch()  # reopen: same harness, same history, nothing done twice
+    time.sleep(3)
+    assert third.poll() is None
+    assert harness(state_dir).get("/v1/status").json()["pid"] == owner["pid"]
+    assert kinds(bundled) == history
+
+    os.kill(owner["pid"], signal.SIGKILL)  # the harness crashes; the next launch starts another
+    third.terminate()
+    third.wait(10)
+    fourth = launch()
+    replaced = eventually(lambda: harness(state_dir))
+    successor = replaced.get("/v1/status").json()["pid"]
+    assert successor != owner["pid"]
+    assert kinds(replaced) == history
+
+    if LINUX:
+        press("alt+F4")  # a real window close only detaches: the app ends, its harness stays
+        assert fourth.wait(20) == 0
+        assert replaced.get("/v1/status").json()["pid"] == successor
+        fifth = launch()
+        press("ctrl+q")  # a real Quit from a shell that did not start the harness leaves it too
+        assert fifth.wait(20) == 0
+        assert replaced.get("/v1/status").json()["pid"] == successor
+    assert replaced.post("/v1/shutdown").json() == {"status": "stopping"}
+    eventually(lambda: stopped(successor))
+    (state_dir / "harness.json").unlink()
+
+    if LINUX:
+        owning = launch()  # a shell that started its own harness stops it on a real Quit
+        owned = eventually(lambda: harness(state_dir)).get("/v1/status").json()["pid"]
+        press("ctrl+q")
+        assert owning.wait(20) == 0
+        eventually(lambda: stopped(owned))
+        (state_dir / "harness.json").unlink()
+    record(
+        "A44",
+        "one authenticated harness per profile; history preserved across second instance, "
+        "kill, reopen and harness crash; quit stops the owned harness; close only detaches",
+        "second instance attached to the same harness; harness outlived a killed shell; reopen "
+        "replayed the same history without repeating discovery; a crashed harness was replaced "
+        "with the history intact; the stop request ended the harness"
+        + ("; real window close detached and real Quit stopped the owned harness" if LINUX else ""),
+        [
+            "sleep and wake not exercised",
+            "no jobs exist yet, so pause-then-quit has nothing to pause",
+        ]
+        + ([] if LINUX else ["the Quit menu item and window close are not scripted on macOS"]),
+    )

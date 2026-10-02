@@ -1,3 +1,4 @@
+import contextlib
 import json
 import os
 import signal
@@ -18,7 +19,8 @@ def state_dir(tmp_path: Path) -> Iterator[Path]:
     state = profile / "harness.json"
     pid = json.loads(state.read_text()).get("pid") if state.exists() else None
     if pid:
-        os.kill(pid, signal.SIGTERM)
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(pid, signal.SIGTERM)
 
 
 @pytest.fixture

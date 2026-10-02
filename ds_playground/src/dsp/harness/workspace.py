@@ -138,6 +138,14 @@ def mount(app: FastAPI, state_dir: Path, server: uvicorn.Server | None = None) -
 
         return StreamingResponse(frames(), media_type="text/event-stream")
 
+    @app.post("/v1/shutdown")
+    def shutdown(request: Request) -> dict[str, str]:
+        """Stop the harness once the requests already in progress have finished (explicit Quit)."""
+        if "origin" in request.headers or server is None:
+            raise DspError(ErrorCode.FORBIDDEN, "only the shell or the CLI may stop the harness")
+        server.should_exit = True
+        return {"status": "stopping"}
+
     @app.post("/v1/profiles")
     def create_profile(
         source_handle: Annotated[str, Body()],
