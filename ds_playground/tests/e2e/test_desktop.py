@@ -236,7 +236,10 @@ def test_the_built_app_works_and_survives_close_kill_crash_and_a_second_instance
     assert kinds(replaced) == history
 
     if LINUX:
-        press("alt+F4")  # a real window close only detaches: the app ends, its harness stays
+        # A real window close, asked of the window manager, only detaches: the app ends and the
+        # harness it started keeps running.
+        xdotool("search", "--sync", "--onlyvisible", "--name", "^DS Playground$")
+        subprocess.run(["wmctrl", "-F", "-c", "DS Playground"], check=True, timeout=60)
         assert fourth.wait(20) == 0
         assert replaced.get("/v1/status").json()["pid"] == successor
         fifth = launch()

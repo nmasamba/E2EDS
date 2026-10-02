@@ -35,4 +35,4 @@ Exact versions are pinned in `desktop/package.json` with `pnpm-lock.yaml`, and i
 
 Development only: @tauri-apps/cli, vite, typescript, @types/node, @types/react, @types/react-dom,
 @playwright/test, @axe-core/playwright (MPL-2.0; test-time only, not shipped), vitest. CI also installs tauri-driver
-2.1.0 from crates.io, and xdotool from the runner's package archive, for the Linux end-to-end test.
+2.1.0 from crates.io, and xdotool, wmctrl and openbox from the runner's package archive, for the Linux end-to-end test.
