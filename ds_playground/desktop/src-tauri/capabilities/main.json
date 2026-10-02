@@ -1,6 +1,6 @@
 {
   "identifier": "main",
-  "description": "The main window may ask for the harness address and credential, and nothing else.",
+  "description": "The main window may ask for the harness address and credential and open the folder picker, and nothing else.",
   "windows": ["main"],
-  "permissions": ["allow-harness"]
+  "permissions": ["allow-harness", "allow-grant-folder"]
 }
