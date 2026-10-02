@@ -13,6 +13,16 @@
   `dsp grant`; list them with `dsp grants` and remove them in the window or with `dsp revoke`. Grants are
   shown by folder name, survive a restart, and are checked each time they are used.
 - `dsp profile` now runs inside the harness and exports only into a granted folder.
+- Hardware discovery: `dsp hardware` and the desktop window observe processors, memory, storage and
+  accelerators in about two seconds, with no model, no network and no elevated rights. Anything that could
+  not be observed is shown as unknown with the reason, never as absent.
+- Provisional plan: `dsp plan` and the window show what a fixed rule table makes of the observed hardware:
+  each option is eligible, unqualified, unknown or blocked, with one reason. A plan never authorises execution.
+- Work trail: the window shows the nine stages, the environment and the plan from the harness's event log,
+  follows work started from the CLI, marks the environment stale after 60 seconds, and keeps the last known
+  state when the harness cannot be reached.
+- Lifecycle: closing the window leaves the harness running; Quit (and `dsp stop`) lets work in progress
+  finish and then stops it; reopening shows the same state.
 
 ## Sprint 1 — foundations (2026-10-01)
 

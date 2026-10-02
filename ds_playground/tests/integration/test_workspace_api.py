@@ -1,10 +1,9 @@
 import json
 import os
 import signal
-import subprocess
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -359,14 +358,16 @@ def test_the_stream_replays_then_follows_and_equals_polling(state_dir: Path) -> 
     assert client.get("/v1/status").json()["status"] == "ok"
 
 
-def test_an_open_stream_does_not_keep_a_stopping_harness_alive(state_dir: Path) -> None:
+def test_an_open_stream_does_not_keep_a_stopping_harness_alive(
+    state_dir: Path, harness_stopped: Callable[[Path], bool]
+) -> None:
     """A44: asked to stop while a client is streaming, the harness ends the stream and exits."""
     client = connect(state_dir)
     pid = client.get("/v1/status").json()["pid"]
     with client.stream("GET", "/v1/events/stream", timeout=30) as live:
         os.kill(pid, signal.SIGTERM)
         assert list(live.iter_lines()) == []
-    assert gone(pid)
+    assert harness_stopped(state_dir)
     (state_dir / "harness.json").unlink()
 
 
@@ -387,21 +388,11 @@ def test_a_plan_from_unobserved_hardware_says_unknown(
     assert proposed["feasibility_outcome"] == "INSUFFICIENT_EVIDENCE"
 
 
-def gone(pid: int) -> bool:
-    """Wait up to five seconds for a process to exit."""
-    for _ in range(50):
-        if subprocess.run(["ps", "-p", str(pid)], capture_output=True).returncode:
-            return True
-        time.sleep(0.1)
-    return False
-
-
 def test_quit_drains_work_in_progress_before_the_harness_stops(
-    state_dir: Path, folders: dict[str, Path]
+    state_dir: Path, folders: dict[str, Path], harness_stopped: Callable[[Path], bool]
 ) -> None:
     """A44, D24: a stop request lets the profile already running finish and export, then exits."""
     client = connect(state_dir)
-    pid = client.get("/v1/status").json()["pid"]
     write_orders(folders["data"] / "large.csv", orders=60_000, accounts=500)
     source = client.post(
         "/v1/grants", json={"purpose": "source_root", "path": str(folders["data"])}
@@ -432,16 +423,18 @@ def test_quit_drains_work_in_progress_before_the_harness_stops(
     assert asked < finished["at"]
     assert finished["answer"].json() == {"version": "v1", "files": 3}
     assert verify_pack(folders["out"] / "v1") == []
-    assert gone(pid)
+    assert harness_stopped(state_dir)
     (state_dir / "harness.json").unlink()
 
 
-def test_dsp_stop_stops_the_harness_and_the_next_command_starts_a_new_one(home: Path) -> None:
+def test_dsp_stop_stops_the_harness_and_the_next_command_starts_a_new_one(
+    home: Path, harness_stopped: Callable[[Path], bool]
+) -> None:
     """A44, R26: `dsp stop` is the CLI's Quit; state survives into the harness that starts next."""
     first = connect(home).get("/v1/status").json()["pid"]
     assert run("hardware").exit_code == 0
     assert run("stop").output.strip() == "harness stopping"
-    assert gone(first)
+    assert harness_stopped(home)
     again = connect(home)
     assert again.get("/v1/status").json()["pid"] != first
     kinds = [event["type"] for event in again.get("/v1/events").json()["events"]]

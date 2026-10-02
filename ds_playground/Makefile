@@ -13,8 +13,8 @@ format:         ## format and apply safe lint fixes
 test-fast:      ## inner loop: no slow, sandbox, model, desktop or network tests
 	uv run pytest -m "not slow and not sandbox and not live_model and not remote_model and not desktop and not network"
 
-sat:            ## sprint acceptance tests, cumulative
-	uv run pytest tests/sat
+sat:            ## sprint acceptance tests, cumulative; writes evidence records to docs/evidence
+	DSP_EVIDENCE=docs/evidence DSP_COMMIT=$$(git rev-parse --short HEAD) uv run pytest tests/sat
 
 verify:         ## the sprint gate on this machine
 	sh tools/verify.sh

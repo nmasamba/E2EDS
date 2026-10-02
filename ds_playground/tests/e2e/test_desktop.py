@@ -82,12 +82,6 @@ def launch(binary: Path, state_dir: Path) -> Iterator[Callable[[], subprocess.Po
         app.wait(10)
 
 
-def stopped(pid: int) -> None:
-    """Fail unless the process has exited."""
-    running = subprocess.run(["ps", "-p", str(pid)], capture_output=True).returncode == 0
-    assert not running, f"process {pid} is still running"
-
-
 def press(keys: str) -> None:
     """Send a key combination to the app's main window through the window manager."""
     window = xdotool("search", "--sync", "--onlyvisible", "--name", "^DS Playground$")
@@ -97,24 +91,6 @@ def press(keys: str) -> None:
 def kinds(client: httpx.Client) -> list[str]:
     """The types of every event in the ledger, in commit order."""
     return [event["type"] for event in client.get("/v1/events").json()["events"]]
-
-
-def record(scenario: str, expected: str, actual: str, limits: list[str]) -> None:
-    """Write the evidence record for an acceptance scenario when `make e2e` asks for one."""
-    if folder := os.environ.get("DSP_EVIDENCE"):
-        evidence = {
-            "id": scenario,
-            "sprint": 2,
-            "os": f"{sys.platform}-{os.uname().machine}",
-            "fixture": "built desktop bundle on a temporary profile",
-            "commit": os.environ.get("DSP_COMMIT", "unrecorded"),
-            "expected": expected,
-            "actual": actual,
-            "outcome": "PASS",
-            "limits": limits,
-        }
-        name = f"{scenario}-desktop-lifecycle-{sys.platform}.json"
-        (Path(folder) / name).write_text(json.dumps(evidence, indent=2) + "\n")
 
 
 CLICK_ADD_SOURCE = (
@@ -191,6 +167,8 @@ def test_the_built_app_works_and_survives_close_kill_crash_and_a_second_instance
     launch: Callable[[], subprocess.Popen[bytes]],
     state_dir: Path,
     tmp_path_factory: pytest.TempPathFactory,
+    evidence: Callable[..., None],
+    harness_stopped: Callable[[Path], bool],
 ) -> None:
     """A44, R26, R20, D24: the built app, with no terminal or uv, on a fresh profile.
 
@@ -266,27 +244,32 @@ def test_the_built_app_works_and_survives_close_kill_crash_and_a_second_instance
         assert fifth.wait(20) == 0
         assert replaced.get("/v1/status").json()["pid"] == successor
     assert replaced.post("/v1/shutdown").json() == {"status": "stopping"}
-    eventually(lambda: stopped(successor))
+    assert harness_stopped(state_dir)
     (state_dir / "harness.json").unlink()
 
     if LINUX:
         owning = launch()  # a shell that started its own harness stops it on a real Quit
-        owned = eventually(lambda: harness(state_dir)).get("/v1/status").json()["pid"]
+        eventually(lambda: harness(state_dir))
         press("ctrl+q")
         assert owning.wait(20) == 0
-        eventually(lambda: stopped(owned))
+        assert harness_stopped(state_dir)
         (state_dir / "harness.json").unlink()
-    record(
+    seen = (
+        "the window's own first discovery reached the bundled harness; a second instance "
+        "attached to the same harness; the harness outlived a killed shell; reopen replayed the "
+        "same history without repeating discovery; a crashed harness was replaced with the "
+        "history intact; the stop request ended the harness"
+    )
+    if LINUX:
+        seen += "; a real window close detached and a real Quit stopped the owned harness"
+    evidence(
         "A44",
-        "one authenticated harness per profile; history preserved across second instance, "
-        "kill, reopen and harness crash; quit stops the owned harness; close only detaches",
-        "second instance attached to the same harness; harness outlived a killed shell; reopen "
-        "replayed the same history without repeating discovery; a crashed harness was replaced "
-        "with the history intact; the stop request ended the harness"
-        + ("; real window close detached and real Quit stopped the owned harness" if LINUX else ""),
-        [
-            "sleep and wake not exercised",
-            "no jobs exist yet, so pause-then-quit has nothing to pause",
-        ]
-        + ([] if LINUX else ["the Quit menu item and window close are not scripted on macOS"]),
+        "desktop-lifecycle",
+        "built desktop bundle on a temporary profile",
+        "one authenticated harness per profile; history preserved across second instance, kill, "
+        "reopen and harness crash; quit stops the owned harness; close only detaches",
+        seen,
+        "sleep and wake not exercised",
+        "no jobs exist yet, so pause-then-quit has nothing to pause",
+        *([] if LINUX else ["the Quit menu item and window close are not scripted on macOS"]),
     )
