@@ -131,3 +131,17 @@ def hardware() -> None:
     for probe in snapshot["probes"]:
         if probe["status"] != "observed":
             typer.echo(f"{probe['name']}: {probe['status']}: {probe['safe_summary']}")
+
+
+@app.command()
+def plan() -> None:
+    """Propose a provisional plan from the latest observed hardware and report it."""
+    try:
+        proposed = _call("POST", "/v1/plan")
+    except DspError as error:
+        raise _fail(error) from error
+    typer.echo(f"{proposed['feasibility_outcome']}: {proposed['recommendation']}")
+    for option in proposed["alternatives"]:
+        typer.echo(f"{option['option_id']} is {option['disposition']}: {option['reason']}")
+    for condition in proposed["required_conditions"]:
+        typer.echo(f"needs: {condition}")

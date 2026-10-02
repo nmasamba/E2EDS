@@ -16,6 +16,7 @@ from dsp.adapters.store_fs import ContentStore
 from dsp.application.discovery import discover
 from dsp.application.grants import grant_folder, revoke, summary
 from dsp.application.packs import profile_granted
+from dsp.application.planning import propose_plan
 from dsp.contracts.errors import DspError, ErrorCode, TrustedContext
 
 STATUS = {ErrorCode.INPUT_INVALID: 400, ErrorCode.FORBIDDEN: 403, ErrorCode.NOT_FOUND: 404}
@@ -30,7 +31,7 @@ def _id() -> str:
 
 
 def mount(app: FastAPI, state_dir: Path) -> None:
-    """Add the workspace routes: grants, profiling through them and discovery, on one ledger.
+    """Add the workspace routes: grants, profiling, discovery and planning, on one ledger.
 
     Every caller is the local owner, established by the token the guard has already checked;
     nothing in a request body is treated as authority.
@@ -80,6 +81,17 @@ def mount(app: FastAPI, state_dir: Path) -> None:
         if not snapshots:
             raise DspError(ErrorCode.NOT_FOUND, "nothing has been discovered yet")
         return snapshots[-1]
+
+    @app.post("/v1/plan")
+    def create_plan() -> dict[str, Any]:
+        return propose_plan(ctx, ledger=ledger(), new_id=_id)
+
+    @app.get("/v1/plan")
+    def latest_plan() -> dict[str, Any]:
+        plans = ledger().current(ctx, "WorkflowPlan")
+        if not plans:
+            raise DspError(ErrorCode.NOT_FOUND, "no plan has been proposed yet")
+        return plans[-1]
 
     @app.post("/v1/profiles")
     def create_profile(

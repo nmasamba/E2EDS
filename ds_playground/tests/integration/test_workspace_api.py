@@ -9,6 +9,7 @@ from typer.testing import CliRunner
 from dsp.adapters.ledger_sqlite import SqliteLedger
 from dsp.application.packs import verify_pack
 from dsp.contracts.errors import ErrorCode, TrustedContext
+from dsp.contracts.schemas import validate
 from dsp.harness import workspace
 from dsp.harness.app import DEV_ORIGIN, SHELL_ORIGIN, create_app
 from dsp.interfaces.cli import app as cli
@@ -244,6 +245,53 @@ def test_the_workspace_stays_usable_when_discovery_finds_nothing(
     assert granted(api, folders["data"], "source_root").startswith("grant-")
 
 
+def test_a_provisional_plan_follows_discovery_and_supersedes_the_last(
+    api: TestClient, tmp_path: Path
+) -> None:
+    """R19, A32: the window gets a schema-valid plan that authorises nothing and names its gaps."""
+    early = api.post("/v1/plan", headers=WINDOW)
+    assert (early.status_code, early.json()["code"]) == (400, ErrorCode.INPUT_INVALID)
+    assert api.get("/v1/plan", headers=WINDOW).status_code == 404
+    snapshot = api.post("/v1/hardware", headers=WINDOW).json()
+    first = api.post("/v1/plan", headers=WINDOW).json()
+    second = api.post("/v1/plan", headers=WINDOW).json()
+    validate("WorkflowPlan", second)
+    assert (first["feasibility_outcome"], first["authorises_execution"]) == (
+        "INSUFFICIENT_EVIDENCE",
+        False,
+    )
+    assert first["recommendation"] == (
+        "local-native-draft is unqualified: this compute profile has not been qualified."
+    )
+    assert first["hardware_snapshot_refs"][0]["id"] == snapshot["id"]
+    assert (first["supersedes_ref"], second["supersedes_ref"]["id"]) == (None, first["id"])
+    assert api.get("/v1/plan", headers=WINDOW).json() == second
+    events = SqliteLedger(tmp_path / "home" / "ledger.sqlite", str).events(TrustedContext.local())
+    assert [event["type"] for event in events] == [
+        "discovery.finished",
+        "plan.proposed",
+        "plan.proposed",
+    ]
+    assert api.post("/v1/plan").status_code == 401
+
+
+def test_a_plan_from_unobserved_hardware_says_unknown(
+    api: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A31, A32: with every probe denied the plan is still proposed and its option is unknown."""
+
+    def denied() -> dict[str, Any]:
+        raise PermissionError
+
+    monkeypatch.setattr(workspace, "probes", lambda state: {"memory": denied})
+    api.post("/v1/hardware", headers=WINDOW)
+    proposed = api.post("/v1/plan", headers=WINDOW).json()
+    assert proposed["recommendation"] == (
+        "local-native-draft is unknown: its hardware has not been observed."
+    )
+    assert proposed["feasibility_outcome"] == "INSUFFICIENT_EVIDENCE"
+
+
 def run(*arguments: object) -> Any:
     """Invoke the CLI in-process; it talks to a real harness on the temporary profile."""
     return CliRunner().invoke(cli, [str(argument) for argument in arguments])
@@ -283,3 +331,16 @@ def test_the_cli_reports_observed_hardware(home: Path) -> None:
     assert "GiB memory" in first
     assert "unknown" not in first
     assert second.startswith("accelerators ")
+
+
+def test_the_cli_reports_a_provisional_plan(home: Path) -> None:
+    """R19: `dsp plan` needs discovery first, then prints the outcome, the reason and the gaps."""
+    early = run("plan")
+    assert (early.exit_code, "INPUT_INVALID" in early.output) == (2, True)
+    assert run("hardware").exit_code == 0
+    lines = run("plan").output.splitlines()
+    assert lines[0].startswith("INSUFFICIENT_EVIDENCE: local-native-draft is unqualified")
+    assert (
+        lines[1]
+        == "needs: Recheck capacity and reserve it at dispatch; this plan authorises nothing."
+    )
