@@ -24,6 +24,7 @@ dev = [
     "ruff==0.16.10",
     "types-jsonschema==4.26.0.20260518",
 ]
+build = ["pyinstaller==6.22.3"]
 
 [build-system]
 requires = ["hatchling"]
