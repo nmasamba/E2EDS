@@ -4,9 +4,9 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 
 ## Now
 
-- **Sprint:** 1 — M0 foundations and thin slice
-- **Claimed prompt:** 1.5 (gate) — awaiting CI
-- **Branch:** `sprint-1-foundations`
+- **Sprint:** 2 — M1 desktop shell, discovery and plan (Sprint 1 is merged to `main` through PR #1)
+- **Claimed prompt:** 2.2 (shell scaffold); 2.1 (harness) is done
+- **Branch:** `sprint-2-desktop`, with a pull request open against `main` for prompt 2.1
 
 ## Done
 
@@ -18,9 +18,10 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 
 | Sprint | Milestone | State | Gate outcome |
 |---|---|---|---|
-| 0 | Setup | done except the model download (0.3), still running | G0: PASS for synthetic scope |
-| 1 | M0 foundations and thin slice | built; gate green locally on macOS and linux/arm64 | see below |
-| 2–11 | M1 | not started | — |
+| 0 | Setup | done | G0: PASS for synthetic scope |
+| 1 | M0 foundations and thin slice | merged to `main` (PR #1) | PASS, see below |
+| 2 | M1 desktop, discovery, plan | 2.1 done (106 tests green on macOS and linux/arm64) | — |
+| 3–11 | M1 | not started | — |
 | 12–20 | M1B, M1C, M1R, M2, M3, M3Z, M4 | not started | — |
 
 ## Environment observed (2026-10-01, this Mac)
@@ -34,6 +35,10 @@ into `~/.local/share/dsp/llama.cpp/build/bin/llama-server` (reports 0.4.1-dev, D
 `10f66aeed2d40ae707ee189748738ac6db97995ff18990dafa9c0e5b73d94128`, dynamically linked to the libraries beside
 it). Absent: Tesseract (no OCR profile is planned without owner approval).
 
+Assistant model (Sprint 0.3, verified 2026-10-02): `~/.local/share/dsp/models/Qwen3-8B-Q4_K_M.gguf`,
+5,027,783,488 bytes, SHA-256 `d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785` — matches the
+suite's pinned digest and the size and digest the source reports for revision `7c41481f…`. Not loaded yet.
+
 ## Sprint 1 gate (2026-10-01)
 
 - `make verify` on macOS arm64: format, lint, mypy strict, boundaries all clean; **95 passed**, coverage 99%.
@@ -42,12 +47,12 @@ it). Absent: Tesseract (no OCR profile is planned without owner approval).
 - Live run on both: `dsp profile orders.csv --out out/` on the 2,000-order fixture exported `v1` (3 files),
   `dsp verify` printed `verified`, a second run produced `v2`, and `manifest.json` has the same SHA-256 on
   macOS and Linux (`6aeb5ad8…5cadf`).
+- CI on PR #1: both jobs passed (`ubuntu-24.04` x86-64 and macOS).
 - Gate outcome: **PASS** for Sprint 1 scope. No acceptance scenario (A##) is in scope for this sprint.
 
 ## Open defects and gaps
 
-- Linux x86-64 is verified only by CI, not locally (see `docs/decisions.md`).
-- The assistant model download (Sprint 0.3) is still running; its SHA-256 has not been verified yet.
+- Linux x86-64 is verified by CI only; the local container run is linux/arm64.
 
 ## Waiting on the owner
 
@@ -55,6 +60,6 @@ Nothing. Standing approvals are in `docs/decisions.md`.
 
 ## Handoff note
 
-Sprint 1 is built and committed on `sprint-1-foundations`. Next: confirm CI is green on both runners, then
-start Sprint 2 at prompt 2.1 (harness). Rust is installed but keg-only: prepend `/opt/homebrew/opt/rustup/bin`
+Sprint 1 is merged to `main` (PR #1).
+Sprint 2 is on `sprint-2-desktop`: 2.1 (harness, `dsp status`) is done; continue at 2.2 (Tauri shell). Rust is installed but keg-only: prepend `/opt/homebrew/opt/rustup/bin`
 and `~/.cargo/bin` to PATH for cargo.

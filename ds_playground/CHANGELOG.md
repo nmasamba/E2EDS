@@ -1,5 +1,10 @@
 # Changelog
 
+## Sprint 2 — in progress
+
+- Local harness: one authenticated, loopback-only instance per user profile; `dsp status` starts or
+  reconnects to it.
+
 ## Sprint 1 — foundations (2026-10-01)
 
 - `dsp profile <file.csv> --out <folder>`: full-file CSV profile exported as a new, hash-verified version
