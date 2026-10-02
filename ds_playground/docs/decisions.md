@@ -170,3 +170,67 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
 - **2026-10-02 — S2 — ASSUMPTION — Linux end-to-end artifact** — the Linux desktop test unpacks the built deb
   (`dpkg-deb --extract`) and drives that app with tauri-driver 2.1.0 and WebKitWebDriver; it speaks WebDriver
   over `httpx`, so no Selenium dependency. The AppImage is built in CI but not launched.
+- **2026-10-02 — S2 — DECISION — who may turn a path into a grant** — `POST /v1/grants` accepts a path only
+  from a request with no `Origin` header: the shell's Rust side and the CLI. A page cannot remove or forge
+  that header, so the window, even with the owner token, cannot grant a path; it can list and revoke. The
+  renderer asks the shell to open the picker and receives a handle and folder name. Alternative: a second,
+  narrower credential for the window; more machinery for the same result today.
+- **2026-10-02 — S2 — DECISION — `dsp profile` runs in the harness** — as the 2.1 entry planned, the command
+  now goes through the harness with grants, which closes "two ledger openers": the harness process is the
+  only ledger writer (one connection per request; SQLite's write lock serialises them). `dsp verify` stays
+  local; it reads only the pack. Consequence: the gate takes about 27 s instead of 8 s, because the CLI tests
+  start real harness processes.
+- **2026-10-02 — S2 — ASSUMPTION — what a CLI command grants** — `dsp profile FILE --out FOLDER` grants that
+  one file as a source and that folder as an output root; `dsp grant` grants a whole folder. Grants last until
+  revoked and are reused when the same path is granted again for the same purpose.
+- **2026-10-02 — S2 — ASSUMPTION — FolderGrant contract** — an app-owned `FolderGrant` 0.1.0 is the only
+  record that holds the machine path. Events, answers and the window carry the handle and a label, which is
+  the folder's own name (one path component, not a path). Revoking writes a successor revision; history stays.
+- **2026-10-02 — S2 — ASSUMPTION — proposed OutputBinding** — an output grant also records a suite
+  `OutputBinding` 0.6.0 as a planning record: `state: proposed`, no authorisation or receipt, `root_handle`
+  the grant, `relative_directory: "."`. No project or output object exists yet, so `project_ref` is the
+  constant `project-local` and `output_ref` is `output-<handle>` with a null digest; `max_export_bytes` is the
+  suite example's 1 GiB and is declared, not enforced. Nothing reads the binding yet; the export in Sprint 8
+  activates it against a real output.
+- **2026-10-02 — S2 — FINDING — a planning binding cannot be revoked in the suite schema** — `planning_only:
+  true` forces `state: proposed`. Revocation is therefore recorded on the FolderGrant; a binding whose handle
+  is revoked resolves nothing.
+- **2026-10-02 — S2 — ASSUMPTION — limits of the use-time check** — a path is resolved, with every symlink
+  followed, and compared with the granted root each time it is used. A local process that swaps a link
+  between that check and the open could still win the race; ordinary local-user compromise is outside the
+  suite's promise, and generated code gets read-only inputs in the Sprint 4 sandbox. A folder that contains
+  the harness's own state directory is not refused.
+- **2026-10-02 — S2 — DEFECT — host path in the export event (fixed)** — since Sprint 1 the `export.committed`
+  event and ExportReceipt held the output folder's host path in `destination`. It now holds the grant handle.
+  Found by asserting that no ledger event contains a path after a profile.
+- **2026-10-02 — S2 — DEFECT — the frozen harness could not start once it validated contracts (fixed)** —
+  PyInstaller did not bundle the contract schemas or the `rfc3987_syntax` grammar, so the sidecar crashed on
+  import as soon as the harness used the validator. `make harness-bin` now collects both. Found by the
+  built-app test, which now also profiles a real file through the bundled harness.
+- **2026-10-02 — S2 — DECISION — folder dialog and the shell's request** — `rfd` 0.16.0 directly (the version
+  Tauri's dialog plugin wraps) with its GTK 3 backend on Linux, so the dialog is an ordinary in-process
+  window; the plugin would add the filesystem plugin crate, and the portal backend needs a desktop portal
+  service. The dialog is created on the main thread and awaited off it, as the plugin does. `ureq` carries
+  the chosen path to the harness; the alternative, passing it through the renderer, is what C23 forbids.
+- **2026-10-02 — S2 — FINDING — what the window can call** — the preflight allows only the `authorization`
+  header, so a page cannot send a JSON body: the window can use `GET` and body-less `POST` (revoke) only, and
+  `/v1/profiles` is reachable from the CLI alone. A prompt that lets the window start work must allow
+  `content-type` for the shell origin.
+- **2026-10-02 — S2 — FINDING — what is and is not automated for the folder dialog** — Automated: the
+  shell's request that turns a chosen path into a grant (a Rust test against a real harness, run on both
+  OSes by `make e2e`); the window's list, add, cancel, remove and error states (Playwright against a real
+  harness, with Node standing in for the shell); and, on Linux in CI, the built app opening the real GTK
+  dialog and granting nothing when it is cancelled. Not automated on either OS: choosing a folder in the
+  real dialog. On Linux three attempts with xdotool failed (no window manager; then a window manager with
+  activation; then repeated accept keys with screenshots): the typed path reached the dialog's location
+  field but GTK kept its accept button disabled. On macOS the dialog cannot be scripted from this session;
+  checked once by hand that it opens: with a scratch renderer that called the command on load, a new AppKit
+  open-panel service process appeared and went away with the app.
+- **2026-10-02 — S2 — FINDING — tests were mutation-checked** — each guard added in 2.3 (path containment,
+  revoked and wrong-purpose handles, the no-Origin rule, the file check, the active-only list, the
+  structured internal error, the window's Remove, handles kept out of the page) was broken in turn to
+  confirm a test fails. One guard was found redundant this way and removed (re-resolving the granted root).
+- **2026-10-02 — S2 — DEFECT — a late refresh could wipe a newer message in the Folders view (fixed)** — the
+  view started a list refresh on load and another update on a click; if the first finished second it cleared
+  the newer result, so an error could vanish. It showed up as one failed renderer test on the slower Linux
+  runner. Updates now run one at a time in order, and a test delays the first refresh to hold the race open.

@@ -27,10 +27,12 @@ Exact versions are pinned in `desktop/package.json` with `pnpm-lock.yaml`, and i
 | Package | Why | Licence (upstream) | Alternative |
 |---|---|---|---|
 | tauri 2.12.0, tauri-build 2.7.1 (crates) | The native window, menu and sidecar bundling (suite pin) | Apache-2.0 OR MIT | Electron; the suite's stated fallback |
+| rfd 0.16.0 (crate, `gtk3`) | The native folder dialog; the version Tauri's own dialog plugin uses | MIT | tauri-plugin-dialog; it also brings the filesystem plugin crate |
 | serde_json 1.0.151 (crate) | Reads `harness.json` and shapes the one command's answer | MIT OR Apache-2.0 | hand-parsing JSON |
+| ureq 3.4.2 (crate, `json` only, no TLS) | The shell's own request that gives a picked folder to the harness | MIT OR Apache-2.0 | reqwest; far larger |
 | @tauri-apps/api 2.12.0 | The renderer's call to the one shell command | Apache-2.0 OR MIT | calling the injected IPC object directly |
 | react 19.3.0, react-dom 19.3.0 | Renderer views (owner default in `docs/decisions.md`) | MIT | plain DOM code |
 
 Development only: @tauri-apps/cli, vite, typescript, @types/node, @types/react, @types/react-dom,
 @playwright/test, @axe-core/playwright (MPL-2.0; test-time only, not shipped). CI also installs tauri-driver
-2.1.0 from crates.io for the Linux end-to-end test.
+2.1.0 from crates.io, and xdotool from the runner's package archive, for the Linux end-to-end test.

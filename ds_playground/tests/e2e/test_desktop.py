@@ -12,6 +12,9 @@ from pathlib import Path
 import httpx
 import pytest
 
+from dsp.application.packs import verify_pack
+from fixtures.operations import write_orders
+
 pytestmark = pytest.mark.desktop
 
 BUNDLE = Path(__file__).parents[2] / "desktop/src-tauri/target/release/bundle"
@@ -29,31 +32,55 @@ def eventually[T](probe: Callable[[], T]) -> T:
             time.sleep(0.2)
 
 
-def status(state_dir: Path) -> dict[str, object]:
-    """Answer of the harness that published its port and token in ``state_dir``."""
+def harness(state_dir: Path) -> httpx.Client:
+    """Return a client, with the owner's token, for the harness that answers on ``state_dir``."""
     state = json.loads((state_dir / "harness.json").read_text())
-    response = httpx.get(
-        f"http://127.0.0.1:{state['port']}/v1/status",
+    client = httpx.Client(
+        base_url=f"http://127.0.0.1:{state['port']}",
         headers={"Authorization": f"Bearer {state['token']}"},
+        timeout=60,
     )
-    answer: dict[str, object] = response.raise_for_status().json()
-    return answer
+    client.get("/v1/status").raise_for_status()
+    return client
+
+
+def xdotool(*arguments: str) -> str:
+    """Run one xdotool command against the virtual display and return what it printed."""
+    done = subprocess.run(
+        ["xdotool", *arguments], check=True, capture_output=True, text=True, timeout=60
+    )
+    return done.stdout
+
+
+CLICK_ADD_SOURCE = (
+    "[...document.querySelectorAll('button')]"
+    ".find((button) => button.textContent.startsWith('Add source folder')).click()"
+)
+CALL_UNGRANTED_COMMAND = (
+    "const done = arguments[arguments.length - 1];"
+    "window.__TAURI_INTERNALS__.invoke('plugin:app|version')"
+    ".then(() => done('allowed'), (error) => done(String(error)))"
+)
 
 
 def test_the_built_app_starts_its_bundled_harness_and_connects(
     state_dir: Path, tmp_path_factory: pytest.TempPathFactory
 ) -> None:
-    """R26: launched on a fresh profile with no terminal or uv, the app brings up its own harness.
+    """R26, C23: launched on a fresh profile with no terminal or uv, the app works end to end.
 
-    On Linux the window is driven through WebDriver and must show "connected". macOS has no
-    WebDriver for its webview, so there only the harness the app started is checked.
+    On Linux the window is driven through WebDriver: it must show "connected", refuse a command
+    its capability does not grant, open the real native folder dialog and, when that is cancelled
+    (xdotool, which needs a window manager on the display), grant nothing. Choosing a folder in
+    the dialog is not automated on either OS. macOS has no WebDriver for its webview, so there
+    only the harness the app started is checked. On both, the bundled harness then profiles a
+    real file through grants and refuses a path outside them.
     """
     environment = {**os.environ, "DSP_HOME": str(state_dir)}
     if sys.platform == "darwin":
         (binary,) = BUNDLE.glob("macos/*.app/Contents/MacOS/dsp-desktop")
         app = subprocess.Popen([binary], env=environment)
         try:
-            answer = eventually(lambda: status(state_dir))
+            bundled = eventually(lambda: harness(state_dir))
             assert app.poll() is None
         finally:
             app.terminate()
@@ -70,20 +97,62 @@ def test_the_built_app_starts_its_bundled_harness_and_connects(
                 created = web.post("/session", json={"capabilities": {"alwaysMatch": options}})
                 session = created.raise_for_status().json()["value"]["sessionId"]
 
-                def shown() -> str:
-                    script = {"script": "return document.body.innerText", "args": []}
-                    reply = web.post(f"/session/{session}/execute/sync", json=script)
-                    text: str = reply.raise_for_status().json()["value"]
-                    assert "Harness connected" in text, text
+                def run(script: str, mode: str = "sync") -> str:
+                    reply = web.post(
+                        f"/session/{session}/execute/{mode}", json={"script": script, "args": []}
+                    )
+                    value: str = reply.raise_for_status().json()["value"]
+                    return value
+
+                def shown(expected: str) -> str:
+                    text = run("return document.body.innerText")
+                    assert expected in text, text
                     return text
 
                 try:
-                    text = eventually(shown)
+                    text = eventually(lambda: shown("Harness connected"))
+                    denied = run(CALL_UNGRANTED_COMMAND, "async")
+                    assert "not allowed" in denied, denied
+                    run(CLICK_ADD_SOURCE)
+                    visible = ("--onlyvisible", "--name", "Choose a source folder")
+                    dialog = xdotool("search", "--sync", *visible).split()[-1]
+                    xdotool("windowactivate", "--sync", dialog, "key", "Escape")
+
+                    def dismissed() -> str:
+                        found = ["xdotool", "search", *visible]
+                        still_open = subprocess.run(found, capture_output=True)
+                        assert still_open.returncode, "the folder dialog is still open"
+                        return shown("No folders granted yet.")
+
+                    assert "Could not update folders" not in eventually(dismissed)
                 finally:
                     web.delete(f"/session/{session}")  # quits the app
         finally:
             driver.terminate()
             driver.wait(10)
-        answer = status(state_dir)
+        bundled = harness(state_dir)
+        assert bundled.get("/v1/grants").json() == {"grants": []}
+        answer = bundled.get("/v1/status").json()
         assert f"version {answer['version']} · process {answer['pid']}" in text
-    assert (answer["status"], answer["version"]) == ("ok", version("dsp"))
+    assert bundled.get("/v1/status").json() | {"pid": 0} == {
+        "status": "ok",
+        "pid": 0,
+        "version": version("dsp"),
+    }
+
+    work = tmp_path_factory.mktemp("work")
+    write_orders(work / "orders.csv", orders=50, accounts=10)
+    (work / "out").mkdir()
+    handles = [
+        bundled.post("/v1/grants", json={"purpose": purpose, "path": str(work / name)}).json()
+        for purpose, name in (("source_root", "orders.csv"), ("output_root", "out"))
+    ]
+    request = {
+        "source_handle": handles[0]["handle"],
+        "relative_path": ".",
+        "output_handle": handles[1]["handle"],
+    }
+    assert bundled.post("/v1/profiles", json=request).json() == {"version": "v1", "files": 3}
+    assert verify_pack(work / "out" / "v1") == []
+    escape = bundled.post("/v1/profiles", json=request | {"relative_path": "../out"})
+    assert (escape.status_code, sorted(p.name for p in (work / "out").iterdir())) == (403, ["v1"])

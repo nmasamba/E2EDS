@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import AxeBuilder from "@axe-core/playwright";
@@ -29,17 +29,47 @@ async function startHarness(): Promise<Harness> {
   throw new Error("the harness did not start");
 }
 
-/** A browser has no Tauri runtime: answer the shell's one command the way the shell would. */
-async function open(page: Page, answer: { base_url: string; token: string }) {
+type Pick = (purpose: string) => Promise<unknown>;
+
+/**
+ * A browser has no Tauri runtime: answer the shell's two commands the way the shell would. The
+ * folder picker is played by ``pick``, which runs here in Node, outside the page, as Rust does.
+ */
+async function open(page: Page, answer: { base_url: string; token: string }, pick?: Pick) {
+  await page.exposeFunction("shellPick", pick ?? (async () => null));
   await page.addInitScript((harness) => {
+    const shell = window as unknown as { shellPick: (purpose: string) => Promise<unknown> };
     Object.assign(window, {
       __TAURI_INTERNALS__: {
-        invoke: async (command: string) =>
-          command === "harness" ? harness : Promise.reject(`${command} not allowed`),
+        invoke: async (command: string, args: { purpose: string }) => {
+          if (command === "harness") return harness;
+          if (command !== "grant_folder") return Promise.reject(`${command} not allowed`);
+          return shell.shellPick(args.purpose).catch((error: Error) => Promise.reject(error.message));
+        },
       },
     });
   }, answer);
   await page.goto("/");
+}
+
+/** One request to the harness from Node, which sends no Origin header: the CLI's position. */
+async function native(path: string, body?: object) {
+  const response = await fetch(`${harness.base_url}${path}`, {
+    method: body ? "POST" : "GET",
+    headers: { Authorization: `Bearer ${harness.token}`, "Content-Type": "application/json" },
+    body: body && JSON.stringify(body),
+  });
+  const answer: { handle: string; message: string; grants: { handle: string; label: string }[] } =
+    await response.json();
+  if (!response.ok) throw new Error(answer.message);
+  return answer;
+}
+
+/** A real folder under a temporary directory, granted the way the shell's picker grants it. */
+async function grant(purpose: string, name: string) {
+  const folder = join(mkdtempSync(join(tmpdir(), "dsp-folders-")), name);
+  mkdirSync(folder);
+  return { folder, ...(await native("/v1/grants", { purpose, path: folder })) };
 }
 
 async function expectNoAxeViolations(page: Page) {
@@ -52,6 +82,11 @@ test.beforeAll(async () => {
 });
 test.afterAll(() => {
   process.kill(harness.pid);
+});
+test.afterEach(async () => {
+  for (const active of (await native("/v1/grants")).grants) {
+    await native(`/v1/grants/${active.handle}/revoke`, {});
+  }
 });
 
 test("R26: shows connected with the harness version and pid", async ({ page }) => {
@@ -90,4 +125,101 @@ test("C23: the token is never stored, logged or rendered", async ({ page }) => {
     JSON.stringify([{ ...localStorage }, { ...sessionStorage }, document.cookie, document.body.innerHTML]),
   );
   expect(kept + logged.join()).not.toContain(harness.token);
+});
+
+test("R26: granted folders are listed by name and never by path", async ({ page }) => {
+  const source = await grant("source_root", "orders 2026");
+  await grant("output_root", "reports");
+  await open(page, harness);
+  await expect(page.getByRole("listitem")).toHaveText([
+    "Source folder: orders 2026Remove",
+    "Output folder: reportsRemove",
+  ]);
+  expect(await page.content()).not.toContain(tmpdir());
+  expect(await page.content()).not.toContain(source.handle);
+  await expectNoAxeViolations(page);
+});
+
+test("R26: a folder picked in the shell's dialog appears in the list", async ({ page }) => {
+  const asked: string[] = [];
+  await open(page, harness, async (purpose) => {
+    asked.push(purpose);
+    return grant(purpose, purpose === "source_root" ? "picked data" : "picked out");
+  });
+  await expect(page.getByText("No folders granted yet.")).toBeVisible();
+  await expectNoAxeViolations(page);
+  await page.getByRole("button", { name: "Add source folder…" }).click();
+  await expect(page.getByRole("listitem")).toHaveText(["Source folder: picked dataRemove"]);
+  await page.getByRole("button", { name: "Add output folder…" }).click();
+  await expect(page.getByRole("listitem")).toHaveCount(2);
+  expect(asked).toEqual(["source_root", "output_root"]);
+  expect((await native("/v1/grants")).grants.map((active) => active.label)).toEqual([
+    "picked data",
+    "picked out",
+  ]);
+  await expect(page.getByText("No folders granted yet.")).toHaveCount(0);
+});
+
+test("R26: a cancelled dialog changes nothing", async ({ page }) => {
+  await open(page, harness, async () => null);
+  await page.getByRole("button", { name: "Add output folder…" }).click();
+  await expect(page.getByText("No folders granted yet.")).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  expect((await native("/v1/grants")).grants).toEqual([]);
+});
+
+test("R26: Remove revokes the grant in the harness and keeps focus in the page", async ({ page }) => {
+  await grant("source_root", "keep");
+  await grant("output_root", "drop");
+  await open(page, harness);
+  await page.getByRole("button", { name: "Remove output folder drop" }).click();
+  await expect(page.getByRole("listitem")).toHaveText(["Source folder: keepRemove"]);
+  await expect(page.getByRole("heading", { name: "Folders" })).toBeFocused();
+  expect((await native("/v1/grants")).grants.map((active) => active.label)).toEqual(["keep"]);
+  await expectNoAxeViolations(page);
+});
+
+test("R26: a refused pick shows the harness's reason", async ({ page }) => {
+  await open(page, harness, () => native("/v1/grants", { purpose: "source_root", path: "/absent" }));
+  await page.getByRole("button", { name: "Add source folder…" }).click();
+  await expect(page.getByRole("alert")).toHaveText("Could not update folders: no such folder");
+  await expectNoAxeViolations(page);
+});
+
+test("R26: a slow earlier refresh does not wipe a newer problem", async ({ page }) => {
+  await page.route("**/v1/grants", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    await route.continue();
+  });
+  const listed = page.waitForResponse((response) => response.url().endsWith("/v1/grants"));
+  await open(page, harness, () => native("/v1/grants", { purpose: "source_root", path: "/absent" }));
+  await page.getByRole("button", { name: "Add source folder…" }).click();
+  await listed;
+  await page.waitForTimeout(300);
+  await expect(page.getByRole("alert")).toHaveText("Could not update folders: no such folder");
+});
+
+test("C23: the window itself cannot turn a path into a grant", async ({ page }) => {
+  const { folder } = await grant("output_root", "already granted");
+  await open(page, harness);
+  await expect(page.getByRole("listitem")).toHaveCount(1);
+  const outcomes = await page.evaluate(
+    async ({ base_url, token, path }) => {
+      const attempt = (type: string) =>
+        fetch(`${base_url}/v1/grants`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": type },
+          body: JSON.stringify({ purpose: "source_root", path }),
+        }).then(
+          (response) => response.status,
+          () => "blocked",
+        );
+      return [await attempt("application/json"), await attempt("text/plain")];
+    },
+    { ...harness, path: folder },
+  );
+  expect(outcomes).not.toContain(200);
+  expect((await native("/v1/grants")).grants.map((active) => active.label)).toEqual([
+    "already granted",
+  ]);
 });

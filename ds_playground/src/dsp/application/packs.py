@@ -5,6 +5,7 @@ from html import escape
 from pathlib import Path
 from typing import Any
 
+from dsp.application.grants import resolve
 from dsp.contracts.canonical import canonical_json, file_digest
 from dsp.contracts.errors import DspError, ErrorCode, TrustedContext
 from dsp.contracts.schemas import validate
@@ -38,6 +39,7 @@ def profile_and_export(
     source: Path,
     out_root: Path,
     *,
+    destination: str,
     ledger: Ledger,
     store: Store,
     exporter: Exporter,
@@ -49,6 +51,7 @@ def profile_and_export(
 
     Each step is recorded in the ledger. Artifacts are committed to the store before the job is
     recorded as succeeded, and the export is recorded only after its bytes are verified in place.
+    The receipt names the output folder by ``destination``, its grant handle, never by path.
     """
     size = source.stat().st_size
     if size == 0 or size > MAX_FILE_BYTES:
@@ -112,7 +115,7 @@ def profile_and_export(
         "id": f"export-{job}",
         "revision": "1.0.0",
         "output_sha256": manifest_digest,
-        "destination": str(out_root),
+        "destination": destination,
         "version": version,
         "files": [
             {"path": n, "sha256": d, "bytes": store.path(ctx, d).stat().st_size}
@@ -124,6 +127,42 @@ def profile_and_export(
     validate("ExportReceipt", receipt)
     ledger.commit(ctx, aggregate, 2, f"{job}:exported", "export.committed", receipt, [receipt])
     return receipt
+
+
+def profile_granted(
+    ctx: TrustedContext,
+    source_handle: str,
+    relative_path: str,
+    output_handle: str,
+    *,
+    ledger: Ledger,
+    store: Store,
+    exporter: Exporter,
+    profiler: Callable[[Path], dict[str, Any]],
+    clock: Callable[[], str],
+    new_id: Callable[[], str],
+) -> dict[str, Any]:
+    """Profile a file named under a source grant and export the pack into an output grant.
+
+    Both grants are checked here, when they are used, so a revoked handle or a path that leaves
+    its granted folder exports nothing.
+    """
+    source = resolve(ctx, source_handle, relative_path, "source_root", ledger=ledger)
+    out_root = resolve(ctx, output_handle, ".", "output_root", ledger=ledger)
+    if not source.is_file():
+        raise DspError(ErrorCode.NOT_FOUND, "no such file under the granted folder")
+    return profile_and_export(
+        ctx,
+        source,
+        out_root,
+        destination=output_handle,
+        ledger=ledger,
+        store=store,
+        exporter=exporter,
+        profiler=profiler,
+        clock=clock,
+        new_id=new_id,
+    )
 
 
 def verify_pack(directory: Path) -> list[str]:

@@ -1,3 +1,4 @@
+import logging
 import os
 import secrets
 from collections.abc import Awaitable, Callable
@@ -45,7 +46,11 @@ def create_app(token: str, port: int, dev: bool = False) -> FastAPI:
             )
         supplied = request.headers.get("authorization", "")
         if secrets.compare_digest(supplied.encode(), f"Bearer {token}".encode()):
-            response = await call_next(request)
+            try:
+                response = await call_next(request)
+            except Exception as error:
+                logging.getLogger(__name__).error("unhandled %s", type(error).__name__)
+                response = _refuse(ErrorCode.INTERNAL_ERROR, 500, "internal error")
         else:
             response = _refuse(ErrorCode.UNAUTHENTICATED, 401, "missing or wrong credential")
         response.headers.update(cors)

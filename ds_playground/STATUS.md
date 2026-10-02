@@ -5,9 +5,9 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 ## Now
 
 - **Sprint:** 2 — M1 desktop shell, discovery and plan (Sprint 1 is merged to `main` through PR #1)
-- **Claimed prompt:** none. 2.1 (harness) is merged through PR #2; 2.2 (shell scaffold) is done and waiting in
-  PR #3. Next is 2.3 (scoped folder grants).
-- **Branch:** `sprint-2-shell`, from `main` at `880e1fb`, with PR #3 open against `main`
+- **Claimed prompt:** none. 2.1 (PR #2) and 2.2 (PR #3) are merged; 2.3 (scoped folder grants) is done and
+  waiting in PR #4. Next is 2.4 (hardware discovery).
+- **Branch:** `sprint-2-grants`, from `main` at `0b18301`, with PR #4 open against `main`
 
 ## Done
 
@@ -21,7 +21,7 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 |---|---|---|---|
 | 0 | Setup | done | G0: PASS for synthetic scope |
 | 1 | M0 foundations and thin slice | merged to `main` (PR #1) | PASS, see below |
-| 2 | M1 desktop, discovery, plan | 2.1 merged; 2.2 done in PR #3 (see below); 2.3–2.8 not started | — |
+| 2 | M1 desktop, discovery, plan | 2.1 and 2.2 merged; 2.3 done in PR #4 (see below); 2.4–2.8 not started | — |
 | 3–11 | M1 | not started | — |
 | 12–20 | M1B, M1C, M1R, M2, M3, M3Z, M4 | not started | — |
 
@@ -65,6 +65,24 @@ suite's pinned digest and the size and digest the source reports for revision `7
   launched the app unpacked from the deb through WebDriver, read "Harness connected" with the harness's
   version and process, and quit: renderer 4 passed, desktop 1 passed.
 
+## Prompt 2.3 — scoped folder grants (2026-10-02)
+
+- `make verify` on macOS arm64: **168 passed, 1 deselected**, coverage 95.88%. `make verify-linux` (container,
+  linux/arm64): **168 passed, 1 deselected**, coverage 95.88%.
+- `make desktop-build` then `make e2e` on macOS: renderer **11 passed**, shell (Rust, real harness)
+  **1 passed**, built app **1 passed**. The `.app` is 45.51 MiB now that the frozen harness carries
+  DuckDB and the contract schemas.
+- CI on `998226c` (run 37029137568): `verify` and `desktop` green on `ubuntu-24.04` and macOS. On Linux the
+  built app, unpacked from the deb, showed "connected", refused a command its capability does not grant,
+  opened the real GTK folder dialog and granted nothing when it was cancelled; then its bundled harness
+  profiled a file through grants and refused a path outside them: renderer 10 passed, shell 1 passed, built
+  app 1 passed. The next run failed one renderer test on Linux: a real race in the Folders view, fixed with
+  an eleventh test that holds the race open (`docs/decisions.md`).
+- Run for real with the installed CLI on a temporary profile: `dsp status`, `dsp grant`, `dsp profile`,
+  `dsp verify`, `dsp grants`, `dsp revoke`. Afterwards no ledger event held a host path; only the four
+  FolderGrant records did.
+- ID trace for Sprint 2 so far: R26 and A44 appear in tests; D19, D24, R19 and R20 belong to prompts 2.4–2.7.
+
 ## Open defects and gaps
 
 - Linux x86-64 is verified by CI only; the local container run is linux/arm64.
@@ -74,6 +92,14 @@ suite's pinned digest and the size and digest the source reports for revision `7
 - Linux: the desktop end-to-end test has run only in CI (x86-64). The AppImage is built but never launched;
   the test launches the app unpacked from the deb. No Linux arm64 bundle is built.
 - The Quit menu item is not exercised by a test on either OS.
+- **Choosing a folder in the native dialog is not automated on either OS.** Everything around it is tested
+  (see `docs/decisions.md`, 2026-10-02, "what is and is not automated for the folder dialog"), and the dialog
+  is known to open on both, but nobody has yet picked a folder in the real app and seen it listed. That one
+  manual check is waiting on the owner.
+- The window cannot yet send a request with a body (the preflight allows only `authorization`), so profiling
+  is reachable from the CLI only.
+- A proposed OutputBinding declares `max_export_bytes` that nothing enforces yet, and names a placeholder
+  project and output.
 
 ## Waiting on the owner
 
@@ -81,12 +107,16 @@ Nothing. Standing approvals are in `docs/decisions.md`.
 
 ## Handoff note
 
-Sprint 1 (PR #1) and prompt 2.1 (PR #2: harness, `dsp status`) are merged to `main`. Prompt 2.2 (Tauri shell)
-is done on `sprint-2-shell` and waiting for the owner in PR #3; merging is the owner's. **Next is prompt 2.3**
-(scoped folder grants), on a new branch from `main` once PR #3 is merged.
+Sprint 1 (PR #1), prompt 2.1 (PR #2) and prompt 2.2 (PR #3) are merged to `main`. Prompt 2.3 (scoped folder
+grants) is done on `sprint-2-grants` and waiting for the owner in PR #4; merging is the owner's. **Next is
+prompt 2.4** (hardware discovery), on a new branch from `main` once PR #4 is merged.
 
-Desktop notes for the next session: the Makefile puts the keg-only Rust on PATH for its own targets; outside
-make, prepend `/opt/homebrew/opt/rustup/bin` and `~/.cargo/bin`. `make e2e` needs `make desktop-build` first
-and Playwright's Chromium (`pnpm --dir desktop exec playwright install chromium`). The dev window is refused
-by a harness that was not spawned with `--dev`, so stop any running harness before `make desktop-dev`. The
-harness keeps running after the window quits until 2.7 defines the lifecycle.
+Notes for the next session: every CLI command except `dsp verify` now goes through the harness, so tests
+that call the CLI use the `home` fixture, which stops the harness they start. The frozen sidecar must be
+rebuilt (`make desktop-build`) after any Python change before `make e2e`; new package data or lazily loaded
+modules need a `--collect-data` or hidden-import flag in `make harness-bin`, and the built-app test will show
+it. The Makefile puts the keg-only Rust on PATH for its own targets; outside make, prepend
+`/opt/homebrew/opt/rustup/bin` and `~/.cargo/bin`. `make e2e` needs Playwright's Chromium
+(`pnpm --dir desktop exec playwright install chromium`). The dev window is refused by a harness that was not
+spawned with `--dev`, so stop any running harness before `make desktop-dev`. The harness keeps running after
+the window quits until 2.7 defines the lifecycle.

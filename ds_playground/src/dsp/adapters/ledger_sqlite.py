@@ -107,6 +107,15 @@ class SqliteLedger:
         loaded: dict[str, Any] = json.loads(row[0])
         return loaded
 
+    def current(self, ctx: TrustedContext, kind: str) -> list[dict[str, Any]]:
+        """Return the latest revision of every object of one kind in this tenant, oldest first."""
+        rows = self._db.execute(
+            "SELECT body FROM objects WHERE rowid IN (SELECT MAX(rowid) FROM objects"
+            " WHERE tenant = ? AND kind = ? GROUP BY id) ORDER BY rowid",
+            (ctx.tenant, kind),
+        ).fetchall()
+        return [json.loads(row[0]) for row in rows]
+
     def events(self, ctx: TrustedContext, after: int = 0) -> list[dict[str, Any]]:
         """Return this tenant's events after a cursor, in commit order, for replay."""
         rows = self._db.execute(
