@@ -86,15 +86,16 @@ function Folders({ harness, revision }: { harness: Harness; revision: number }) 
   const heading = useRef<HTMLHeadingElement>(null);
   const queue = useRef(Promise.resolve());
 
-  // One at a time, in order: a refresh that finishes late must not undo a newer change or problem.
+  // One at a time, in order, so a refresh that finishes late cannot undo a newer change. Only
+  // the owner's own action sets or clears the problem; a background refresh leaves it alone.
   const attempt = (change?: () => Promise<unknown>) =>
     (queue.current = queue.current.then(async () => {
       try {
         await change?.();
         setGrants((await call<{ grants: Grant[] }>(harness, "/v1/grants")).grants);
-        setProblem("");
+        if (change) setProblem("");
       } catch (error) {
-        setProblem(error instanceof Error ? error.message : String(error));
+        if (change) setProblem(error instanceof Error ? error.message : String(error));
       }
     }));
   useEffect(() => {

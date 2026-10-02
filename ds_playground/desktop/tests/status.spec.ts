@@ -214,6 +214,19 @@ test("R26: a refused pick shows the harness's reason", async ({ page }) => {
   await expectNoAxeViolations(page);
 });
 
+test("R26: a refresh caused by someone else's change keeps the owner's problem", async ({ page }) => {
+  await open(page, harness, () => native("/v1/grants", { purpose: "source_root", path: "/absent" }));
+  await page.getByRole("button", { name: "Add source folder…" }).click();
+  await expect(page.getByRole("alert")).toHaveText("Could not update folders: no such folder");
+  await grant("output_root", "granted elsewhere");
+  await expect(folders(page).getByRole("listitem")).toHaveText([
+    "Output folder: granted elsewhereRemove",
+  ]);
+  await expect(page.getByRole("alert")).toHaveText("Could not update folders: no such folder");
+  await page.getByRole("button", { name: "Remove output folder granted elsewhere" }).click();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
 test("R26: a slow earlier refresh does not wipe a newer problem", async ({ page }) => {
   await page.route("**/v1/grants", async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 600));
