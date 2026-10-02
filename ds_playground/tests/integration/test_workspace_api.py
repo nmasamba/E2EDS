@@ -116,7 +116,9 @@ def test_a_profile_through_grants_exports_a_verified_pack(
     assert (first.status_code, first.json()) == (200, {"version": "v1", "files": 3})
     assert verify_pack(folders["out"] / "v1") == []
     assert profiled(api, source, "orders.csv", output).json()["version"] == "v2"
-    assert str(tmp_path) not in first.text
+    events = SqliteLedger(tmp_path / "home" / "ledger.sqlite", str).events(TrustedContext.local())
+    assert events[-1]["body"]["destination"] == output
+    assert str(tmp_path) not in first.text + json.dumps(events)
 
 
 def test_grants_are_enforced_when_a_profile_uses_them(

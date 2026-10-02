@@ -216,6 +216,7 @@ def test_a_crash_mid_job_leaves_no_success_and_no_output(tmp_path: Path, out: Pa
             CTX,
             _csv(tmp_path, "a\n1\n"),
             out,
+            destination="grant-out",
             ledger=ledger,
             store=ContentStore(tmp_path / "store"),
             exporter=export_fs,

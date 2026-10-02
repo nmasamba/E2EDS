@@ -39,6 +39,7 @@ def profile_and_export(
     source: Path,
     out_root: Path,
     *,
+    destination: str,
     ledger: Ledger,
     store: Store,
     exporter: Exporter,
@@ -50,6 +51,7 @@ def profile_and_export(
 
     Each step is recorded in the ledger. Artifacts are committed to the store before the job is
     recorded as succeeded, and the export is recorded only after its bytes are verified in place.
+    The receipt names the output folder by ``destination``, its grant handle, never by path.
     """
     size = source.stat().st_size
     if size == 0 or size > MAX_FILE_BYTES:
@@ -113,7 +115,7 @@ def profile_and_export(
         "id": f"export-{job}",
         "revision": "1.0.0",
         "output_sha256": manifest_digest,
-        "destination": str(out_root),
+        "destination": destination,
         "version": version,
         "files": [
             {"path": n, "sha256": d, "bytes": store.path(ctx, d).stat().st_size}
@@ -153,6 +155,7 @@ def profile_granted(
         ctx,
         source,
         out_root,
+        destination=output_handle,
         ledger=ledger,
         store=store,
         exporter=exporter,
