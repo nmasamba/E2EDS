@@ -234,3 +234,6 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   view started a list refresh on load and another update on a click; if the first finished second it cleared
   the newer result, so an error could vanish. It showed up as one failed renderer test on the slower Linux
   runner. Updates now run one at a time in order, and a test delays the first refresh to hold the race open.
+- **2026-10-02 — S2 — DECISION — manual check of the folder dialog** — the owner tested the real app: a source
+  folder can be added through the native dialog, appears by its correct name, and can be removed. This closes
+  the one check that could not be automated in prompt 2.3.

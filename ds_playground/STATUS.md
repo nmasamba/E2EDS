@@ -5,9 +5,9 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 ## Now
 
 - **Sprint:** 2 — M1 desktop shell, discovery and plan (Sprint 1 is merged to `main` through PR #1)
-- **Claimed prompt:** none. 2.1 (PR #2) and 2.2 (PR #3) are merged; 2.3 (scoped folder grants) is done and
-  waiting in PR #4. Next is 2.4 (hardware discovery).
-- **Branch:** `sprint-2-grants`, from `main` at `0b18301`, with PR #4 open against `main`
+- **Claimed prompt:** 2.4 to 2.8 (hardware discovery, plan, work trail, lifecycle, sprint gate). 2.1 to 2.3
+  are merged to `main` (PRs #2, #3, #4).
+- **Branch:** `sprint-2-finish`, from `main` at `8909aa7`
 
 ## Done
 
@@ -21,7 +21,7 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 |---|---|---|---|
 | 0 | Setup | done | G0: PASS for synthetic scope |
 | 1 | M0 foundations and thin slice | merged to `main` (PR #1) | PASS, see below |
-| 2 | M1 desktop, discovery, plan | 2.1 and 2.2 merged; 2.3 done in PR #4 (see below); 2.4–2.8 not started | — |
+| 2 | M1 desktop, discovery, plan | 2.1 to 2.3 merged; 2.4–2.8 in progress | — |
 | 3–11 | M1 | not started | — |
 | 12–20 | M1B, M1C, M1R, M2, M3, M3Z, M4 | not started | — |
 
@@ -92,10 +92,9 @@ suite's pinned digest and the size and digest the source reports for revision `7
 - Linux: the desktop end-to-end test has run only in CI (x86-64). The AppImage is built but never launched;
   the test launches the app unpacked from the deb. No Linux arm64 bundle is built.
 - The Quit menu item is not exercised by a test on either OS.
-- **Choosing a folder in the native dialog is not automated on either OS.** Everything around it is tested
-  (see `docs/decisions.md`, 2026-10-02, "what is and is not automated for the folder dialog"), and the dialog
-  is known to open on both, but nobody has yet picked a folder in the real app and seen it listed. That one
-  manual check is waiting on the owner.
+- Choosing a folder in the native dialog is not automated on either OS (see `docs/decisions.md`,
+  2026-10-02). The owner checked it by hand on 2026-10-02: a source folder can be added and removed in the
+  real app and appears by its name.
 - The window cannot yet send a request with a body (the preflight allows only `authorization`), so profiling
   is reachable from the CLI only.
 - A proposed OutputBinding declares `max_export_bytes` that nothing enforces yet, and names a placeholder
