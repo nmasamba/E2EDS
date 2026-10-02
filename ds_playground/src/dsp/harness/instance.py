@@ -45,9 +45,9 @@ def serve(state_dir: Path, host: str = "127.0.0.1", dev: bool = False) -> None:
     with os.fdopen(descriptor, "w") as handle:
         json.dump({"port": port, "token": token, "pid": os.getpid()}, handle)
     app = create_app(token, port, dev)
-    mount(app, state_dir)
-    config = uvicorn.Config(app, log_level="warning")
-    uvicorn.Server(config).run(sockets=[listener])
+    server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
+    mount(app, state_dir, server)
+    server.run(sockets=[listener])
 
 
 def connect(state_dir: Path) -> httpx.Client:

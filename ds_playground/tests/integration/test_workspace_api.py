@@ -1,4 +1,9 @@
 import json
+import os
+import signal
+import subprocess
+import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +17,7 @@ from dsp.contracts.errors import ErrorCode, TrustedContext
 from dsp.contracts.schemas import validate
 from dsp.harness import workspace
 from dsp.harness.app import DEV_ORIGIN, SHELL_ORIGIN, create_app
+from dsp.harness.instance import connect
 from dsp.interfaces.cli import app as cli
 from fixtures.operations import write_orders
 
@@ -253,7 +259,7 @@ def test_a_provisional_plan_follows_discovery_and_supersedes_the_last(
     assert (early.status_code, early.json()["code"]) == (400, ErrorCode.INPUT_INVALID)
     assert api.get("/v1/plan", headers=WINDOW).status_code == 404
     snapshot = api.post("/v1/hardware", headers=WINDOW).json()
-    first = api.post("/v1/plan", headers=WINDOW).json()
+    first = api.get("/v1/plan", headers=WINDOW).json()  # proposed with the discovery
     second = api.post("/v1/plan", headers=WINDOW).json()
     validate("WorkflowPlan", second)
     assert (first["feasibility_outcome"], first["authorises_execution"]) == (
@@ -273,6 +279,99 @@ def test_a_provisional_plan_follows_discovery_and_supersedes_the_last(
         "plan.proposed",
     ]
     assert api.post("/v1/plan").status_code == 401
+
+
+def test_polling_replays_from_a_cursor_and_resets_an_unknown_one(
+    api: TestClient, folders: dict[str, Path], tmp_path: Path
+) -> None:
+    """R20: events come in commit order after a cursor; a cursor from elsewhere gets everything."""
+    assert api.get("/v1/events", headers=WINDOW).json() == {
+        "events": [],
+        "cursor": 0,
+        "reset": False,
+    }
+    stale = api.get("/v1/events?after=7", headers=WINDOW).json()
+    assert stale == {"events": [], "cursor": 0, "reset": True}
+    handle = granted(api, folders["data"], "source_root")
+    api.post("/v1/hardware", headers=WINDOW)
+    everything = api.get("/v1/events", headers=WINDOW).json()
+    kinds = [event["type"] for event in everything["events"]]
+    assert kinds == ["grant.created", "discovery.finished", "plan.proposed"]
+    assert everything["events"][0]["body"] == {
+        "handle": handle,
+        "purpose": "source_root",
+        "label": "data",
+    }
+    assert set(everything["events"][0]) == {"seq", "event_id", "type", "recorded_at", "body"}
+    later = api.get("/v1/events?after=1", headers=WINDOW).json()
+    assert ([event["type"] for event in later["events"]], later["reset"]) == (kinds[1:], False)
+    current = api.get(f"/v1/events?after={everything['cursor']}", headers=WINDOW).json()
+    assert current == {"events": [], "cursor": everything["cursor"], "reset": False}
+    beyond = api.get("/v1/events?after=99", headers=WINDOW).json()
+    assert (beyond["reset"], beyond["events"], beyond["cursor"]) == (
+        True,
+        everything["events"],
+        everything["cursor"],
+    )
+    assert api.get("/v1/events?after=-1", headers=WINDOW).status_code == 400
+    assert api.get("/v1/events").status_code == 401
+    assert str(tmp_path) not in json.dumps(everything)
+
+
+def frames(lines: Iterator[str], count: int) -> list[tuple[str, dict[str, Any]]]:
+    """Read ``count`` server-sent events from a response as (event name, data) pairs."""
+    seen: list[tuple[str, dict[str, Any]]] = []
+    name = ""
+    for line in lines:
+        if line.startswith("event: "):
+            name = line.removeprefix("event: ")
+        elif line.startswith("data: "):
+            seen.append((name, json.loads(line.removeprefix("data: "))))
+            if len(seen) == count:
+                break
+    return seen
+
+
+def test_the_stream_replays_then_follows_and_equals_polling(state_dir: Path) -> None:
+    """R20: a real stream replays from its cursor, delivers new events live and matches polling."""
+    client = connect(state_dir)
+    client.post("/v1/hardware")
+    with client.stream("GET", "/v1/events/stream", timeout=30) as live:
+        lines = live.iter_lines()
+        replayed = frames(lines, 2)
+        client.post("/v1/plan")
+        (followed,) = frames(lines, 1)
+        assert live.headers["content-type"].startswith("text/event-stream")
+    polled = client.get("/v1/events").json()["events"]
+    assert [data for _, data in [*replayed, followed]] == polled
+    assert [name for name, _ in [*replayed, followed]] == [
+        "discovery.finished",
+        "plan.proposed",
+        "plan.proposed",
+    ]
+    with client.stream("GET", f"/v1/events/stream?after={polled[1]['seq']}", timeout=30) as live:
+        assert frames(live.iter_lines(), 1) == [("plan.proposed", polled[2])]
+    with client.stream("GET", "/v1/events/stream?after=999", timeout=30) as live:
+        resynchronised = frames(live.iter_lines(), 4)
+    assert resynchronised[0] == ("stream.resynchronised", {})
+    assert [data for _, data in resynchronised[1:]] == polled
+    assert client.get("/v1/status").json()["status"] == "ok"
+
+
+def test_an_open_stream_does_not_keep_a_stopping_harness_alive(state_dir: Path) -> None:
+    """A44: asked to stop while a client is streaming, the harness ends the stream and exits."""
+    client = connect(state_dir)
+    pid = client.get("/v1/status").json()["pid"]
+    with client.stream("GET", "/v1/events/stream", timeout=30) as live:
+        os.kill(pid, signal.SIGTERM)
+        assert list(live.iter_lines()) == []
+    for _ in range(50):
+        if subprocess.run(["ps", "-p", str(pid)], capture_output=True).returncode:
+            break
+        time.sleep(0.1)
+    else:
+        pytest.fail("the harness is still running")
+    (state_dir / "harness.json").unlink()
 
 
 def test_a_plan_from_unobserved_hardware_says_unknown(

@@ -1,12 +1,15 @@
+import json
 import time
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any
 from uuid import uuid4
 
-from fastapi import Body, FastAPI, Request
+import uvicorn
+from fastapi import Body, FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from dsp.adapters import export_fs
 from dsp.adapters.discovery import probes
@@ -30,11 +33,12 @@ def _id() -> str:
     return uuid4().hex
 
 
-def mount(app: FastAPI, state_dir: Path) -> None:
-    """Add the workspace routes: grants, profiling, discovery and planning, on one ledger.
+def mount(app: FastAPI, state_dir: Path, server: uvicorn.Server | None = None) -> None:
+    """Add the workspace routes: grants, profiling, discovery, planning and events, on one ledger.
 
     Every caller is the local owner, established by the token the guard has already checked;
-    nothing in a request body is treated as authority.
+    nothing in a request body is treated as authority. ``server`` is the running server, whose
+    shutdown ends open event streams.
     """
     ctx = TrustedContext.local()
 
@@ -71,9 +75,11 @@ def mount(app: FastAPI, state_dir: Path) -> None:
 
     @app.post("/v1/hardware")
     def discover_hardware() -> dict[str, Any]:
-        return discover(
+        snapshot = discover(
             ctx, probes(state_dir), ledger=ledger(), clock=_now, new_id=_id, timer=time.monotonic
         )
+        propose_plan(ctx, ledger=ledger(), new_id=_id)
+        return snapshot
 
     @app.get("/v1/hardware")
     def latest_hardware() -> dict[str, Any]:
@@ -92,6 +98,45 @@ def mount(app: FastAPI, state_dir: Path) -> None:
         if not plans:
             raise DspError(ErrorCode.NOT_FOUND, "no plan has been proposed yet")
         return plans[-1]
+
+    def changes(after: int) -> dict[str, Any]:
+        """Events after a cursor; a cursor this ledger never issued gets the whole history."""
+        fresh, reset = ledger().events(ctx, after), False
+        if after and not fresh:
+            history = ledger().events(ctx)
+            if not history or history[-1]["seq"] < after:
+                fresh, reset = history, True
+        shown = [
+            {key: event[key] for key in ("seq", "event_id", "type", "recorded_at", "body")}
+            for event in fresh
+        ]
+        cursor = fresh[-1]["seq"] if fresh else 0 if reset else after
+        return {"events": shown, "cursor": cursor, "reset": reset}
+
+    @app.get("/v1/events")
+    def poll_events(after: Annotated[int, Query(ge=0)] = 0) -> dict[str, Any]:
+        return changes(after)
+
+    @app.get("/v1/events/stream")
+    def stream_events(after: Annotated[int, Query(ge=0)] = 0) -> StreamingResponse:
+        def frames() -> Iterator[str]:
+            cursor, quiet = after, 0.0
+            while not (server and server.should_exit):
+                batch = changes(cursor)
+                cursor = batch["cursor"]
+                if batch["reset"]:
+                    yield "event: stream.resynchronised\ndata: {}\n\n"
+                for event in batch["events"]:
+                    data = json.dumps(event)
+                    yield f"id: {event['seq']}\nevent: {event['type']}\ndata: {data}\n\n"
+                if not batch["events"]:
+                    time.sleep(0.25)
+                    quiet += 0.25
+                if quiet >= 5:
+                    quiet = 0.0
+                    yield ": keep-alive\n\n"
+
+        return StreamingResponse(frames(), media_type="text/event-stream")
 
     @app.post("/v1/profiles")
     def create_profile(
