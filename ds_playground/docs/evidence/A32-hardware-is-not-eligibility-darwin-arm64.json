@@ -1,0 +1,14 @@
+{
+  "id": "A32",
+  "sprint": 2,
+  "os": "darwin-arm64",
+  "fixture": "the suite's reference workload and bindings against five inventories",
+  "commit": "2c81168",
+  "expected": "feasibility respects actual scope and evidence, preserves quality, data and rights constraints, and leaves zero-budget paid options blocked; fixture and manual inventories cannot qualify a runtime",
+  "actual": "{\"host RAM above the usable quota\": \"local-attached-v1 is blocked: needs 10 GiB memory; 6 usable within its limits.\", \"a visible accelerator with no runtime check\": \"local-attached-v1 is unqualified: an accelerator is visible but has not passed a runtime check.\", \"a declared-only inventory\": \"local-attached-v1 is unqualified: its inventory is declared by the user, not observed.\", \"a paid option at a zero charge cap\": \"runpod-provisioned-v1 is blocked: needs paid compute and the external charge cap is zero.\", \"an illustrative fixture inventory\": \"local-attached-v1 is unknown: its hardware has not been observed.\"}",
+  "outcome": "INSUFFICIENT_EVIDENCE",
+  "limits": [
+    "every case exercised gave the expected disposition, but the rule table does not yet filter on operation, region, egress, isolation policy or data rights, because the policy and rights objects they need do not exist until later sprints",
+    "several small accelerators and shared-memory pools are covered by unit tests, not here"
+  ]
+}
