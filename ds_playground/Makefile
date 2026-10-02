@@ -1,4 +1,4 @@
-.PHONY: install format test-fast sat verify verify-linux harness-bin desktop-dev desktop-build
+.PHONY: install format test-fast sat verify verify-linux harness-bin desktop-dev desktop-build e2e
 
 # rustup from Homebrew is keg-only on macOS; the extra entries are harmless elsewhere.
 export PATH := /opt/homebrew/opt/rustup/bin:$(HOME)/.cargo/bin:$(PATH)
@@ -35,3 +35,7 @@ desktop-dev: harness-bin    ## open the desktop window against the dev server
 
 desktop-build: harness-bin  ## build the app bundle (.app on macOS; deb and AppImage on Linux)
 	cd desktop && pnpm install --frozen-lockfile && pnpm tauri build
+
+e2e:            ## renderer tests on a real harness, then the built app; run desktop-build first
+	cd desktop && pnpm test
+	uv run pytest -m desktop tests/e2e
