@@ -4,9 +4,9 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 
 ## Now
 
-- **Sprint:** 2 — M1 desktop shell, discovery and plan (Sprint 1 is in PR #1, CI green, awaiting the owner's merge)
+- **Sprint:** 2 — M1 desktop shell, discovery and plan (Sprint 1 is merged to `main` through PR #1)
 - **Claimed prompt:** 2.2 (shell scaffold); 2.1 (harness) is done
-- **Branch:** `sprint-2-desktop`, stacked on `sprint-1-foundations`
+- **Branch:** `sprint-2-desktop`, with a pull request open against `main` for prompt 2.1
 
 ## Done
 
@@ -19,7 +19,7 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 | Sprint | Milestone | State | Gate outcome |
 |---|---|---|---|
 | 0 | Setup | done | G0: PASS for synthetic scope |
-| 1 | M0 foundations and thin slice | built; gate green locally on macOS and linux/arm64 | see below |
+| 1 | M0 foundations and thin slice | merged to `main` (PR #1) | PASS, see below |
 | 2 | M1 desktop, discovery, plan | 2.1 done (106 tests green on macOS and linux/arm64) | — |
 | 3–11 | M1 | not started | — |
 | 12–20 | M1B, M1C, M1R, M2, M3, M3Z, M4 | not started | — |
@@ -60,6 +60,6 @@ Nothing. Standing approvals are in `docs/decisions.md`.
 
 ## Handoff note
 
-Sprint 1 is in PR https://github.com/nmasamba/E2EDS/pull/1 with CI green; the owner merges it.
+Sprint 1 is merged to `main` (PR #1).
 Sprint 2 is on `sprint-2-desktop`: 2.1 (harness, `dsp status`) is done; continue at 2.2 (Tauri shell). Rust is installed but keg-only: prepend `/opt/homebrew/opt/rustup/bin`
 and `~/.cargo/bin` to PATH for cargo.
