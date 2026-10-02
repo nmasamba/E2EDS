@@ -291,3 +291,15 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   harness stops it under any second window, which then shows the connection as lost. Sleep and wake were
   not exercised. On macOS the Quit menu item and window close cannot be scripted from the build session; on
   Linux both are pressed for real in CI.
+- **2026-10-02 — S2 — DECISION — evidence outcomes (2.8)** — an evidence record states the scenario as the
+  suite words it and gives PASS only when the run showed all of it. A31 is PASS. A32 and A44 are
+  INSUFFICIENT_EVIDENCE: every part exercised passed, but each scenario includes parts whose objects do not
+  exist until later sprints. The Sprint 2 gate is PASS for the sprint's own scope.
+- **2026-10-02 — S2 — DEFECT — a background refresh cleared the owner's problem message (fixed)** — in the
+  Folders view, a list refresh triggered by events from elsewhere cleared an error left by the owner's own
+  action. It showed as one failed renderer test on the Linux runner, twice. Only the owner's own action now
+  sets or clears that message; a test reproduces it with a grant made elsewhere.
+- **2026-10-02 — S2 — FINDING — test checks that needed changing (2.7, 2.8)** — the Linux container has no
+  `ps`, so tests wait for the harness's instance lock to be free instead; a window close under Xvfb is asked
+  of the window manager with `wmctrl`, because an Alt+F4 chord sent with xdotool did not close it. The gate
+  now takes about 50 s on macOS: the CLI and lifecycle tests start real harness processes.
