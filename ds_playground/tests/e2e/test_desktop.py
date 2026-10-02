@@ -122,7 +122,17 @@ def test_the_built_app_starts_its_bundled_harness_and_connects(
                     xdotool("windowactivate", "--sync", dialog)
                     xdotool("key", "--clearmodifiers", "ctrl+l")
                     xdotool("type", "--delay", "50", str(picked))
-                    xdotool("key", "Return")
+                    for press in range(3):
+                        subprocess.run(["import", "-window", "root", f"/tmp/dsp-e2e-{press}.png"])
+                        xdotool("key", "Return")
+                        time.sleep(2)
+                        still_open = subprocess.run(
+                            ["xdotool", "search", "--onlyvisible", "--name", "Choose a source"],
+                            capture_output=True,
+                        )
+                        if still_open.returncode:
+                            break
+                    subprocess.run(["import", "-window", "root", "/tmp/dsp-e2e-after.png"])
                     listed = eventually(lambda: shown("Source folder: orders 2026"))
                     assert str(picked.parent) not in listed
                 finally:
