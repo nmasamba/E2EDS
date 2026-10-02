@@ -25,10 +25,26 @@ The pack holds `manifest.json` (relative paths and SHA-256 digests), `profile.js
 `report.html`. Each export goes to a new `vN` folder; earlier versions are never overwritten. Local state
 (ledger and artifact store) lives in `~/.dsp`, or in `DSP_HOME` if set.
 
+The commands run through the local harness, which `dsp` starts if it is not running. Naming a file and a
+folder in `dsp profile` grants the harness that file and that folder. Folders can also be granted on their
+own; the harness and the desktop window then refer to them by handle and folder name, never by path.
+
+```bash
+uv run dsp grant path/to/folder --purpose source_root
+```
+
+```bash
+uv run dsp grants
+```
+
+```bash
+uv run dsp revoke grant-handle-from-the-list
+```
+
 ## Desktop shell (Sprint 2, in progress)
 
-A native window on macOS and Linux that starts or reconnects to the local harness and shows whether it is
-connected. Building it needs Rust, Node 22 and pnpm; on Linux also the system packages listed in the `desktop`
+A native window on macOS and Linux that starts or reconnects to the local harness, shows whether it is
+connected, and lets you grant source and output folders through the native folder dialog and remove them. Building it needs Rust, Node 22 and pnpm; on Linux also the system packages listed in the `desktop`
 job of `../.github/workflows/ds-playground.yml`.
 
 ```bash

@@ -9,6 +9,10 @@
   "harness unavailable" with the reason. `make desktop-dev`, `make desktop-build`, `make e2e`.
 - The harness admits exactly the desktop shell's origin; every other browser origin is still refused and the
   token is still required.
+- Folder grants: choose source and output folders in the desktop window's native dialog, or with
+  `dsp grant`; list them with `dsp grants` and remove them in the window or with `dsp revoke`. Grants are
+  shown by folder name, survive a restart, and are checked each time they are used.
+- `dsp profile` now runs inside the harness and exports only into a granted folder.
 
 ## Sprint 1 — foundations (2026-10-01)
 
