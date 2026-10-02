@@ -69,14 +69,15 @@ suite's pinned digest and the size and digest the source reports for revision `7
 
 - `make verify` on macOS arm64: **168 passed, 1 deselected**, coverage 95.88%. `make verify-linux` (container,
   linux/arm64): **168 passed, 1 deselected**, coverage 95.88%.
-- `make desktop-build` then `make e2e` on macOS (`998226c`): renderer **10 passed**, shell (Rust, real
-  harness) **1 passed**, built app **1 passed**. The `.app` is 45.51 MiB now that the frozen harness carries
+- `make desktop-build` then `make e2e` on macOS: renderer **11 passed**, shell (Rust, real harness)
+  **1 passed**, built app **1 passed**. The `.app` is 45.51 MiB now that the frozen harness carries
   DuckDB and the contract schemas.
 - CI on `998226c` (run 37029137568): `verify` and `desktop` green on `ubuntu-24.04` and macOS. On Linux the
   built app, unpacked from the deb, showed "connected", refused a command its capability does not grant,
   opened the real GTK folder dialog and granted nothing when it was cancelled; then its bundled harness
   profiled a file through grants and refused a path outside them: renderer 10 passed, shell 1 passed, built
-  app 1 passed.
+  app 1 passed. The next run failed one renderer test on Linux: a real race in the Folders view, fixed with
+  an eleventh test that holds the race open (`docs/decisions.md`).
 - Run for real with the installed CLI on a temporary profile: `dsp status`, `dsp grant`, `dsp profile`,
   `dsp verify`, `dsp grants`, `dsp revoke`. Afterwards no ledger event held a host path; only the four
   FolderGrant records did.

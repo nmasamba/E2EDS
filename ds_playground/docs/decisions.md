@@ -230,3 +230,7 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   revoked and wrong-purpose handles, the no-Origin rule, the file check, the active-only list, the
   structured internal error, the window's Remove, handles kept out of the page) was broken in turn to
   confirm a test fails. One guard was found redundant this way and removed (re-resolving the granted root).
+- **2026-10-02 — S2 — DEFECT — a late refresh could wipe a newer message in the Folders view (fixed)** — the
+  view started a list refresh on load and another update on a click; if the first finished second it cleared
+  the newer result, so an error could vanish. It showed up as one failed renderer test on the slower Linux
+  runner. Updates now run one at a time in order, and a test delays the first refresh to hold the race open.
