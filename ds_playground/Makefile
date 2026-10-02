@@ -27,6 +27,7 @@ verify-linux:   ## the same gate in a Linux container (repo mounted read-only)
 
 harness-bin:    ## freeze the harness into one executable, named for the target triple, for the bundle
 	uv run --frozen --group build pyinstaller --noconfirm --onefile --copy-metadata dsp \
+		--collect-data dsp --collect-data rfc3987_syntax \
 		--name dsp-harness-$$(rustc --print host-tuple) --distpath desktop/src-tauri/binaries \
 		--workpath build/pyinstaller --specpath build/pyinstaller src/dsp/harness/__main__.py
 
@@ -36,6 +37,7 @@ desktop-dev: harness-bin    ## open the desktop window against the dev server
 desktop-build: harness-bin  ## build the app bundle (.app on macOS; deb and AppImage on Linux)
 	cd desktop && pnpm install --frozen-lockfile && pnpm tauri build
 
-e2e:            ## renderer tests on a real harness, then the built app; run desktop-build first
+e2e:            ## renderer and shell tests on a real harness, then the built app; run desktop-build first
 	cd desktop && pnpm test
+	cd desktop/src-tauri && cargo test --release --features tauri/custom-protocol
 	uv run pytest -m desktop tests/e2e

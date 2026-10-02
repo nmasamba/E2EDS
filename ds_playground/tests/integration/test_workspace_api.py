@@ -54,9 +54,9 @@ def granted(api: TestClient, folder: Path, purpose: str) -> str:
 
 
 def profiled(api: TestClient, source: str, relative: str, output: str) -> Any:
-    """Ask, as the window, for a profile of ``relative`` under one grant into another."""
+    """Ask, as the CLI does, for a profile of ``relative`` under one grant into another."""
     body = {"source_handle": source, "relative_path": relative, "output_handle": output}
-    return api.post("/v1/profiles", headers=WINDOW, json=body)
+    return api.post("/v1/profiles", headers=NATIVE, json=body)
 
 
 def test_a_native_grant_is_listed_to_the_window_without_its_path(
@@ -109,7 +109,7 @@ def test_every_workspace_route_needs_the_token(api: TestClient, method: str, pat
 def test_a_profile_through_grants_exports_a_verified_pack(
     api: TestClient, folders: dict[str, Path], tmp_path: Path
 ) -> None:
-    """R11, D23: the window names a file by handle and relative path and gets a verified pack."""
+    """R11, D23: a file named by handle and relative path is exported as a verified pack."""
     source = granted(api, folders["data"], "source_root")
     output = granted(api, folders["out"], "output_root")
     first = profiled(api, source, "orders.csv", output)
@@ -202,13 +202,12 @@ def test_an_unexpected_failure_is_a_structured_error_without_detail(
 ) -> None:
     """C23: a crash inside a request answers INTERNAL_ERROR, readable by the window, no detail."""
 
-    def crash(path: Path) -> dict[str, Any]:
-        raise RuntimeError(f"cannot read {path}")
+    def crash(*arguments: object, **services: object) -> dict[str, Any]:
+        raise RuntimeError(f"cannot handle {arguments}")
 
-    monkeypatch.setattr(workspace, "profile_csv", crash)
     source = granted(api, folders["data"], "source_root")
-    output = granted(api, folders["out"], "output_root")
-    response = profiled(api, source, "orders.csv", output)
+    monkeypatch.setattr(workspace, "revoke", crash)
+    response = api.post(f"/v1/grants/{source}/revoke", headers=WINDOW)
     assert response.status_code == 500
     assert response.json() == {"code": ErrorCode.INTERNAL_ERROR, "message": "internal error"}
     assert response.headers["access-control-allow-origin"] == SHELL_ORIGIN
