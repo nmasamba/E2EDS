@@ -37,7 +37,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev \
-            libssl-dev libayatana-appindicator3-dev librsvg2-dev webkit2gtk-driver xvfb xdotool openbox imagemagick
+            libssl-dev libayatana-appindicator3-dev librsvg2-dev webkit2gtk-driver xvfb xdotool openbox
           cargo install tauri-driver --version 2.1.0 --locked
       - run: uv sync --frozen
       - run: make desktop-build
@@ -46,8 +46,3 @@ jobs:
         run: xvfb-run -a sh -c 'openbox & make e2e'
       - if: runner.os != 'Linux'
         run: make e2e
-      - if: always() && runner.os == 'Linux'
-        uses: actions/upload-artifact@v4
-        with:
-          name: e2e-screens
-          path: /tmp/dsp-e2e-*.png

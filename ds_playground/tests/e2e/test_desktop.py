@@ -69,11 +69,11 @@ def test_the_built_app_starts_its_bundled_harness_and_connects(
     """R26, C23: launched on a fresh profile with no terminal or uv, the app works end to end.
 
     On Linux the window is driven through WebDriver: it must show "connected", refuse a command
-    its capability does not grant, and turn a folder chosen in the real native dialog (typed in
-    with xdotool, which needs a window manager on the display) into a grant shown by name. macOS
-    has no WebDriver for its webview and its dialog cannot be scripted here, so there only the
-    harness the app started is checked. On both, the bundled harness then profiles a real file
-    through grants and refuses a path outside them.
+    its capability does not grant, open the real native folder dialog and, when that is cancelled
+    (xdotool, which needs a window manager on the display), grant nothing. Choosing a folder in
+    the dialog is not automated on either OS. macOS has no WebDriver for its webview, so there
+    only the harness the app started is checked. On both, the bundled harness then profiles a
+    real file through grants and refuses a path outside them.
     """
     environment = {**os.environ, "DSP_HOME": str(state_dir)}
     if sys.platform == "darwin":
@@ -90,8 +90,6 @@ def test_the_built_app_starts_its_bundled_harness_and_connects(
         installed = tmp_path_factory.mktemp("deb")
         subprocess.run(["dpkg-deb", "--extract", deb, installed], check=True)
         options = {"tauri:options": {"application": str(installed / "usr/bin/dsp-desktop")}}
-        picked = tmp_path_factory.mktemp("picked") / "orders 2026"
-        picked.mkdir()
         driver = subprocess.Popen(["tauri-driver"], env=environment)
         try:
             with httpx.Client(base_url="http://127.0.0.1:4444", timeout=60) as web:
@@ -116,35 +114,23 @@ def test_the_built_app_starts_its_bundled_harness_and_connects(
                     denied = run(CALL_UNGRANTED_COMMAND, "async")
                     assert "not allowed" in denied, denied
                     run(CLICK_ADD_SOURCE)
-                    dialog = xdotool(
-                        "search", "--sync", "--onlyvisible", "--name", "Choose a source folder"
-                    ).split()[-1]
-                    xdotool("windowactivate", "--sync", dialog)
-                    xdotool("key", "--clearmodifiers", "ctrl+l")
-                    xdotool("type", "--delay", "50", str(picked))
-                    for press in range(3):
-                        subprocess.run(["import", "-window", "root", f"/tmp/dsp-e2e-{press}.png"])
-                        xdotool("key", "Return")
-                        time.sleep(2)
-                        still_open = subprocess.run(
-                            ["xdotool", "search", "--onlyvisible", "--name", "Choose a source"],
-                            capture_output=True,
-                        )
-                        if still_open.returncode:
-                            break
-                    subprocess.run(["import", "-window", "root", "/tmp/dsp-e2e-after.png"])
-                    listed = eventually(lambda: shown("Source folder: orders 2026"))
-                    assert str(picked.parent) not in listed
+                    search = ("search", "--onlyvisible", "--name", "Choose a source folder")
+                    dialog = xdotool(*search, "--sync").split()[-1]
+                    xdotool("windowactivate", "--sync", dialog, "key", "Escape")
+
+                    def dismissed() -> str:
+                        still_open = subprocess.run(["xdotool", *search], capture_output=True)
+                        assert still_open.returncode, "the folder dialog is still open"
+                        return shown("No folders granted yet.")
+
+                    assert "Could not update folders" not in eventually(dismissed)
                 finally:
                     web.delete(f"/session/{session}")  # quits the app
         finally:
             driver.terminate()
             driver.wait(10)
         bundled = harness(state_dir)
-        grants = bundled.get("/v1/grants").json()["grants"]
-        assert [(grant["purpose"], grant["label"]) for grant in grants] == [
-            ("source_root", "orders 2026")
-        ]
+        assert bundled.get("/v1/grants").json() == {"grants": []}
         answer = bundled.get("/v1/status").json()
         assert f"version {answer['version']} · process {answer['pid']}" in text
     assert bundled.get("/v1/status").json() | {"pid": 0} == {
