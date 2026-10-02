@@ -1,8 +1,6 @@
 import json
 import os
-import signal
 import stat
-from collections.abc import Iterator
 from pathlib import Path
 
 import httpx
@@ -23,16 +21,6 @@ AUTH = {"Authorization": "Bearer secret"}
 def api() -> TestClient:
     """The harness API in-process, as served on port 4100 with credential ``secret``."""
     return TestClient(create_app("secret", 4100), base_url=BASE)
-
-
-@pytest.fixture
-def state_dir(tmp_path: Path) -> Iterator[Path]:
-    """A profile directory whose harness, if one was started, is stopped afterwards."""
-    yield tmp_path
-    state = tmp_path / "harness.json"
-    pid = json.loads(state.read_text()).get("pid") if state.exists() else None
-    if pid:
-        os.kill(pid, signal.SIGTERM)
 
 
 def test_a_valid_credential_reaches_status(api: TestClient) -> None:
@@ -56,7 +44,7 @@ def test_a_missing_or_wrong_credential_is_unauthenticated(
     [{"Host": "evil.example"}, {"Host": "127.0.0.1:9"}, {"Origin": "http://evil.example"}],
 )
 def test_foreign_hosts_and_origins_are_forbidden(api: TestClient, headers: dict[str, str]) -> None:
-    """C23: a rebinding host or any browser origin is refused even with the right credential."""
+    """C23: a rebinding host or a foreign origin is refused even with the right credential."""
     response = api.get("/v1/status", headers=AUTH | headers)
     assert (response.status_code, response.json()["code"]) == (403, ErrorCode.FORBIDDEN)
 

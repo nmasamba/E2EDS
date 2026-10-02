@@ -23,11 +23,12 @@ def home() -> Path:
     return path
 
 
-def serve(state_dir: Path, host: str = "127.0.0.1") -> None:
+def serve(state_dir: Path, host: str = "127.0.0.1", dev: bool = False) -> None:
     """Run the one harness for this profile; return at once if another instance already holds it.
 
     The port is chosen by the OS and published, with a fresh owner-only credential, in
-    ``harness.json`` (mode 0600). Binding anywhere but loopback is refused.
+    ``harness.json`` (mode 0600). Binding anywhere but loopback is refused. ``dev`` admits the
+    `tauri dev` origin.
     """
     if not ipaddress.ip_address(host).is_loopback:
         raise DspError(ErrorCode.FORBIDDEN, "non-loopback binding needs remote authentication")
@@ -42,7 +43,7 @@ def serve(state_dir: Path, host: str = "127.0.0.1") -> None:
     descriptor = os.open(state_dir / "harness.json", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(descriptor, "w") as handle:
         json.dump({"port": port, "token": token, "pid": os.getpid()}, handle)
-    config = uvicorn.Config(create_app(token, port), log_level="warning")
+    config = uvicorn.Config(create_app(token, port, dev), log_level="warning")
     uvicorn.Server(config).run(sockets=[listener])
 
 
