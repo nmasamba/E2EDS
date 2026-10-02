@@ -215,6 +215,35 @@ def test_an_unexpected_failure_is_a_structured_error_without_detail(
     assert response.headers["access-control-allow-origin"] == SHELL_ORIGIN
 
 
+def test_discovery_runs_from_the_window_and_the_latest_snapshot_is_served(api: TestClient) -> None:
+    """R19, A31: the window can ask for discovery before any model exists and read the result."""
+    missing = api.get("/v1/hardware", headers=WINDOW)
+    assert (missing.status_code, missing.json()["code"]) == (404, ErrorCode.NOT_FOUND)
+    first = api.post("/v1/hardware", headers=WINDOW)
+    second = api.post("/v1/hardware", headers=WINDOW)
+    assert (first.status_code, first.json()["evidence_source"]) == (200, "observed")
+    assert api.get("/v1/hardware", headers=WINDOW).json() == second.json() != first.json()
+    assert api.post("/v1/hardware").status_code == 401
+
+
+def test_the_workspace_stays_usable_when_discovery_finds_nothing(
+    api: TestClient, folders: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A31: with every probe denied the snapshot is unknown and grants and status still work."""
+
+    def denied() -> dict[str, Any]:
+        raise PermissionError
+
+    monkeypatch.setattr(workspace, "probes", lambda state: {"cpu": denied, "accelerators": denied})
+    snapshot = api.post("/v1/hardware", headers=WINDOW).json()
+    assert (snapshot["evidence_source"], snapshot["accelerators"]["inventory_status"]) == (
+        "unknown",
+        "unknown",
+    )
+    assert api.get("/v1/status", headers=WINDOW).json()["status"] == "ok"
+    assert granted(api, folders["data"], "source_root").startswith("grant-")
+
+
 def run(*arguments: object) -> Any:
     """Invoke the CLI in-process; it talks to a real harness on the temporary profile."""
     return CliRunner().invoke(cli, [str(argument) for argument in arguments])
@@ -243,3 +272,14 @@ def test_cli_profile_grants_only_what_it_names(home: Path, folders: dict[str, Pa
     assert (result.exit_code, verify_pack(folders["out"] / "v1")) == (0, [])
     listed = [line.split()[1:] for line in run("grants").output.splitlines()]
     assert listed == [["source_root", "orders.csv"], ["output_root", "out"]]
+
+
+def test_the_cli_reports_observed_hardware(home: Path) -> None:
+    """R19: `dsp hardware` observes this machine through the harness and prints what it found."""
+    result = run("hardware")
+    first, second = result.output.splitlines()[:2]
+    assert result.exit_code == 0
+    assert "processors" in first
+    assert "GiB memory" in first
+    assert "unknown" not in first
+    assert second.startswith("accelerators ")

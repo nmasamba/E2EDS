@@ -1,3 +1,4 @@
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any
@@ -8,9 +9,11 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from dsp.adapters import export_fs
+from dsp.adapters.discovery import probes
 from dsp.adapters.duckdb_profile import profile_csv
 from dsp.adapters.ledger_sqlite import SqliteLedger
 from dsp.adapters.store_fs import ContentStore
+from dsp.application.discovery import discover
 from dsp.application.grants import grant_folder, revoke, summary
 from dsp.application.packs import profile_granted
 from dsp.contracts.errors import DspError, ErrorCode, TrustedContext
@@ -27,7 +30,7 @@ def _id() -> str:
 
 
 def mount(app: FastAPI, state_dir: Path) -> None:
-    """Add the workspace routes: folder grants, and profiling through them, on one ledger.
+    """Add the workspace routes: grants, profiling through them and discovery, on one ledger.
 
     Every caller is the local owner, established by the token the guard has already checked;
     nothing in a request body is treated as authority.
@@ -64,6 +67,19 @@ def mount(app: FastAPI, state_dir: Path) -> None:
     @app.post("/v1/grants/{handle}/revoke")
     def revoke_grant(handle: str) -> dict[str, str]:
         return summary(revoke(ctx, handle, ledger=ledger()))
+
+    @app.post("/v1/hardware")
+    def discover_hardware() -> dict[str, Any]:
+        return discover(
+            ctx, probes(state_dir), ledger=ledger(), clock=_now, new_id=_id, timer=time.monotonic
+        )
+
+    @app.get("/v1/hardware")
+    def latest_hardware() -> dict[str, Any]:
+        snapshots = ledger().current(ctx, "HardwareSnapshot")
+        if not snapshots:
+            raise DspError(ErrorCode.NOT_FOUND, "nothing has been discovered yet")
+        return snapshots[-1]
 
     @app.post("/v1/profiles")
     def create_profile(
