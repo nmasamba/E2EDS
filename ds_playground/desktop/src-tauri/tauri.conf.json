@@ -1,0 +1,22 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "DS Playground",
+  "version": "0.1.0",
+  "identifier": "dev.dsplayground.desktop",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [{ "title": "DS Playground", "width": 960, "height": 640 }],
+    "security": { "csp": "default-src 'self'; connect-src http://127.0.0.1:*" }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "deb", "appimage"],
+    "icon": ["icons/icon.png"],
+    "externalBin": ["binaries/dsp-harness"]
+  }
+}

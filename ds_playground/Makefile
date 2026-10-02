@@ -1,4 +1,7 @@
-.PHONY: install format test-fast sat verify verify-linux
+.PHONY: install format test-fast sat verify verify-linux harness-bin desktop-dev desktop-build e2e
+
+# rustup from Homebrew is keg-only on macOS; the extra entries are harmless elsewhere.
+export PATH := /opt/homebrew/opt/rustup/bin:$(HOME)/.cargo/bin:$(PATH)
 
 install:        ## create the environment from the lock
 	uv sync --frozen
@@ -21,3 +24,18 @@ verify-linux:   ## the same gate in a Linux container (repo mounted read-only)
 		-e UV_PROJECT_ENVIRONMENT=/tmp/venv -e UV_CACHE_DIR=/tmp/uv -e RUFF_CACHE_DIR=/tmp/ruff \
 		-e MYPY_CACHE_DIR=/tmp/mypy -e COVERAGE_FILE=/tmp/coverage -e PYTEST_ADDOPTS="-p no:cacheprovider" \
 		ghcr.io/astral-sh/uv:python3.12-bookworm-slim sh -c "uv sync --frozen && sh tools/verify.sh"
+
+harness-bin:    ## freeze the harness into one executable, named for the target triple, for the bundle
+	uv run --frozen --group build pyinstaller --noconfirm --onefile --copy-metadata dsp \
+		--name dsp-harness-$$(rustc --print host-tuple) --distpath desktop/src-tauri/binaries \
+		--workpath build/pyinstaller --specpath build/pyinstaller src/dsp/harness/__main__.py
+
+desktop-dev: harness-bin    ## open the desktop window against the dev server
+	cd desktop && pnpm install --frozen-lockfile && pnpm tauri dev
+
+desktop-build: harness-bin  ## build the app bundle (.app on macOS; deb and AppImage on Linux)
+	cd desktop && pnpm install --frozen-lockfile && pnpm tauri build
+
+e2e:            ## renderer tests on a real harness, then the built app; run desktop-build first
+	cd desktop && pnpm test
+	uv run pytest -m desktop tests/e2e

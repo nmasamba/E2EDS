@@ -6,4 +6,4 @@ uv run ruff format --check src tools tests fixtures
 uv run ruff check src tools tests fixtures
 uv run mypy
 uv run python tools/check_boundaries.py
-uv run pytest --cov=dsp --cov-report=term-missing:skip-covered --cov-fail-under=85
+uv run pytest -m "not desktop" --cov=dsp --cov-report=term-missing:skip-covered --cov-fail-under=85

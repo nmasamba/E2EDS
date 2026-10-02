@@ -1,0 +1,25 @@
+:root {
+  color-scheme: light dark;
+  font: 16px/1.5 system-ui, sans-serif;
+}
+
+main {
+  max-width: 40rem;
+  margin: 4rem auto;
+  padding: 0 2rem;
+}
+
+h1 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+}
+
+p {
+  margin: 0.75rem 0 0;
+}
+
+.detail {
+  font-variant-numeric: tabular-nums;
+}
