@@ -57,16 +57,19 @@ function Folders({ harness }: { harness: Harness }) {
   const [grants, setGrants] = useState<Grant[]>([]);
   const [problem, setProblem] = useState("");
   const heading = useRef<HTMLHeadingElement>(null);
+  const queue = useRef(Promise.resolve());
 
-  const attempt = async (change?: () => Promise<unknown>) => {
-    try {
-      await change?.();
-      setGrants((await call<{ grants: Grant[] }>(harness, "/v1/grants")).grants);
-      setProblem("");
-    } catch (error) {
-      setProblem(error instanceof Error ? error.message : String(error));
-    }
-  };
+  // One at a time, in order: a refresh that finishes late must not undo a newer change or problem.
+  const attempt = (change?: () => Promise<unknown>) =>
+    (queue.current = queue.current.then(async () => {
+      try {
+        await change?.();
+        setGrants((await call<{ grants: Grant[] }>(harness, "/v1/grants")).grants);
+        setProblem("");
+      } catch (error) {
+        setProblem(error instanceof Error ? error.message : String(error));
+      }
+    }));
   useEffect(() => {
     void attempt();
   }, []);

@@ -186,6 +186,19 @@ test("R26: a refused pick shows the harness's reason", async ({ page }) => {
   await expectNoAxeViolations(page);
 });
 
+test("R26: a slow earlier refresh does not wipe a newer problem", async ({ page }) => {
+  await page.route("**/v1/grants", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    await route.continue();
+  });
+  const listed = page.waitForResponse((response) => response.url().endsWith("/v1/grants"));
+  await open(page, harness, () => native("/v1/grants", { purpose: "source_root", path: "/absent" }));
+  await page.getByRole("button", { name: "Add source folder…" }).click();
+  await listed;
+  await page.waitForTimeout(300);
+  await expect(page.getByRole("alert")).toHaveText("Could not update folders: no such folder");
+});
+
 test("C23: the window itself cannot turn a path into a grant", async ({ page }) => {
   const { folder } = await grant("output_root", "already granted");
   await open(page, harness);
