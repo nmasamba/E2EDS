@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import AxeBuilder from "@axe-core/playwright";
@@ -52,6 +52,15 @@ async function open(page: Page, answer: { base_url: string; token: string }, pic
   await page.goto("/");
 }
 
+type Answer = {
+  handle: string;
+  message: string;
+  id: string;
+  grants: { handle: string; label: string }[];
+  cpu: { visible_logical_processors: number; effective_cpu_quota: number };
+  memory: { total_gib: number };
+};
+
 /** One request to the harness from Node, which sends no Origin header: the CLI's position. */
 async function native(path: string, body?: object) {
   const response = await fetch(`${harness.base_url}${path}`, {
@@ -59,8 +68,7 @@ async function native(path: string, body?: object) {
     headers: { Authorization: `Bearer ${harness.token}`, "Content-Type": "application/json" },
     body: body && JSON.stringify(body),
   });
-  const answer: { handle: string; message: string; grants: { handle: string; label: string }[] } =
-    await response.json();
+  const answer: Answer = await response.json();
   if (!response.ok) throw new Error(answer.message);
   return answer;
 }
@@ -70,6 +78,21 @@ async function grant(purpose: string, name: string) {
   const folder = join(mkdtempSync(join(tmpdir(), "dsp-folders-")), name);
   mkdirSync(folder);
   return { folder, ...(await native("/v1/grants", { purpose, path: folder })) };
+}
+
+const folders = (page: Page) => page.getByRole("region", { name: "Folders" });
+const stage = (page: Page, label: string) =>
+  page.getByRole("navigation", { name: "Work trail" }).getByRole("listitem").filter({ hasText: label });
+
+/** Profile a CSV through grants from Node, the way `dsp profile` does. */
+async function profile(csv: string) {
+  const work = mkdtempSync(join(tmpdir(), "dsp-work-"));
+  writeFileSync(join(work, "data.csv"), csv);
+  mkdirSync(join(work, "out"));
+  const source = await native("/v1/grants", { purpose: "source_root", path: join(work, "data.csv") });
+  const output = await native("/v1/grants", { purpose: "output_root", path: join(work, "out") });
+  const request = { source_handle: source.handle, relative_path: ".", output_handle: output.handle };
+  return native("/v1/profiles", request).catch((error: Error) => error.message);
 }
 
 async function expectNoAxeViolations(page: Page) {
@@ -131,7 +154,7 @@ test("R26: granted folders are listed by name and never by path", async ({ page 
   const source = await grant("source_root", "orders 2026");
   await grant("output_root", "reports");
   await open(page, harness);
-  await expect(page.getByRole("listitem")).toHaveText([
+  await expect(folders(page).getByRole("listitem")).toHaveText([
     "Source folder: orders 2026Remove",
     "Output folder: reportsRemove",
   ]);
@@ -149,9 +172,9 @@ test("R26: a folder picked in the shell's dialog appears in the list", async ({ 
   await expect(page.getByText("No folders granted yet.")).toBeVisible();
   await expectNoAxeViolations(page);
   await page.getByRole("button", { name: "Add source folder…" }).click();
-  await expect(page.getByRole("listitem")).toHaveText(["Source folder: picked dataRemove"]);
+  await expect(folders(page).getByRole("listitem")).toHaveText(["Source folder: picked dataRemove"]);
   await page.getByRole("button", { name: "Add output folder…" }).click();
-  await expect(page.getByRole("listitem")).toHaveCount(2);
+  await expect(folders(page).getByRole("listitem")).toHaveCount(2);
   expect(asked).toEqual(["source_root", "output_root"]);
   expect((await native("/v1/grants")).grants.map((active) => active.label)).toEqual([
     "picked data",
@@ -173,7 +196,7 @@ test("R26: Remove revokes the grant in the harness and keeps focus in the page",
   await grant("output_root", "drop");
   await open(page, harness);
   await page.getByRole("button", { name: "Remove output folder drop" }).click();
-  await expect(page.getByRole("listitem")).toHaveText(["Source folder: keepRemove"]);
+  await expect(folders(page).getByRole("listitem")).toHaveText(["Source folder: keepRemove"]);
   await expect(page.getByRole("heading", { name: "Folders" })).toBeFocused();
   expect((await native("/v1/grants")).grants.map((active) => active.label)).toEqual(["keep"]);
   await expectNoAxeViolations(page);
@@ -202,7 +225,7 @@ test("R26: a slow earlier refresh does not wipe a newer problem", async ({ page 
 test("C23: the window itself cannot turn a path into a grant", async ({ page }) => {
   const { folder } = await grant("output_root", "already granted");
   await open(page, harness);
-  await expect(page.getByRole("listitem")).toHaveCount(1);
+  await expect(folders(page).getByRole("listitem")).toHaveCount(1);
   const outcomes = await page.evaluate(
     async ({ base_url, token, path }) => {
       const attempt = (type: string) =>
@@ -222,4 +245,106 @@ test("C23: the window itself cannot turn a path into a grant", async ({ page }) 
   expect((await native("/v1/grants")).grants.map((active) => active.label)).toEqual([
     "already granted",
   ]);
+});
+
+test("R20, R19: the trail, environment and plan are projections of the ledger", async ({ page }) => {
+  await open(page, harness);
+  const trail = page.getByRole("navigation", { name: "Work trail" }).getByRole("listitem");
+  await expect(trail).toHaveCount(9);
+  await expect(stage(page, "Environment and context")).toContainText("● Completed");
+  await expect(stage(page, "Review the workflow")).toContainText(
+    "◆ Waiting for you · INSUFFICIENT_EVIDENCE",
+  );
+  await expect(stage(page, "Independent evaluation")).toContainText("○ Not started");
+  const observed = await native("/v1/hardware");
+  const environment = page.getByRole("region", { name: "Environment" });
+  await expect(environment).toContainText(
+    `${observed.cpu.visible_logical_processors} visible, ${observed.cpu.effective_cpu_quota} usable`,
+  );
+  await expect(environment).toContainText(`${observed.memory.total_gib} GiB total`);
+  await expect(environment).toContainText(/Observed \d+ s ago/);
+  await expect(page.getByRole("region", { name: "Provisional plan" })).toContainText(
+    "Outcome: INSUFFICIENT_EVIDENCE. local-native-draft is unqualified",
+  );
+  await expect(page.getByRole("region", { name: "Resource status" })).toContainText(
+    `${observed.cpu.effective_cpu_quota} processors`,
+  );
+  await expectNoAxeViolations(page);
+  await page.reload();
+  await expect(stage(page, "Environment and context")).toContainText("● Completed");
+  await expect(environment).toContainText(`${observed.memory.total_gib} GiB total`);
+});
+
+test("R20: work done through the CLI reaches the open window", async ({ page }) => {
+  await open(page, harness);
+  await expect(stage(page, "Develop and optimise")).toContainText("○ Not started");
+  expect(await profile("a,b\n1,2\n")).toMatchObject({ version: "v1", files: 3 });
+  await expect(stage(page, "Develop and optimise")).toContainText("● Completed");
+  await expect(stage(page, "Data and sources")).toContainText("1 source granted");
+  await expect(folders(page).getByRole("listitem")).toHaveText([
+    "Source folder: data.csvRemove",
+    "Output folder: outRemove",
+  ]);
+  const wide = Array.from({ length: 201 }, (_, column) => `c${column}`).join(",");
+  expect(await profile(`${wide}\n`)).toContain("columns");
+  await expect(stage(page, "Develop and optimise")).toContainText("✕ Failed · INPUT_INVALID");
+  await expectNoAxeViolations(page);
+});
+
+test("D19: the environment display goes stale after 60 seconds and can be observed again", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await open(page, harness);
+  const environment = page.getByRole("region", { name: "Environment" });
+  await expect(environment).toContainText(/Observed \d+ s ago/);
+  const before = await native("/v1/hardware");
+  await page.clock.fastForward(61_000);
+  await expect(environment).toContainText(/Stale: observed \d+ s ago/);
+  await expect(page.getByRole("region", { name: "Resource status" })).toContainText("stale");
+  await expectNoAxeViolations(page);
+  await environment.getByRole("button", { name: "Observe again" }).click();
+  await expect.poll(async () => (await native("/v1/hardware")).id).not.toBe(before.id);
+});
+
+test("A31: what could not be observed is shown as unknown with its reason", async ({ page }) => {
+  const real = await native("/v1/hardware", {});
+  const partial = {
+    ...real,
+    memory: { total_gib: null, available_gib: null, effective_limit_gib: null },
+    accelerators: { inventory_status: "unknown", devices: [] },
+    probes: [
+      {
+        name: "accelerators",
+        status: "permission_denied",
+        safe_summary: "the operating system denied this probe",
+      },
+    ],
+  };
+  await page.route("**/v1/hardware", (route) =>
+    route.request().method() === "GET"
+      ? route.fulfill({ json: partial, headers: { "access-control-allow-origin": "*" } })
+      : route.continue(),
+  );
+  await open(page, harness);
+  const environment = page.getByRole("region", { name: "Environment" });
+  await expect(environment).toContainText("unknown GiB total, unknown GiB available");
+  await expect(environment).toContainText("Acceleratorsunknown");
+  await expect(environment).toContainText(
+    "Not observedaccelerators: the operating system denied this probe",
+  );
+  await expectNoAxeViolations(page);
+});
+
+test("R20: a lost connection keeps the last known state and says so", async ({ page }) => {
+  const own = await startHarness();
+  await open(page, own);
+  await expect(stage(page, "Environment and context")).toContainText("● Completed");
+  process.kill(own.pid);
+  await expect(page.getByRole("status")).toHaveText(/○ Connection lost; last known state as of /, {
+    timeout: 15_000,
+  });
+  await expect(stage(page, "Environment and context")).toContainText("● Completed");
+  await expect(page.getByRole("region", { name: "Environment" })).toContainText("GiB total");
+  await expectNoAxeViolations(page);
 });
