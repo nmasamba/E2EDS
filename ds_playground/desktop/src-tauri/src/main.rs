@@ -1,12 +1,16 @@
 //! The desktop shell does four things: spawn the bundled harness, hand the renderer the harness
-//! address and credential, run the native folder picker, and provide a Quit menu. Everything
+//! address and credential, run the native folder picker, and provide a Quit menu that stops the
+//! harness it started. Closing the window only detaches: the harness keeps running. Everything
 //! else is in the harness.
 
 use std::{
     env, fs,
     path::{Path, PathBuf},
     process::Command,
-    sync::mpsc,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc, Arc,
+    },
     thread,
 };
 
@@ -36,12 +40,12 @@ fn harness() -> Result<Value, String> {
     }
 }
 
-/// Tell the harness which folder the owner picked; the answer names it by handle and label only.
-/// This request carries no Origin header, which is how the harness tells it from the renderer.
-fn register(purpose: &str, folder: &Path) -> Result<Value, String> {
+/// Send the shell's own request to the harness and return its answer. It carries no Origin
+/// header, which is how the harness tells the shell from the renderer.
+fn post(route: &str, body: Value) -> Result<Value, String> {
     let harness = harness()?;
     let url = format!(
-        "{}/v1/grants",
+        "{}{route}",
         harness["base_url"].as_str().unwrap_or_default()
     );
     let token = format!("Bearer {}", harness["token"].as_str().unwrap_or_default());
@@ -50,7 +54,7 @@ fn register(purpose: &str, folder: &Path) -> Result<Value, String> {
         .http_status_as_error(false)
         .build()
         .header("Authorization", token)
-        .send_json(json!({ "purpose": purpose, "path": folder }))
+        .send_json(body)
         .map_err(|_| "the harness did not answer")?;
     let answer: Value = response
         .body_mut()
@@ -61,6 +65,11 @@ fn register(purpose: &str, folder: &Path) -> Result<Value, String> {
     } else {
         Err(answer["message"].as_str().unwrap_or("refused").into())
     }
+}
+
+/// Tell the harness which folder the owner picked; the answer names it by handle and label only.
+fn register(purpose: &str, folder: &Path) -> Result<Value, String> {
+    post("/v1/grants", json!({ "purpose": purpose, "path": folder }))
 }
 
 /// Open the native folder picker and grant what the owner picks. The path goes from the picker
@@ -99,8 +108,16 @@ fn main() {
     if tauri::is_dev() {
         command.arg("--dev");
     }
+    // The shell owns the harness only while the process it spawned is still running; one that
+    // exited at once found another instance already serving this profile.
+    let owned = Arc::new(AtomicBool::new(false));
     if let Ok(mut child) = command.spawn() {
-        thread::spawn(move || child.wait());
+        owned.store(true, Ordering::SeqCst);
+        let owned = owned.clone();
+        thread::spawn(move || {
+            let _ = child.wait();
+            owned.store(false, Ordering::SeqCst);
+        });
     }
 
     tauri::Builder::default()
@@ -112,8 +129,13 @@ fn main() {
                 &[&Submenu::with_items(app, "DS Playground", true, &[&quit])?],
             )
         })
-        .on_menu_event(|app, event| {
+        .on_menu_event(move |app, event| {
             if event.id() == "quit" {
+                // Explicit Quit: the harness this shell started finishes work in progress, then
+                // stops. A harness started elsewhere is left running.
+                if owned.load(Ordering::SeqCst) {
+                    let _ = post("/v1/shutdown", json!({}));
+                }
                 app.exit(0);
             }
         })
@@ -127,8 +149,8 @@ mod tests {
     use super::*;
     use std::time::Duration;
 
-    /// R26, C23: the shell's own request turns a picked folder into a grant in a real harness,
-    /// and the answer the renderer will receive carries no path.
+    /// R26, C23, A44: the shell's own requests turn a picked folder into a grant in a real
+    /// harness, with no path in the answer the renderer receives, and stop that harness on Quit.
     #[test]
     fn a_picked_folder_becomes_a_grant_in_a_real_harness() {
         let home = env::temp_dir().join(format!("dsp-shell-test-{}", std::process::id()));
@@ -146,8 +168,12 @@ mod tests {
         let granted = register("source_root", &folder);
         let missing = register("output_root", &home.join("absent"));
         let unknown = register("everything", &folder);
-        server.kill().unwrap();
-        server.wait().unwrap();
+        let stopping = post("/v1/shutdown", json!({}));
+        let exited = (0..100).any(|_| {
+            thread::sleep(Duration::from_millis(100));
+            server.try_wait().unwrap().is_some()
+        });
+        let _ = server.kill();
         let stopped = register("source_root", &folder);
         fs::remove_dir_all(&home).unwrap();
 
@@ -162,6 +188,8 @@ mod tests {
             unknown,
             Err("a grant needs an absolute path and a known purpose".into())
         );
+        assert_eq!(stopping, Ok(json!({ "status": "stopping" })));
+        assert!(exited, "the harness did not stop when the shell asked");
         assert_eq!(stopped, Err("the harness did not answer".into()));
     }
 }

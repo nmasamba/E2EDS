@@ -4,9 +4,70 @@
 }
 
 main {
-  max-width: 40rem;
-  margin: 4rem auto;
+  max-width: 64rem;
+  margin: 3rem auto 5rem;
   padding: 0 2rem;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: 18rem 1fr;
+  gap: 3rem;
+}
+
+@media (max-width: 48rem) {
+  .workspace {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+}
+
+nav {
+  margin-top: 2.5rem;
+}
+
+ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+ol li {
+  display: block;
+}
+
+ol li span {
+  display: block;
+}
+
+ol li span + span {
+  font-size: 0.875rem;
+}
+
+dl {
+  display: grid;
+  grid-template-columns: 9rem 1fr;
+  gap: 0.25rem 1rem;
+  margin: 0.75rem 0 0;
+}
+
+dl div {
+  display: contents;
+}
+
+dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.resources {
+  position: fixed;
+  inset: auto 0 0 0;
+  padding: 0.5rem 2rem;
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+  background: Canvas;
+  border-top: 1px solid color-mix(in srgb, currentColor 25%, transparent);
 }
 
 h1 {

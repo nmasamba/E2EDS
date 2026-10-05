@@ -1,4 +1,9 @@
 import json
+import os
+import signal
+import threading
+import time
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -9,8 +14,10 @@ from typer.testing import CliRunner
 from dsp.adapters.ledger_sqlite import SqliteLedger
 from dsp.application.packs import verify_pack
 from dsp.contracts.errors import ErrorCode, TrustedContext
+from dsp.contracts.schemas import validate
 from dsp.harness import workspace
 from dsp.harness.app import DEV_ORIGIN, SHELL_ORIGIN, create_app
+from dsp.harness.instance import connect
 from dsp.interfaces.cli import app as cli
 from fixtures.operations import write_orders
 
@@ -215,6 +222,225 @@ def test_an_unexpected_failure_is_a_structured_error_without_detail(
     assert response.headers["access-control-allow-origin"] == SHELL_ORIGIN
 
 
+def test_discovery_runs_from_the_window_and_the_latest_snapshot_is_served(api: TestClient) -> None:
+    """R19, A31: the window can ask for discovery before any model exists and read the result."""
+    missing = api.get("/v1/hardware", headers=WINDOW)
+    assert (missing.status_code, missing.json()["code"]) == (404, ErrorCode.NOT_FOUND)
+    first = api.post("/v1/hardware", headers=WINDOW)
+    second = api.post("/v1/hardware", headers=WINDOW)
+    assert (first.status_code, first.json()["evidence_source"]) == (200, "observed")
+    assert api.get("/v1/hardware", headers=WINDOW).json() == second.json() != first.json()
+    assert api.post("/v1/hardware").status_code == 401
+
+
+def test_the_workspace_stays_usable_when_discovery_finds_nothing(
+    api: TestClient, folders: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A31: with every probe denied the snapshot is unknown and grants and status still work."""
+
+    def denied() -> dict[str, Any]:
+        raise PermissionError
+
+    monkeypatch.setattr(workspace, "probes", lambda state: {"cpu": denied, "accelerators": denied})
+    snapshot = api.post("/v1/hardware", headers=WINDOW).json()
+    assert (snapshot["evidence_source"], snapshot["accelerators"]["inventory_status"]) == (
+        "unknown",
+        "unknown",
+    )
+    assert api.get("/v1/status", headers=WINDOW).json()["status"] == "ok"
+    assert granted(api, folders["data"], "source_root").startswith("grant-")
+
+
+def test_a_provisional_plan_follows_discovery_and_supersedes_the_last(
+    api: TestClient, tmp_path: Path
+) -> None:
+    """R19, A32: the window gets a schema-valid plan that authorises nothing and names its gaps."""
+    early = api.post("/v1/plan", headers=WINDOW)
+    assert (early.status_code, early.json()["code"]) == (400, ErrorCode.INPUT_INVALID)
+    assert api.get("/v1/plan", headers=WINDOW).status_code == 404
+    snapshot = api.post("/v1/hardware", headers=WINDOW).json()
+    first = api.get("/v1/plan", headers=WINDOW).json()  # proposed with the discovery
+    second = api.post("/v1/plan", headers=WINDOW).json()
+    validate("WorkflowPlan", second)
+    assert (first["feasibility_outcome"], first["authorises_execution"]) == (
+        "INSUFFICIENT_EVIDENCE",
+        False,
+    )
+    assert first["recommendation"] == (
+        "local-native-draft is unqualified: this compute profile has not been qualified."
+    )
+    assert first["hardware_snapshot_refs"][0]["id"] == snapshot["id"]
+    assert (first["supersedes_ref"], second["supersedes_ref"]["id"]) == (None, first["id"])
+    assert api.get("/v1/plan", headers=WINDOW).json() == second
+    events = SqliteLedger(tmp_path / "home" / "ledger.sqlite", str).events(TrustedContext.local())
+    assert [event["type"] for event in events] == [
+        "discovery.finished",
+        "plan.proposed",
+        "plan.proposed",
+    ]
+    assert api.post("/v1/plan").status_code == 401
+
+
+def test_polling_replays_from_a_cursor_and_resets_an_unknown_one(
+    api: TestClient, folders: dict[str, Path], tmp_path: Path
+) -> None:
+    """R20: events come in commit order after a cursor; a cursor from elsewhere gets everything."""
+    assert api.get("/v1/events", headers=WINDOW).json() == {
+        "events": [],
+        "cursor": 0,
+        "reset": False,
+    }
+    stale = api.get("/v1/events?after=7", headers=WINDOW).json()
+    assert stale == {"events": [], "cursor": 0, "reset": True}
+    handle = granted(api, folders["data"], "source_root")
+    api.post("/v1/hardware", headers=WINDOW)
+    everything = api.get("/v1/events", headers=WINDOW).json()
+    kinds = [event["type"] for event in everything["events"]]
+    assert kinds == ["grant.created", "discovery.finished", "plan.proposed"]
+    assert everything["events"][0]["body"] == {
+        "handle": handle,
+        "purpose": "source_root",
+        "label": "data",
+    }
+    assert set(everything["events"][0]) == {"seq", "event_id", "type", "recorded_at", "body"}
+    later = api.get("/v1/events?after=1", headers=WINDOW).json()
+    assert ([event["type"] for event in later["events"]], later["reset"]) == (kinds[1:], False)
+    current = api.get(f"/v1/events?after={everything['cursor']}", headers=WINDOW).json()
+    assert current == {"events": [], "cursor": everything["cursor"], "reset": False}
+    beyond = api.get("/v1/events?after=99", headers=WINDOW).json()
+    assert (beyond["reset"], beyond["events"], beyond["cursor"]) == (
+        True,
+        everything["events"],
+        everything["cursor"],
+    )
+    assert api.get("/v1/events?after=-1", headers=WINDOW).status_code == 400
+    assert api.get("/v1/events").status_code == 401
+    assert str(tmp_path) not in json.dumps(everything)
+
+
+def frames(lines: Iterator[str], count: int) -> list[tuple[str, dict[str, Any]]]:
+    """Read ``count`` server-sent events from a response as (event name, data) pairs."""
+    seen: list[tuple[str, dict[str, Any]]] = []
+    name = ""
+    for line in lines:
+        if line.startswith("event: "):
+            name = line.removeprefix("event: ")
+        elif line.startswith("data: "):
+            seen.append((name, json.loads(line.removeprefix("data: "))))
+            if len(seen) == count:
+                break
+    return seen
+
+
+def test_the_stream_replays_then_follows_and_equals_polling(state_dir: Path) -> None:
+    """R20: a real stream replays from its cursor, delivers new events live and matches polling."""
+    client = connect(state_dir)
+    client.post("/v1/hardware")
+    with client.stream("GET", "/v1/events/stream", timeout=30) as live:
+        lines = live.iter_lines()
+        replayed = frames(lines, 2)
+        client.post("/v1/plan")
+        (followed,) = frames(lines, 1)
+        assert live.headers["content-type"].startswith("text/event-stream")
+    polled = client.get("/v1/events").json()["events"]
+    assert [data for _, data in [*replayed, followed]] == polled
+    assert [name for name, _ in [*replayed, followed]] == [
+        "discovery.finished",
+        "plan.proposed",
+        "plan.proposed",
+    ]
+    with client.stream("GET", f"/v1/events/stream?after={polled[1]['seq']}", timeout=30) as live:
+        assert frames(live.iter_lines(), 1) == [("plan.proposed", polled[2])]
+    with client.stream("GET", "/v1/events/stream?after=999", timeout=30) as live:
+        resynchronised = frames(live.iter_lines(), 4)
+    assert resynchronised[0] == ("stream.resynchronised", {})
+    assert [data for _, data in resynchronised[1:]] == polled
+    assert client.get("/v1/status").json()["status"] == "ok"
+
+
+def test_an_open_stream_does_not_keep_a_stopping_harness_alive(
+    state_dir: Path, harness_stopped: Callable[[Path], bool]
+) -> None:
+    """A44: asked to stop while a client is streaming, the harness ends the stream and exits."""
+    client = connect(state_dir)
+    pid = client.get("/v1/status").json()["pid"]
+    with client.stream("GET", "/v1/events/stream", timeout=30) as live:
+        os.kill(pid, signal.SIGTERM)
+        assert list(live.iter_lines()) == []
+    assert harness_stopped(state_dir)
+    (state_dir / "harness.json").unlink()
+
+
+def test_a_plan_from_unobserved_hardware_says_unknown(
+    api: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A31, A32: with every probe denied the plan is still proposed and its option is unknown."""
+
+    def denied() -> dict[str, Any]:
+        raise PermissionError
+
+    monkeypatch.setattr(workspace, "probes", lambda state: {"memory": denied})
+    api.post("/v1/hardware", headers=WINDOW)
+    proposed = api.post("/v1/plan", headers=WINDOW).json()
+    assert proposed["recommendation"] == (
+        "local-native-draft is unknown: its hardware has not been observed."
+    )
+    assert proposed["feasibility_outcome"] == "INSUFFICIENT_EVIDENCE"
+
+
+def test_quit_drains_work_in_progress_before_the_harness_stops(
+    state_dir: Path, folders: dict[str, Path], harness_stopped: Callable[[Path], bool]
+) -> None:
+    """A44, D24: a stop request lets the profile already running finish and export, then exits."""
+    client = connect(state_dir)
+    write_orders(folders["data"] / "large.csv", orders=60_000, accounts=500)
+    source = client.post(
+        "/v1/grants", json={"purpose": "source_root", "path": str(folders["data"])}
+    ).json()["handle"]
+    output = client.post(
+        "/v1/grants", json={"purpose": "output_root", "path": str(folders["out"])}
+    ).json()["handle"]
+    finished: dict[str, Any] = {}
+
+    def work() -> None:
+        body = {"source_handle": source, "relative_path": "large.csv", "output_handle": output}
+        finished["answer"] = connect(state_dir).post("/v1/profiles", json=body, timeout=60)
+        finished["at"] = time.monotonic()
+
+    worker = threading.Thread(target=work)
+    worker.start()
+    for _ in range(100):  # wait until the job is recorded as started, so the stop arrives mid-work
+        if any(
+            event["type"] == "job.started" for event in client.get("/v1/events").json()["events"]
+        ):
+            break
+        time.sleep(0.02)
+    refused = client.post("/v1/shutdown", headers={"Origin": SHELL_ORIGIN})
+    stopping = client.post("/v1/shutdown")
+    asked = time.monotonic()
+    worker.join(60)
+    assert (refused.status_code, stopping.json()) == (403, {"status": "stopping"})
+    assert asked < finished["at"]
+    assert finished["answer"].json() == {"version": "v1", "files": 3}
+    assert verify_pack(folders["out"] / "v1") == []
+    assert harness_stopped(state_dir)
+    (state_dir / "harness.json").unlink()
+
+
+def test_dsp_stop_stops_the_harness_and_the_next_command_starts_a_new_one(
+    home: Path, harness_stopped: Callable[[Path], bool]
+) -> None:
+    """A44, R26: `dsp stop` is the CLI's Quit; state survives into the harness that starts next."""
+    first = connect(home).get("/v1/status").json()["pid"]
+    assert run("hardware").exit_code == 0
+    assert run("stop").output.strip() == "harness stopping"
+    assert harness_stopped(home)
+    again = connect(home)
+    assert again.get("/v1/status").json()["pid"] != first
+    kinds = [event["type"] for event in again.get("/v1/events").json()["events"]]
+    assert kinds == ["discovery.finished", "plan.proposed"]
+
+
 def run(*arguments: object) -> Any:
     """Invoke the CLI in-process; it talks to a real harness on the temporary profile."""
     return CliRunner().invoke(cli, [str(argument) for argument in arguments])
@@ -243,3 +469,27 @@ def test_cli_profile_grants_only_what_it_names(home: Path, folders: dict[str, Pa
     assert (result.exit_code, verify_pack(folders["out"] / "v1")) == (0, [])
     listed = [line.split()[1:] for line in run("grants").output.splitlines()]
     assert listed == [["source_root", "orders.csv"], ["output_root", "out"]]
+
+
+def test_the_cli_reports_observed_hardware(home: Path) -> None:
+    """R19: `dsp hardware` observes this machine through the harness and prints what it found."""
+    result = run("hardware")
+    first, second = result.output.splitlines()[:2]
+    assert result.exit_code == 0
+    assert "processors" in first
+    assert "GiB memory" in first
+    assert "unknown" not in first
+    assert second.startswith("accelerators ")
+
+
+def test_the_cli_reports_a_provisional_plan(home: Path) -> None:
+    """R19: `dsp plan` needs discovery first, then prints the outcome, the reason and the gaps."""
+    early = run("plan")
+    assert (early.exit_code, "INPUT_INVALID" in early.output) == (2, True)
+    assert run("hardware").exit_code == 0
+    lines = run("plan").output.splitlines()
+    assert lines[0].startswith("INSUFFICIENT_EVIDENCE: local-native-draft is unqualified")
+    assert (
+        lines[1]
+        == "needs: Recheck capacity and reserve it at dispatch; this plan authorises nothing."
+    )

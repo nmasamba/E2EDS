@@ -105,3 +105,53 @@ def revoke(handle: str) -> None:
     except DspError as error:
         raise _fail(error) from error
     typer.echo(f"revoked {handle}")
+
+
+@app.command()
+def hardware() -> None:
+    """Observe this machine's processors, memory, storage and accelerators, and report them."""
+    try:
+        snapshot = _call("POST", "/v1/hardware")
+    except DspError as error:
+        raise _fail(error) from error
+
+    def known(value: object) -> object:
+        return "unknown" if value is None else value
+
+    system, memory, gpus = snapshot["system"], snapshot["memory"], snapshot["accelerators"]
+    free = [volume["available_gib"] for volume in snapshot["storage"]] or [None]
+    typer.echo(
+        f"{known(system['os'])} {known(system['architecture'])}: "
+        f"{known(snapshot['cpu']['visible_logical_processors'])} processors, "
+        f"{known(memory['total_gib'])} GiB memory ({known(memory['available_gib'])} available), "
+        f"{known(free[0])} GiB free"
+    )
+    models = ", ".join(device["model"] for device in gpus["devices"])
+    typer.echo(f"accelerators {gpus['inventory_status']} {models}".rstrip())
+    for probe in snapshot["probes"]:
+        if probe["status"] != "observed":
+            typer.echo(f"{probe['name']}: {probe['status']}: {probe['safe_summary']}")
+
+
+@app.command()
+def plan() -> None:
+    """Propose a provisional plan from the latest observed hardware and report it."""
+    try:
+        proposed = _call("POST", "/v1/plan")
+    except DspError as error:
+        raise _fail(error) from error
+    typer.echo(f"{proposed['feasibility_outcome']}: {proposed['recommendation']}")
+    for option in proposed["alternatives"]:
+        typer.echo(f"{option['option_id']} is {option['disposition']}: {option['reason']}")
+    for condition in proposed["required_conditions"]:
+        typer.echo(f"needs: {condition}")
+
+
+@app.command()
+def stop() -> None:
+    """Stop the local harness after the work already in progress has finished."""
+    try:
+        _call("POST", "/v1/shutdown")
+    except DspError as error:
+        raise _fail(error) from error
+    typer.echo("harness stopping")

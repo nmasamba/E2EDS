@@ -1,0 +1,15 @@
+{
+  "id": "A44",
+  "sprint": 2,
+  "os": "darwin-arm64",
+  "fixture": "built desktop bundle on a temporary profile",
+  "commit": "2c81168",
+  "expected": "launch without model or terminal, select scoped folders, inspect the graph by keyboard, pause during busy work, close, quit, crash, sleep and reopen; one authenticated harness, history preserved, workers reconciled, renderer confined",
+  "actual": "the window's own first discovery reached the bundled harness; a second instance attached to the same harness; the harness outlived a killed shell; reopen replayed the same history without repeating discovery; a crashed harness was replaced with the history intact; the stop request ended the harness",
+  "outcome": "INSUFFICIENT_EVIDENCE",
+  "limits": [
+    "everything exercised passed, but jobs, pause, workers and the relationship graph do not exist until later sprints, and sleep and wake were not exercised",
+    "choosing a folder in the native dialog was checked by the owner by hand, not by this run",
+    "the Quit menu item and window close are not scripted on macOS"
+  ]
+}

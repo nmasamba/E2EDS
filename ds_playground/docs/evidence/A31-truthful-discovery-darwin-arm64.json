@@ -1,0 +1,14 @@
+{
+  "id": "A31",
+  "sprint": 2,
+  "os": "darwin-arm64",
+  "fixture": "real probes, with the accelerator probe denied, the memory probe silent, sockets blocked",
+  "commit": "2c81168",
+  "expected": "partial findings within D19 with unknowns and reasons; setup and controls stay usable; no install, elevation or external call",
+  "actual": "discovery returned in 2.0 s with {\"system\": \"observed\", \"cpu\": \"observed\", \"memory\": \"timed_out\", \"storage\": \"observed\", \"accelerators\": \"permission_denied\"}; accelerators unknown, not absent; a plan was still proposed with its option unknown; status and grants answered",
+  "outcome": "PASS",
+  "limits": [
+    "no assistant model or runner exists yet, so 'no model' and 'unavailable runner' hold trivially",
+    "browser-side hardware signals are not used at all"
+  ]
+}

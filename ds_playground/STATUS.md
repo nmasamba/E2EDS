@@ -4,10 +4,9 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 
 ## Now
 
-- **Sprint:** 2 — M1 desktop shell, discovery and plan (Sprint 1 is merged to `main` through PR #1)
-- **Claimed prompt:** none. 2.1 (PR #2) and 2.2 (PR #3) are merged; 2.3 (scoped folder grants) is done and
-  waiting in PR #4. Next is 2.4 (hardware discovery).
-- **Branch:** `sprint-2-grants`, from `main` at `0b18301`, with PR #4 open against `main`
+- **Sprint:** 2 — M1 desktop shell, discovery and plan: complete, gate below. Sprint 3 is next.
+- **Claimed prompt:** none. 2.1 to 2.3 are merged (PRs #2, #3, #4); 2.4 to 2.8 are done and waiting in PR #5.
+- **Branch:** `sprint-2-finish`, from `main` at `8909aa7`, with PR #5 open against `main`
 
 ## Done
 
@@ -21,7 +20,7 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 |---|---|---|---|
 | 0 | Setup | done | G0: PASS for synthetic scope |
 | 1 | M0 foundations and thin slice | merged to `main` (PR #1) | PASS, see below |
-| 2 | M1 desktop, discovery, plan | 2.1 and 2.2 merged; 2.3 done in PR #4 (see below); 2.4–2.8 not started | — |
+| 2 | M1 desktop, discovery, plan | done; 2.4–2.8 in PR #5 | PASS for Sprint 2 scope, see below |
 | 3–11 | M1 | not started | — |
 | 12–20 | M1B, M1C, M1R, M2, M3, M3Z, M4 | not started | — |
 
@@ -83,19 +82,56 @@ suite's pinned digest and the size and digest the source reports for revision `7
   FolderGrant records did.
 - ID trace for Sprint 2 so far: R26 and A44 appear in tests; D19, D24, R19 and R20 belong to prompts 2.4–2.7.
 
+## Sprint 2 gate (2026-10-02)
+
+Code commit `2c81168`; the evidence and this file were committed after it.
+
+- `make verify` on macOS arm64: **197 passed, 1 deselected**, coverage 92.57%. `make verify-linux`
+  (container, linux/arm64): **197 passed, 1 deselected**, coverage 92.93%.
+- `make sat` on macOS and in the Linux container: **4 passed** (Sprint 1's test and Sprint 2's three).
+- `make desktop-build` then `make e2e` on macOS: reducer **6 passed**, renderer **17 passed**, shell (Rust,
+  real harness) **1 passed**, built app **1 passed**.
+- CI run 37050679422 on `2c81168`: `verify` and `desktop` green on `ubuntu-24.04` and macOS. On Linux the
+  desktop job built the deb and AppImage and passed reducer 6, renderer 17, shell 1 and built app 1; that
+  last test inspects the real window through WebDriver, opens and cancels the real folder dialog, closes the
+  real window through the window manager and presses the real Quit shortcut.
+- ID trace for Sprint 2: A31, A32, A44, D19, D24, R19, R20 and R26 all appear in tests or evidence.
+- Evidence records in `docs/evidence/`, one per scenario and OS, all at `2c81168`:
+  - **A31 (truthful discovery): PASS** on macOS arm64 and linux/arm64.
+  - **A32 (hardware does not confer eligibility): INSUFFICIENT_EVIDENCE** on both. Every case exercised
+    gave the expected disposition; the rule table does not yet filter on operation, region, egress,
+    isolation policy or data rights, whose objects arrive in later sprints.
+  - **A44 (native lifecycle): INSUFFICIENT_EVIDENCE** on macOS arm64 and Linux x86-64. Everything
+    exercised passed; jobs, pause, workers and the relationship graph do not exist yet and sleep was not
+    exercised.
+- Acceptance line ("launch with no model and no terminal, pick source and output folders, see observed and
+  unknown hardware and a provisional plan; reopen and see the same state"): shown by the built-app test
+  (launch, the window's own discovery and plan, reopen with the same history), the renderer tests (unknown
+  hardware with its reason), the CLI acceptance test (stop, reopen, identical state) and the owner's manual
+  folder pick. Run for real with the installed CLI: `dsp hardware`, `dsp plan`, `dsp stop`.
+- Gate outcome: **PASS** for Sprint 2 scope. Scenario outcomes are as listed; none is rounded up.
+
 ## Open defects and gaps
 
 - Linux x86-64 is verified by CI only; the local container run is linux/arm64.
-- macOS: the window's text is not read by any automated test (no WebDriver for WKWebView); the end-to-end
-  test checks the harness the app started. The window's requests were checked once by hand
-  (`docs/decisions.md`, 2026-10-02).
+- macOS: the window's text is not read by any automated test (no WebDriver for WKWebView). What is
+  checked there is behaviour: the built app's own window makes the first discovery, which only happens if
+  the real webview loaded, connected and posted to the bundled harness.
 - Linux: the desktop end-to-end test has run only in CI (x86-64). The AppImage is built but never launched;
   the test launches the app unpacked from the deb. No Linux arm64 bundle is built.
-- The Quit menu item is not exercised by a test on either OS.
-- **Choosing a folder in the native dialog is not automated on either OS.** Everything around it is tested
-  (see `docs/decisions.md`, 2026-10-02, "what is and is not automated for the folder dialog"), and the dialog
-  is known to open on both, but nobody has yet picked a folder in the real app and seen it listed. That one
-  manual check is waiting on the owner.
+- macOS: the Quit menu item and window close are not scripted; Quit is tested as the request the shell
+  sends (Rust test) and, on Linux, by pressing the real shortcut. Quit from the Dock or a logout is treated
+  as a close and leaves the harness running. Sleep and wake are not exercised on either OS.
+- The feasibility rules cover family, charge cap, capacity, accelerators, evidence source and
+  qualification; they do not yet filter on operation, region, egress, isolation policy or data rights.
+- The plan shown in the app is for a draft of the built-in CSV profile with placeholder references; real
+  workloads arrive with Sprint 3. The header has no workload, budget, Pause or Cancel yet.
+- The window polls for events every two seconds; the SSE endpoint is served and tested but the window does
+  not use it. The ledger keeps every event, so "expired cursor" means a cursor it never issued.
+- Discovery lists only NVIDIA accelerators on Linux and estimates available memory on macOS.
+- Choosing a folder in the native dialog is not automated on either OS (see `docs/decisions.md`,
+  2026-10-02). The owner checked it by hand on 2026-10-02: a source folder can be added and removed in the
+  real app and appears by its name.
 - The window cannot yet send a request with a body (the preflight allows only `authorization`), so profiling
   is reachable from the CLI only.
 - A proposed OutputBinding declares `max_export_bytes` that nothing enforces yet, and names a placeholder
@@ -107,16 +143,21 @@ Nothing. Standing approvals are in `docs/decisions.md`.
 
 ## Handoff note
 
-Sprint 1 (PR #1), prompt 2.1 (PR #2) and prompt 2.2 (PR #3) are merged to `main`. Prompt 2.3 (scoped folder
-grants) is done on `sprint-2-grants` and waiting for the owner in PR #4; merging is the owner's. **Next is
-prompt 2.4** (hardware discovery), on a new branch from `main` once PR #4 is merged.
+Sprints 1 and 2 are built. Prompts 2.1 to 2.3 are merged to `main` (PRs #2 to #4); 2.4 to 2.8 (hardware
+discovery, feasibility plan, event stream and work trail, lifecycle, the gate) are on `sprint-2-finish` and
+waiting for the owner in PR #5; merging is the owner's. **Next is Sprint 3, prompt 3.1**, on a new branch
+from `main` once PR #5 is merged.
 
-Notes for the next session: every CLI command except `dsp verify` now goes through the harness, so tests
-that call the CLI use the `home` fixture, which stops the harness they start. The frozen sidecar must be
-rebuilt (`make desktop-build`) after any Python change before `make e2e`; new package data or lazily loaded
-modules need a `--collect-data` or hidden-import flag in `make harness-bin`, and the built-app test will show
-it. The Makefile puts the keg-only Rust on PATH for its own targets; outside make, prepend
-`/opt/homebrew/opt/rustup/bin` and `~/.cargo/bin`. `make e2e` needs Playwright's Chromium
-(`pnpm --dir desktop exec playwright install chromium`). The dev window is refused by a harness that was not
-spawned with `--dev`, so stop any running harness before `make desktop-dev`. The harness keeps running after
-the window quits until 2.7 defines the lifecycle.
+Notes for the next session: every CLI command except `dsp verify` goes through the harness, so tests that
+call the CLI use the `home` fixture, which stops the harness they start; to check that a harness has exited,
+use the `harness_stopped` fixture (the Linux container has no `ps`). `make sat` and `make e2e` write evidence
+records to `docs/evidence/` (an `evidence` fixture; give it the scenario's real outcome); the Linux A44
+record comes from the CI desktop job's artifact, and the Linux A31/A32 records from running `tests/sat` in
+the container with `docs/evidence` mounted writable. The frozen sidecar must be rebuilt (`make
+desktop-build`) after any Python change before `make e2e`; new package data needs a `--collect-data` flag in
+`make harness-bin`. The Makefile puts the keg-only Rust on PATH for its own targets; outside make, prepend
+`/opt/homebrew/opt/rustup/bin` and `~/.cargo/bin`. `make e2e` needs Playwright's Chromium (`pnpm --dir
+desktop exec playwright install chromium`). The dev window is refused by a harness that was not spawned
+with `--dev`, so run `dsp stop` before `make desktop-dev`. Sprint 3 brings jobs: the stage reducer
+(`desktop/src/trail.ts`), the event endpoints and the shutdown drain are the pieces it extends, and the
+window needs `content-type` allowed in the preflight before it can send a request with a body.

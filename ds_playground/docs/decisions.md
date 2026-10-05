@@ -234,3 +234,72 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   view started a list refresh on load and another update on a click; if the first finished second it cleared
   the newer result, so an error could vanish. It showed up as one failed renderer test on the slower Linux
   runner. Updates now run one at a time in order, and a test delays the first refresh to hold the race open.
+- **2026-10-02 — S2 — DECISION — manual check of the folder dialog** — the owner tested the real app: a source
+  folder can be added through the native dialog, appears by its correct name, and can be removed. This closes
+  the one check that could not be automated in prompt 2.3.
+- **2026-10-02 — S2 — DECISION — discovery probes (2.4)** — five fixed probes: system, CPU, memory, storage
+  and accelerators. macOS reads `sysctl`, `vm_stat` and `system_profiler` by absolute path; Linux reads
+  `/proc/meminfo`, cgroup v2 limits, CPU affinity and `nvidia-smi` if it is installed. Probes run side by
+  side with two seconds each, so discovery takes about two seconds at most, inside D19's ten. A denied,
+  missing, slow or failed probe leaves its fields null with a fixed reason; exception text never enters a
+  snapshot. No serial, user name, host name or path is read.
+- **2026-10-02 — S2 — ASSUMPTION — discovery limits (2.4)** — available memory on macOS is an estimate from
+  VM statistics (free, inactive and speculative pages). An Apple GPU is recorded as sharing the host's memory
+  domain with no memory of its own. On Linux only NVIDIA devices are listed; without `nvidia-smi` the
+  inventory is unknown, not absent. CPU features are not collected. `available_to_plan_cpus` stays null: the
+  planner, not the collector, decides what may be used. Isolation readiness is always unknown until the
+  sandboxed runner exists (Sprint 4). No user-declared inventory can be entered yet; the planner already
+  treats one as unqualified.
+- **2026-10-02 — S2 — DECISION — feasibility rule table (2.5)** — `feasibility-rules-1.0.0`, first matching
+  rule decides: blocked for an unsupported family, a paid option at a zero charge cap, an unsupported
+  profile, or capacity below need within the option's limits (never host totals; devices never added up);
+  unknown when nothing was observed, including fixture inventories; unqualified for a visible but unchecked
+  accelerator, a user-declared inventory, an unqualified profile or unqualified isolation; otherwise
+  eligible. The selected option is the best ranked, preferring options with no external charge. PASS needs
+  an eligible option, a real workload and qualification evidence; FAIL means every option is blocked;
+  anything else is INSUFFICIENT_EVIDENCE. No runtime, cost or quality estimate is produced.
+- **2026-10-02 — S2 — ASSUMPTION — host reserve (2.5)** — when the workload shares the host, the rule table
+  keeps 1 CPU and 2 GiB of memory for the host. A policy figure, not a measurement.
+- **2026-10-02 — S2 — ASSUMPTION — what the app plans for until Sprint 3 (2.5)** — no workload or compute
+  binding exists yet, so the harness plans a draft of the one thing the product can run, the built-in CSV
+  profile (1 CPU, 1 GiB memory, 1 GiB scratch, 600 s, zero external charge), on a draft local option. The
+  plan's workload, binding and evaluation references are placeholders with null digests, the plan is a
+  planning record, and it says so in its conditions. Each discovery proposes a new plan that supersedes the
+  last.
+- **2026-10-02 — S2 — FINDING — the suite's WorkloadSpec cannot describe a field-agnostic workload** — it
+  requires at least one field role and an evaluation contract, so the CSV profile cannot be written as a
+  valid WorkloadSpec without inventing a field. The draft above is therefore not validated as one. The
+  ComputeBinding schema still allows only Linux and a VM policy (the standing owner deviation; Sprint 4).
+- **2026-10-02 — S2 — DECISION — events and the stage reducer (2.6)** — `GET /v1/events?after=` returns
+  events after a cursor, and `GET /v1/events/stream` serves the same over SSE: replay, then follow, with a
+  keep-alive comment every five quiet seconds. The ledger keeps every event, so no cursor expires; a cursor
+  the ledger never issued gets a reset flag (or `stream.resynchronised`) and the whole history, which is the
+  snapshot until retention exists. The window polls every two seconds rather than holding a stream. A pure
+  reducer in the renderer derives the stages: discovery completes or leaves the environment inconclusive, a
+  plan leaves the review waiting for the owner, job events drive develop; every other stage stays not
+  started, and unknown event types change nothing.
+- **2026-10-02 — S2 — ASSUMPTION — header and controls (2.6)** — the header shows the connection only. There
+  is no workload, budget, Pause or Cancel to show until Sprint 3 adds jobs and conversation, so none is drawn.
+- **2026-10-02 — S2 — DECISION — lifecycle (2.7)** — closing the window ends the app and leaves the harness
+  running. Quit from the menu or its shortcut sends `POST /v1/shutdown` when the shell started the harness
+  and it is still running; the harness finishes requests in progress, ends open streams and exits. A shell
+  that attached to someone else's harness leaves it running. `dsp stop` is the CLI's Quit. A window that
+  loses the harness keeps its last known state, asks the shell for the harness's current address and
+  replays from its cursor. D24's pause-then-quit has nothing to pause until jobs exist (Sprint 3).
+- **2026-10-02 — S2 — FINDING — lifecycle limits (2.7)** — Quit from the macOS Dock, a logout or a signal is
+  indistinguishable from a close and therefore leaves the harness running. Quitting the shell that owns the
+  harness stops it under any second window, which then shows the connection as lost. Sleep and wake were
+  not exercised. On macOS the Quit menu item and window close cannot be scripted from the build session; on
+  Linux both are pressed for real in CI.
+- **2026-10-02 — S2 — DECISION — evidence outcomes (2.8)** — an evidence record states the scenario as the
+  suite words it and gives PASS only when the run showed all of it. A31 is PASS. A32 and A44 are
+  INSUFFICIENT_EVIDENCE: every part exercised passed, but each scenario includes parts whose objects do not
+  exist until later sprints. The Sprint 2 gate is PASS for the sprint's own scope.
+- **2026-10-02 — S2 — DEFECT — a background refresh cleared the owner's problem message (fixed)** — in the
+  Folders view, a list refresh triggered by events from elsewhere cleared an error left by the owner's own
+  action. It showed as one failed renderer test on the Linux runner, twice. Only the owner's own action now
+  sets or clears that message; a test reproduces it with a grant made elsewhere.
+- **2026-10-02 — S2 — FINDING — test checks that needed changing (2.7, 2.8)** — the Linux container has no
+  `ps`, so tests wait for the harness's instance lock to be free instead; a window close under Xvfb is asked
+  of the window manager with `wmctrl`, because an Alt+F4 chord sent with xdotool did not close it. The gate
+  now takes about 50 s on macOS: the CLI and lifecycle tests start real harness processes.
