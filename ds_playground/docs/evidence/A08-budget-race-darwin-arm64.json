@@ -1,0 +1,13 @@
+{
+  "id": "A08",
+  "sprint": 3,
+  "os": "darwin-arm64",
+  "fixture": "two threads racing POST /v1/jobs through the real harness on a two-processor observation",
+  "commit": "581284c",
+  "expected": "two workers concurrently request last reservation; total granted envelope never exceeds approved cap; no new paid call after exhaustion; late receipts remain unsettled until reconciled",
+  "actual": "three rounds gave [[200, 429], [200, 429], [200, 429]]: one admitted, one refused QUOTA_EXCEEDED, one reservation held each time, released by the cancel",
+  "outcome": "INSUFFICIENT_EVIDENCE",
+  "limits": [
+    "no paid call or provider receipt exists yet, so exhaustion of spend and late receipts were not exercised; the external charge is zero by construction"
+  ]
+}

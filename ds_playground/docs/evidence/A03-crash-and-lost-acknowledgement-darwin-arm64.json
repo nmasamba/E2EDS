@@ -1,0 +1,13 @@
+{
+  "id": "A03",
+  "sprint": 3,
+  "os": "darwin-arm64",
+  "fixture": "the deterministic test worker (fixtures/worker.py) on a harness with a movable clock",
+  "commit": "581284c",
+  "expected": "kill worker before and after commit; retry same result key; exactly one committed logical result, multiple attempts and costs visible, no unbounded re-run",
+  "actual": "attempt 1 of the first job died holding its lease and attempt 2 committed after expiry (['job.queued', 'job.started', 'job.expired', 'job.started', 'job.succeeded']); the second job's worker committed then died and the retried key returned the committed result without a new event (['job.queued', 'job.started', 'job.succeeded']); each job has one succeeded event, attempts and charged_minor 0 are on the job; a further lease is refused; the events replay to the stored jobs",
+  "outcome": "PASS",
+  "limits": [
+    "the cost visible is what the test worker reports, which is zero"
+  ]
+}
