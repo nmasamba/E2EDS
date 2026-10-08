@@ -1,61 +1,8 @@
-import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
-
-type Harness = { base_url: string; token: string; pid: number; home: string };
-
-/** Start a real harness on a DSP_HOME, a new temporary one by default, and wait for its answer. */
-async function startHarness(home = mkdtempSync(join(tmpdir(), "dsp-renderer-"))): Promise<Harness> {
-  spawn("uv", ["run", "--frozen", "--project", "..", "python", "-m", "dsp.harness", "--dev"], {
-    env: { ...process.env, DSP_HOME: home },
-    stdio: "ignore",
-  });
-  for (let attempt = 0; attempt < 300; attempt++) {
-    try {
-      const state: { port: number; token: string; pid: number } = JSON.parse(
-        readFileSync(join(home, "harness.json"), "utf8"),
-      );
-      const base_url = `http://127.0.0.1:${state.port}`;
-      const harness = { base_url, token: state.token, pid: state.pid, home };
-      await fetch(`${harness.base_url}/v1/status`);
-      return harness;
-    } catch {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-  }
-  throw new Error("the harness did not start");
-}
-
-type Pick = (purpose: string) => Promise<unknown>;
-
-/**
- * A browser has no Tauri runtime: answer the shell's two commands the way the shell would. Both
- * run here in Node, outside the page, as Rust does: ``answer`` is read afresh on every call, and
- * the folder picker is played by ``pick``.
- */
-async function open(page: Page, answer: { base_url: string; token: string }, pick?: Pick) {
-  await page.exposeFunction("shellPick", pick ?? (async () => null));
-  await page.exposeFunction("shellHarness", () => ({ ...answer }));
-  await page.addInitScript(() => {
-    const shell = window as unknown as {
-      shellPick: (purpose: string) => Promise<unknown>;
-      shellHarness: () => Promise<unknown>;
-    };
-    Object.assign(window, {
-      __TAURI_INTERNALS__: {
-        invoke: async (command: string, args: { purpose: string }) => {
-          if (command === "harness") return shell.shellHarness();
-          if (command !== "grant_folder") return Promise.reject(`${command} not allowed`);
-          return shell.shellPick(args.purpose).catch((error: Error) => Promise.reject(error.message));
-        },
-      },
-    });
-  });
-  await page.goto("/");
-}
+import { expectNoAxeViolations, native as request, open, stage, startHarness, type Harness } from "./harness";
 
 type Answer = {
   handle: string;
@@ -67,16 +14,7 @@ type Answer = {
 };
 
 /** One request to the harness from Node, which sends no Origin header: the CLI's position. */
-async function native(path: string, body?: object) {
-  const response = await fetch(`${harness.base_url}${path}`, {
-    method: body ? "POST" : "GET",
-    headers: { Authorization: `Bearer ${harness.token}`, "Content-Type": "application/json" },
-    body: body && JSON.stringify(body),
-  });
-  const answer: Answer = await response.json();
-  if (!response.ok) throw new Error(answer.message);
-  return answer;
-}
+const native = (path: string, body?: object) => request<Answer>(harness, path, body);
 
 /** A real folder under a temporary directory, granted the way the shell's picker grants it. */
 async function grant(purpose: string, name: string) {
@@ -86,8 +24,6 @@ async function grant(purpose: string, name: string) {
 }
 
 const folders = (page: Page) => page.getByRole("region", { name: "Folders" });
-const stage = (page: Page, label: string) =>
-  page.getByRole("navigation", { name: "Work trail" }).getByRole("listitem").filter({ hasText: label });
 
 /** Profile a CSV through grants from Node, the way `dsp profile` does. */
 async function profile(csv: string) {
@@ -98,10 +34,6 @@ async function profile(csv: string) {
   const output = await native("/v1/grants", { purpose: "output_root", path: join(work, "out") });
   const request = { source_handle: source.handle, relative_path: ".", output_handle: output.handle };
   return native("/v1/profiles", request).catch((error: Error) => error.message);
-}
-
-async function expectNoAxeViolations(page: Page) {
-  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 }
 
 let harness: Harness;

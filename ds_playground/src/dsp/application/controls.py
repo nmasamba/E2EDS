@@ -59,6 +59,8 @@ def command(
         new_id=new_id,
     )
     answer = receipt(received)
+    if received["operation"] == "instruction":
+        answer["because"] = "no assistant is bound yet"
     if received["state"] == "received" and received["operation"] == "change_requirements":
         return answer | change(
             ctx,

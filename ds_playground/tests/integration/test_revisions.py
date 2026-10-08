@@ -8,13 +8,16 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import pytest
 
 from dsp.adapters.ledger_sqlite import SqliteLedger
 from dsp.application.workloads import base_workload, impact_of, patch_for
 from dsp.contracts.canonical import pin
 from dsp.contracts.errors import ErrorCode, TrustedContext
 from dsp.contracts.schemas import validate
+from dsp.harness import workspace
 from tests.conftest import Clock
+from tests.integration.test_admission import fixed_probes
 from tests.integration.test_controls import control, say
 from tests.integration.test_jobs import job_of, submit, until
 
@@ -38,7 +41,7 @@ def change(client: httpx.Client, text: str, expected: str = "1.0.0", mid: str = 
 
 
 def test_a26_excluding_a_field_mid_run_revises_holds_and_leaves_old_results_where_they_were(
-    harness: Harness, worker: Worker, state_dir: Path
+    harness: Harness, worker: Worker, state_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A26: a field is excluded while work runs.
 
@@ -47,6 +50,7 @@ def test_a26_excluding_a_field_mid_run_revises_holds_and_leaves_old_results_wher
     under the new revision; the next admission pins a plan for the new revision.
     """
     client, _ = harness
+    monkeypatch.setattr(workspace, "probes", lambda state: fixed_probes(cpus=8, memory_gib=16))
     done = submit(client, "sleep", seconds=0.1)
     assert worker(done).wait(20) == 0
     hung = submit(client, "hang")

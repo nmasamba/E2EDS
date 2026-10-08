@@ -30,6 +30,12 @@
   revision and are marked stale; the running job is held and resumes, explicitly, under the new
   revision; two edits against the same revision conflict predictably; a budget or evaluation change is
   refused until the owner acts on it. `GET /v1/workload` shows the current revision.
+- Window: a composer for messages with the harness's receipt shown, an activity trail of every committed
+  event with the state each command reached, Pause/Resume and Cancel run in the header and as native menu
+  items (CmdOrCtrl+P, CmdOrCtrl+.), "Start the hung test job" to queue the sprint's one workload, and the
+  develop stage of the work trail following the job's actual state (queued, running, pausing, paused,
+  cancelling, cancelled, failed, completed). Everything is a projection of the ledger and survives a
+  reload or a relaunch.
 
 ## Sprint 2 — desktop shell, discovery and plan (2026-10-02)
 

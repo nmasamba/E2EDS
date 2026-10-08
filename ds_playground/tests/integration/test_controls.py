@@ -234,13 +234,15 @@ def test_a24_only_the_exact_phrases_control_the_live_job(harness: Harness, worke
 
 
 def test_a_phrase_with_several_live_jobs_asks_which_and_the_button_still_acts(
-    harness: Harness,
+    harness: Harness, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A24: a phrase names no job, so with two live jobs it needs clarification.
 
     Nothing changes; the job's own control acts; once one job is left the phrase acts on it.
+    The machine is fixed at eight processors so two jobs fit whatever runs the test.
     """
     client, _ = harness
+    monkeypatch.setattr(workspace, "probes", lambda state: fixed_probes(cpus=8, memory_gib=16))
     first, second = submit(client, "hang"), submit(client, "hang")
     asked = say(client, "pause now")
     assert (asked["state"], asked["because"]) == (

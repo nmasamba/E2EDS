@@ -468,3 +468,29 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   re-proposes it (A33) and pins the new `requirement_revision`.
 - **2026-10-08 — S3 — DECISION — `GET /v1/workload` (3.5)** — the window reads the current revision to
   send as `expected_revision` and to show the fields; it is the current WorkloadSpec as stored.
+- **2026-10-08 — S3 — DECISION — composer, activity and controls in the window (3.6)** — the renderer
+  grew four pieces and no store: `Controls` (Pause or Resume, and Cancel run, in the header, each press one
+  command with a fresh ID on `POST /v1/jobs/{id}/control`, answered with the job's actual state), the
+  `Composer` (fixed above the resource bar; it keeps its draft and its message ID until the harness has the
+  message, so a retry after a lost answer is the same message; `expected_revision` is derived from the
+  events), `Run` (the one workload: "Start the hung test job", which admits the job and shows the worker
+  command to run) and the `Activity` trail, a pure projection of committed events: what the owner said with
+  the state each command reached, every job transition but heartbeats, revisions, refused admissions and
+  the workspace's own events. `trail.ts` reads a job's state only from the coordinator's fourteen event
+  types, so a spoofed type with a `state` field changes nothing. Plain CSS; axe clean on every page state
+  the tests reach; Pause, Resume and Cancel are pressed with the keyboard alone in the renderer tests.
+- **2026-10-08 — S3 — DECISION — the native menu's Pause and Cancel (3.6)** — two menu items, `Pause`
+  (CmdOrCtrl+P) and `Cancel run` (CmdOrCtrl+.), send `POST /v1/control` from the Rust side the way Quit sends
+  the shutdown: no renderer in the loop, so they work while the window is busy, and the command is in the
+  ledger for the window to show. The command ID is the shell's process ID and a counter. There is no
+  Resume item: resume is the header button or the phrase, an explicit act on a visible paused job.
+- **2026-10-08 — S3 — FINDING — what the built-app test reads on each OS (3.6)** — on Linux the window
+  starts the hung job, the real shortcuts pause and cancel it, and the trail is read through WebDriver,
+  again from a second launch. On macOS, with no WebDriver for WKWebView, the same requests the window and
+  the menu send are made against the bundled harness while the app is open, and the states are read back
+  after a relaunch; the menu items themselves are exercised by the Rust test's `control` calls against a
+  real harness. The owner's manual run on macOS remains the check of the real menu.
+- **2026-10-08 — S3 — DEFECT — two tests assumed room for a second job (3.6)** — the Linux runner's CPU
+  quota admits one test job at a time, so a controls test and the A26 test, which admit two, failed in CI
+  after the 3.4 push (every other job passed). They now fix the machine with the same probes the A08 test
+  uses. Tests that need capacity must say so rather than inherit the host's.
