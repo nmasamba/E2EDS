@@ -40,7 +40,7 @@ def _snapshot_for(binding: dict[str, Any], snapshots: list[dict[str, Any]]) -> A
     return None
 
 
-def _needs(workload: dict[str, Any], binding: dict[str, Any], snapshot: dict[str, Any]) -> Any:
+def needs(workload: dict[str, Any], binding: dict[str, Any], snapshot: dict[str, Any]) -> Any:
     """What the option must have, and what the snapshot says is usable, per resource."""
     asked, floor = workload["requested_resources"], binding["resource_requirements"]
     shared = snapshot["scope"] == "assistant_host"
@@ -82,7 +82,7 @@ def judge(workload: dict[str, Any], binding: dict[str, Any], snapshot: Any) -> t
         return "blocked", "this compute profile is recorded as unsupported"
     if snapshot is None or snapshot["evidence_source"] in ("unknown", "illustrative_fixture"):
         return "unknown", "its hardware has not been observed"
-    for unit, needed, usable in _needs(workload, binding, snapshot):
+    for unit, needed, usable in needs(workload, binding, snapshot):
         if usable is None:
             return "unknown", f"usable {unit} were not observed"
         if usable < needed:

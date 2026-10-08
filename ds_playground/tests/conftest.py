@@ -2,15 +2,26 @@ import contextlib
 import fcntl
 import json
 import os
+import secrets
 import signal
+import socket
+import subprocess
 import sys
+import threading
 import time
 from collections.abc import Callable, Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 
+import httpx
 import pytest
+import uvicorn
+
+from dsp.harness import workspace
+from dsp.harness.app import create_app
 
 pytest_plugins = ["pytester"]
+ROOT = Path(__file__).parents[1]
 
 
 @pytest.fixture
@@ -60,12 +71,13 @@ def evidence() -> Callable[..., None]:
         expected: str,
         actual: str,
         *limits: str,
+        sprint: int = 2,
     ) -> None:
         if folder := os.environ.get("DSP_EVIDENCE"):
             platform = f"{sys.platform}-{os.uname().machine}"
             record = {
                 "id": scenario,
-                "sprint": 2,
+                "sprint": sprint,
                 "os": platform,
                 "fixture": fixture,
                 "commit": os.environ.get("DSP_COMMIT", "unrecorded"),
@@ -97,3 +109,72 @@ def harness_stopped() -> Callable[[Path], bool]:
         return False
 
     return check
+
+
+class Clock:
+    """The harness's clock in a test: real time plus an offset the test moves forward."""
+
+    def __init__(self) -> None:
+        self.offset = 0.0
+
+    def __call__(self) -> str:
+        """The harness's current time as RFC 3339."""
+        return datetime.fromtimestamp(time.time() + self.offset, UTC).isoformat()
+
+    def advance(self, seconds: float) -> None:
+        """Move the harness's time forward, so leases run out without anyone waiting."""
+        self.offset += seconds
+
+
+@pytest.fixture
+def harness(state_dir: Path) -> Iterator[tuple[httpx.Client, Clock]]:
+    """A real harness served from this process on a loopback socket, on a clock the test moves.
+
+    Worker processes find it through ``harness.json`` like any harness; the client it yields is
+    the CLI's position (owner token, no Origin).
+    """
+    clock = Clock()
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    port, token = listener.getsockname()[1], secrets.token_urlsafe(16)
+    (state_dir / "harness.json").write_text(json.dumps({"port": port, "token": token, "pid": 0}))
+    app = create_app(token, port)
+    server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
+    workspace.mount(app, state_dir, server, clock)
+    thread = threading.Thread(target=server.run, kwargs={"sockets": [listener]}, daemon=True)
+    thread.start()
+    client = httpx.Client(
+        base_url=f"http://127.0.0.1:{port}",
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=30,
+    )
+    for _ in range(100):
+        try:
+            client.get("/v1/status").raise_for_status()
+            break
+        except httpx.HTTPError:
+            time.sleep(0.05)
+    yield client, clock
+    server.should_exit = True
+    thread.join(10)
+    (state_dir / "harness.json").unlink()
+
+
+@pytest.fixture
+def worker(state_dir: Path) -> Iterator[Callable[..., subprocess.Popen[bytes]]]:
+    """Start the test worker as a real process on the profile; every worker is reaped afterwards."""
+    started: list[subprocess.Popen[bytes]] = []
+
+    def start(job: str, name: str = "worker", heartbeat: float = 0.3) -> subprocess.Popen[bytes]:
+        command = [sys.executable, "-m", "fixtures.worker", "--job", job, "--worker", name]
+        command += ["--heartbeat-seconds", str(heartbeat)]
+        process = subprocess.Popen(
+            command, cwd=ROOT, env={**os.environ, "DSP_HOME": str(state_dir)}
+        )
+        started.append(process)
+        return process
+
+    yield start
+    for process in started:
+        process.kill()
+        process.wait(10)

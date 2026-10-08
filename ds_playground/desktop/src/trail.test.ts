@@ -1,5 +1,14 @@
 import { expect, test } from "vitest";
-import { freshness, merge, trail, type LedgerEvent } from "./trail";
+import {
+  activity,
+  expectedRevision,
+  freshness,
+  jobs,
+  liveJob,
+  merge,
+  trail,
+  type LedgerEvent,
+} from "./trail";
 
 const event = (seq: number, type: string, body: Record<string, unknown> = {}): LedgerEvent => ({
   seq,
@@ -91,4 +100,91 @@ test("D19: an observation is stale after 60 seconds, and never fresh when there 
   expect(freshness(at, base + 61_000)).toEqual({ seconds: 61, stale: true });
   expect(freshness(at, base - 5_000)).toEqual({ seconds: 0, stale: false });
   expect(freshness(null, base)).toEqual({ seconds: null, stale: true });
+});
+
+const job = (seq: number, type: string, id: string, state: string, attempt = 0, fence = 0, extra = {}) =>
+  event(seq, type, { job: id, action: type.slice(4), at: "t", input: {}, state, attempt, fence, ...extra });
+
+test("A07, A25: the develop stage follows the job's committed state, never a label", () => {
+  const states = (log: LedgerEvent[]) => trail(log).find((stage) => stage.id === "develop")!;
+  expect(states([job(1, "job.queued", "job-a", "queued")])).toMatchObject({
+    state: "pending",
+    note: "queued, waiting for a worker",
+  });
+  expect(states([job(1, "job.started", "job-a", "running", 1)]).state).toBe("running");
+  expect(states([job(1, "job.pause_requested", "job-a", "pause_requested", 1, 1)])).toMatchObject({
+    state: "running",
+    note: "pausing",
+  });
+  expect(states([job(1, "job.paused", "job-a", "paused", 1, 1)])).toMatchObject({
+    state: "waiting_for_user",
+    note: "paused",
+  });
+  expect(states([job(1, "job.cancelled", "job-a", "cancelled", 1, 2)])).toMatchObject({
+    state: "inconclusive",
+    note: "cancelled",
+  });
+  expect(states([job(1, "job.succeeded", "job-a", "succeeded", 1)]).state).toBe("completed");
+  const failed = job(1, "job.failed", "job-a", "failed", 3, 0, { input: { reason: "io" } });
+  expect(states([failed])).toMatchObject({ state: "failed", note: "io" });
+  expect(states([job(1, "job.heartbeat", "job-a", "running", 1)]).state).toBe("running");
+  expect(states([job(1, "job.result_rejected", "job-a", "succeeded", 1)]).state).toBe("completed");
+  expect(states([event(1, "job.started", { recipe: "profile-csv" })]).state).toBe("running");
+  expect(states([event(1, "job.succeeded.fake", { state: "succeeded" })]).state).toBe("pending");
+  const revised = event(2, "workload.revised", { from: "1.0.0", to: "2.0.0", patch: [], impact: { stale: [], holds: [] } });
+  expect(trail([revised]).find((stage) => stage.id === "goal")).toMatchObject({
+    state: "pending",
+    note: "requirements at 2.0.0",
+  });
+});
+
+test("A24: the live job is the newest that has not ended; the revision is the last applied", () => {
+  const log = [
+    job(1, "job.queued", "job-a", "queued"),
+    job(2, "job.started", "job-a", "running", 1),
+    job(3, "job.queued", "job-b", "queued"),
+    job(4, "job.cancelled", "job-b", "cancelled"),
+    job(5, "job.heartbeat", "job-a", "running", 1),
+  ];
+  expect(jobs(log).map((view) => [view.id, view.state])).toEqual([
+    ["job-b", "cancelled"],
+    ["job-a", "running"],
+  ]);
+  expect(liveJob(log)).toEqual({ id: "job-a", state: "running", attempt: 1, fence: 0 });
+  expect(liveJob([...log, job(6, "job.succeeded", "job-a", "succeeded", 1)])).toBeNull();
+  expect(liveJob([job(1, "job.paused", "job-c", "paused")])?.state).toBe("paused");
+  expect(expectedRevision(log)).toBe("1.0.0");
+  const revised = event(7, "workload.revised", { from: "1.0.0", to: "2.0.0", patch: [], impact: { stale: [], holds: [] } });
+  expect(expectedRevision([...log, revised])).toBe("2.0.0");
+});
+
+test("A27, R20: the activity trail is the committed events with each command's reached state", () => {
+  const log = [
+    event(1, "discovery.finished", { evidence_source: "observed" }),
+    event(2, "message.received", { command: "c1", text: "pause now", state: "received" }),
+    event(3, "command.rejected", { command: "c1", state: "rejected", because: "no job is live" }),
+    job(4, "job.queued", "job-abcdef", "queued"),
+    job(5, "job.heartbeat", "job-abcdef", "running", 1),
+    job(6, "job.started", "job-abcdef", "running", 1),
+    event(7, "message.received", { command: "c2", text: "exclude field region", state: "received" }),
+    event(8, "workload.revised", {
+      from: "1.0.0",
+      to: "2.0.0",
+      patch: [{ path: "/intent_constraints/features/allowed_fields" }, { path: "/intent_constraints/features/excluded_fields" }],
+      impact: { stale: [{}], holds: ["job-abcdef"] },
+    }),
+    event(9, "command.applied", { command: "c2", state: "applied" }),
+    event(10, "admission.rejected", { reason: "needs 1 processors; 0 free" }),
+    event(11, "message.received", { command: "c3", text: "status", state: "received" }),
+  ];
+  expect(activity(log).map((item) => [item.seq, item.text, item.state])).toEqual([
+    [1, "Environment observed: observed", ""],
+    [2, "You: pause now", "rejected · no job is live"],
+    [4, "Job abcdef: queued", ""],
+    [6, "Job abcdef: running (attempt 1, fence 0)", ""],
+    [7, "You: exclude field region", "applied"],
+    [8, "Requirements 1.0.0 → 2.0.0: allowed_fields, excluded_fields; 1 stale, 1 held", ""],
+    [10, "Admission refused: needs 1 processors; 0 free", ""],
+    [11, "You: status", "received"],
+  ]);
 });

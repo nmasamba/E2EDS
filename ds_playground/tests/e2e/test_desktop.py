@@ -2,10 +2,12 @@
 
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
 import time
+import uuid
 from collections.abc import Callable, Iterator
 from importlib.metadata import version
 from pathlib import Path
@@ -18,7 +20,8 @@ from fixtures.operations import write_orders
 
 pytestmark = pytest.mark.desktop
 
-BUNDLE = Path(__file__).parents[2] / "desktop/src-tauri/target/release/bundle"
+ROOT = Path(__file__).parents[2]
+BUNDLE = ROOT / "desktop/src-tauri/target/release/bundle"
 LINUX = sys.platform != "darwin"
 
 
@@ -96,6 +99,10 @@ def kinds(client: httpx.Client) -> list[str]:
 CLICK_ADD_SOURCE = (
     "[...document.querySelectorAll('button')]"
     ".find((button) => button.textContent.startsWith('Add source folder')).click()"
+)
+CLICK = (
+    "[...document.querySelectorAll('button')]"
+    ".find((button) => button.textContent.trim() === '{name}').click()"
 )
 CALL_UNGRANTED_COMMAND = (
     "const done = arguments[arguments.length - 1];"
@@ -279,3 +286,147 @@ def test_the_built_app_works_and_survives_close_kill_crash_and_a_second_instance
         "choosing a folder in the native dialog was checked by the owner by hand, not by this run",
         *([] if LINUX else ["the Quit menu item and window close are not scripted on macOS"]),
     )
+
+
+def hung_job(client: httpx.Client) -> str:
+    """Admit the hung test job with the request the window's Run button sends."""
+    body = {"operation": "analyse", "idempotency_key": uuid.uuid4().hex}
+    body["task"] = {"cues": ["hang"], "seconds": 0}
+    return str(client.post("/v1/jobs", json=body).raise_for_status().json()["id"])
+
+
+def worker(state_dir: Path, job: str) -> subprocess.Popen[bytes]:
+    """The test worker on the app's profile, heartbeating every 200 ms."""
+    command = [sys.executable, "-m", "fixtures.worker", "--job", job, "--heartbeat-seconds", "0.2"]
+    return subprocess.Popen(command, cwd=ROOT, env={**os.environ, "DSP_HOME": str(state_dir)})
+
+
+def shows(client: httpx.Client, job: str, state: str) -> None:
+    """Fail unless the coordinator holds the job in ``state`` now."""
+    assert client.get(f"/v1/jobs/{job}").json()["state"] == state
+
+
+def kinds_without_heartbeats(client: httpx.Client) -> list[str]:
+    """The event types in commit order, heartbeats left out."""
+    return [kind for kind in kinds(client) if kind != "job.heartbeat"]
+
+
+def drive_controls(binary: Path, state_dir: Path) -> None:
+    """Linux: start the hung job from the window, pause and cancel with the real shortcuts.
+
+    The trail is read through WebDriver at each step, and read again from a second launch.
+    """
+    options = {"tauri:options": {"application": str(binary)}}
+    driver = subprocess.Popen(["tauri-driver"], env={**os.environ, "DSP_HOME": str(state_dir)})
+    workers: list[subprocess.Popen[bytes]] = []
+    try:
+        with httpx.Client(base_url="http://127.0.0.1:4444", timeout=60) as web:
+            eventually(lambda: web.get("/status").raise_for_status())
+
+            def session() -> str:
+                created = web.post("/session", json={"capabilities": {"alwaysMatch": options}})
+                return str(created.raise_for_status().json()["value"]["sessionId"])
+
+            def run(session_id: str, script: str) -> str:
+                reply = web.post(
+                    f"/session/{session_id}/execute/sync", json={"script": script, "args": []}
+                )
+                return str(reply.raise_for_status().json()["value"])
+
+            def shown(session_id: str, expected: str) -> str:
+                text = run(session_id, "return document.body.innerText")
+                assert expected in text, text
+                return text
+
+            first = session()
+            try:
+                eventually(lambda: shown(first, "Harness connected"))
+                eventually(lambda: shown(first, "Environment and context\n● Completed"))
+                run(first, CLICK.format(name="Start the hung test job"))
+                text = eventually(lambda: shown(first, "queued, waiting for a worker"))
+                job = re.search(r"Queued (job-[0-9a-f]+)", text).group(1)  # type: ignore[union-attr]
+                workers.append(worker(state_dir, job))
+                eventually(lambda: shown(first, "◐ Running"))
+                press("ctrl+p")  # the real Pause shortcut
+                eventually(lambda: shown(first, "◆ Waiting for you · paused"))
+                assert workers[-1].wait(30) == 0
+                run(first, CLICK.format(name="Resume"))
+                eventually(lambda: shown(first, "queued, waiting for a worker"))
+                workers.append(worker(state_dir, job))
+                eventually(lambda: shown(first, "running (attempt 2, fence 1)"))
+                press("ctrl+period")  # the real Cancel shortcut
+                eventually(lambda: shown(first, "◇ Inconclusive · cancelled"))
+                assert workers[-1].wait(30) == 0
+                shown(first, f"Job {job[-6:]}: cancelled (attempt 2, fence 2)")
+            finally:
+                web.delete(f"/session/{first}")
+            second = session()
+            try:
+                eventually(lambda: shown(second, "◇ Inconclusive · cancelled"))
+                shown(second, "pause requested (attempt 1, fence 1)")
+                shown(second, "cancelled (attempt 2, fence 2)")
+            finally:
+                web.delete(f"/session/{second}")
+    finally:
+        driver.terminate()
+        driver.wait(10)
+        for process in workers:
+            process.kill()
+
+
+def test_the_built_app_starts_pauses_and_cancels_the_hung_test_job(
+    binary: Path,
+    launch: Callable[[], subprocess.Popen[bytes]],
+    state_dir: Path,
+    harness_stopped: Callable[[Path], bool],
+) -> None:
+    """A24, A25, R15: the built app runs the sprint's acceptance line and the trail survives.
+
+    On Linux the window starts the hung job, the real Pause and Cancel shortcuts act on it and
+    the trail is read through WebDriver, again after a second launch. On macOS, which has no
+    WebDriver for its webview, the same requests the window and the menu send are made against
+    the bundled harness while the app is open, and the states are read back after a relaunch.
+    """
+    if LINUX:
+        drive_controls(binary, state_dir)
+        bundled = eventually(lambda: harness(state_dir))
+    else:
+        app = launch()
+        bundled = eventually(lambda: harness(state_dir))
+        eventually(lambda: kinds(bundled).index("plan.proposed"))
+        job = hung_job(bundled)
+        first = worker(state_dir, job)
+        eventually(lambda: shows(bundled, job, "running"))
+        pause = {"command_id": uuid.uuid4().hex, "action": "pause"}
+        assert bundled.post("/v1/control", json=pause).json()["job"]["state"] == "pause_requested"
+        assert first.wait(30) == 0
+        eventually(lambda: shows(bundled, job, "paused"))
+        resume = {"command_id": uuid.uuid4().hex, "action": "resume"}
+        assert (
+            bundled.post(f"/v1/jobs/{job}/control", json=resume).json()["job"]["state"] == "queued"
+        )
+        second = worker(state_dir, job)
+        eventually(lambda: shows(bundled, job, "running"))
+        cancel = {"command_id": uuid.uuid4().hex, "action": "cancel"}
+        assert bundled.post("/v1/control", json=cancel).json()["job"]["state"] == "cancel_requested"
+        assert second.wait(30) == 0
+        eventually(lambda: shows(bundled, job, "cancelled"))
+        app.terminate()
+        app.wait(10)
+        launch()
+        time.sleep(3)
+    expected = [
+        "job.queued",
+        "job.started",
+        "job.pause_requested",
+        "job.paused",
+        "job.resumed",
+        "job.started",
+        "job.cancel_requested",
+        "job.cancelled",
+    ]
+    assert [k for k in kinds_without_heartbeats(bundled) if k.startswith("job.")] == expected
+    assert bundled.get("/v1/status").json()["status"] == "ok"
+    assert bundled.post("/v1/shutdown").json() == {"status": "stopping"}
+    assert harness_stopped(state_dir)
+    (state_dir / "harness.json").unlink()

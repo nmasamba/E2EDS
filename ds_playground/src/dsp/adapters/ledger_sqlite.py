@@ -36,7 +36,7 @@ class SqliteLedger:
         event_id: str,
         event_type: str,
         body: dict[str, Any],
-        objects: Sequence[dict[str, Any]] = (),
+        objects: Sequence[dict[str, Any] | tuple[str, dict[str, Any]]] = (),
     ) -> None:
         """Append one event and its objects in one transaction.
 
@@ -64,8 +64,9 @@ class SqliteLedger:
                     ErrorCode.REVISION_CONFLICT,
                     f"{aggregate} is at {current}, expected {expected_seq}",
                 )
-            for obj in objects:
-                self._put(ctx, obj)
+            for item in objects:
+                kind, obj = item if isinstance(item, tuple) else (item["type"], item)
+                self._put(ctx, kind, obj)
             self._db.execute(
                 "INSERT INTO events"
                 " (event_id, tenant, aggregate, aggregate_seq, type, body, recorded_at)"
@@ -81,8 +82,8 @@ class SqliteLedger:
                 ),
             )
 
-    def _put(self, ctx: TrustedContext, obj: dict[str, Any]) -> None:
-        key = (ctx.tenant, obj["type"], obj["id"], obj["revision"])
+    def _put(self, ctx: TrustedContext, kind: str, obj: dict[str, Any]) -> None:
+        key = (ctx.tenant, kind, obj["id"], obj["revision"])
         body = canonical_json(obj)
         stored = self._db.execute(
             "SELECT digest FROM objects WHERE tenant = ? AND kind = ? AND id = ? AND revision = ?",
@@ -106,6 +107,23 @@ class SqliteLedger:
             raise DspError(ErrorCode.NOT_FOUND, f"{kind} {object_id}@{revision} not found")
         loaded: dict[str, Any] = json.loads(row[0])
         return loaded
+
+    def latest(self, ctx: TrustedContext, kind: str, object_id: str) -> dict[str, Any] | None:
+        """Return the newest revision of one object, or None when this tenant has none."""
+        row = self._db.execute(
+            "SELECT body FROM objects WHERE tenant = ? AND kind = ? AND id = ?"
+            " ORDER BY rowid DESC LIMIT 1",
+            (ctx.tenant, kind, object_id),
+        ).fetchone()
+        return None if row is None else dict(json.loads(row[0]))
+
+    def seq(self, ctx: TrustedContext, aggregate: str) -> int:
+        """Return an aggregate's current sequence: what ``commit`` must be told to expect."""
+        (current,) = self._db.execute(
+            "SELECT COALESCE(MAX(aggregate_seq), 0) FROM events WHERE tenant = ? AND aggregate = ?",
+            (ctx.tenant, aggregate),
+        ).fetchone()
+        return int(current)
 
     def current(self, ctx: TrustedContext, kind: str) -> list[dict[str, Any]]:
         """Return the latest revision of every object of one kind in this tenant, oldest first."""

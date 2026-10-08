@@ -1,13 +1,13 @@
 import json
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import uuid4
 
 import uvicorn
-from fastapi import Body, FastAPI, Query, Request
+from fastapi import Body, Depends, FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 
@@ -16,13 +16,40 @@ from dsp.adapters.discovery import probes
 from dsp.adapters.duckdb_profile import profile_csv
 from dsp.adapters.ledger_sqlite import SqliteLedger
 from dsp.adapters.store_fs import ContentStore
+from dsp.application import admission, controls, conversation, jobs
 from dsp.application.discovery import discover
 from dsp.application.grants import grant_folder, revoke, summary
 from dsp.application.packs import profile_granted
-from dsp.application.planning import propose_plan
+from dsp.application.planning import LOCAL_DRAFT, propose_plan
+from dsp.application.workloads import current_workload
 from dsp.contracts.errors import DspError, ErrorCode, TrustedContext
 
-STATUS = {ErrorCode.INPUT_INVALID: 400, ErrorCode.FORBIDDEN: 403, ErrorCode.NOT_FOUND: 404}
+STATUS = (
+    {
+        ErrorCode.INPUT_INVALID: 400,
+        ErrorCode.FORBIDDEN: 403,
+        ErrorCode.NOT_FOUND: 404,
+    }
+    | dict.fromkeys(
+        (
+            ErrorCode.IDEMPOTENCY_CONFLICT,
+            ErrorCode.REVISION_CONFLICT,
+            ErrorCode.PAUSED,
+            ErrorCode.PAUSE_REQUESTED,
+            ErrorCode.CANCEL_REQUESTED,
+            ErrorCode.CANCELLED,
+        ),
+        409,
+    )
+    | {
+        ErrorCode.QUOTA_EXCEEDED: 429,
+        ErrorCode.DEPENDENCY_UNAVAILABLE: 503,
+        ErrorCode.ASSISTANT_UNAVAILABLE: 503,
+        ErrorCode.REQUIRES_CONFIRMATION: 409,
+    }
+)
+
+MESSAGE_FIELDS = {"client_message_id", "text", "expected_revision"}
 
 
 def _now() -> str:
@@ -33,17 +60,28 @@ def _id() -> str:
     return uuid4().hex
 
 
-def mount(app: FastAPI, state_dir: Path, server: uvicorn.Server | None = None) -> None:
-    """Add the workspace routes: grants, profiling, discovery, planning and events, on one ledger.
+def mount(
+    app: FastAPI,
+    state_dir: Path,
+    server: uvicorn.Server | None = None,
+    clock: Callable[[], str] = _now,
+) -> None:
+    """Add the workspace routes: grants, profiling, discovery, planning, events and jobs.
 
     Every caller is the local owner, established by the token the guard has already checked;
     nothing in a request body is treated as authority. ``server`` is the running server, whose
-    shutdown ends open event streams.
+    shutdown ends open event streams; ``clock`` is the one source of time for the ledger and the
+    job coordinator.
     """
     ctx = TrustedContext.local()
 
     def ledger() -> SqliteLedger:
-        return SqliteLedger(state_dir / "ledger.sqlite", _now)
+        return SqliteLedger(state_dir / "ledger.sqlite", clock)
+
+    def native(request: Request) -> None:
+        """A lease, a heartbeat or a report comes from a worker process, never from the window."""
+        if "origin" in request.headers:
+            raise DspError(ErrorCode.FORBIDDEN, "accepted from the shell, the CLI or a worker only")
 
     @app.exception_handler(DspError)
     async def refused(request: Request, error: DspError) -> JSONResponse:
@@ -165,3 +203,140 @@ def mount(app: FastAPI, state_dir: Path, server: uvicorn.Server | None = None) -
             new_id=_id,
         )
         return {"version": receipt["version"], "files": len(receipt["files"])}
+
+    @app.post("/v1/jobs")
+    def submit_job(
+        operation: Annotated[
+            Literal["train", "evaluate", "optimise", "simulate", "infer", "prepare", "analyse"],
+            Body(),
+        ],
+        idempotency_key: Annotated[str, Body(min_length=1, max_length=160)],
+        task: Annotated[dict[str, Any], Body()],
+    ) -> dict[str, Any]:
+        store = ledger()
+        return admission.admit(
+            ctx,
+            operation,
+            idempotency_key,
+            task,
+            workload=current_workload(ctx, store),
+            binding=LOCAL_DRAFT,
+            ledger=store,
+            clock=clock,
+            new_id=_id,
+        )
+
+    @app.get("/v1/jobs/{job_id}")
+    def get_job(job_id: str) -> dict[str, Any]:
+        return jobs.inspect(ctx, job_id, ledger=ledger(), clock=clock)
+
+    @app.post("/v1/jobs/{job_id}/lease", dependencies=[Depends(native)])
+    def lease_job(job_id: str, worker: Annotated[str, Body(embed=True)]) -> dict[str, Any]:
+        return jobs.lease(ctx, job_id, worker, ledger=ledger(), clock=clock)
+
+    @app.post("/v1/jobs/{job_id}/heartbeat", dependencies=[Depends(native)])
+    def heartbeat(
+        job_id: str, attempt: Annotated[int, Body()], fence: Annotated[int, Body()]
+    ) -> dict[str, Any]:
+        return jobs.heartbeat(ctx, job_id, attempt, fence, ledger=ledger(), clock=clock)
+
+    @app.post("/v1/jobs/{job_id}/report", dependencies=[Depends(native)])
+    def report(
+        job_id: str,
+        attempt: Annotated[int, Body()],
+        fence: Annotated[int, Body()],
+        outcome: Annotated[Literal["succeeded", "failed", "stopped"], Body()],
+        charge_minor: Annotated[int, Body(ge=0)] = 0,
+        key: Annotated[str | None, Body()] = None,
+        sha256: Annotated[str | None, Body()] = None,
+        transient: Annotated[bool, Body()] = False,
+        reason: Annotated[str, Body(max_length=200)] = "",
+    ) -> dict[str, Any]:
+        fields: dict[str, Any] = {"charge_minor": charge_minor}
+        if outcome == "succeeded":
+            fields |= {"key": key, "sha256": sha256}
+        if outcome == "failed":
+            fields |= {"transient": transient, "reason": reason}
+        return jobs.report(
+            ctx, job_id, attempt, fence, outcome, ledger=ledger(), clock=clock, **fields
+        )
+
+    @app.get("/v1/workload")
+    def latest_workload() -> dict[str, Any]:
+        return current_workload(ctx, ledger())
+
+    @app.post("/v1/conversations/{conversation_id}/messages")
+    async def post_message(conversation_id: str, request: Request) -> dict[str, Any]:
+        """D18: the body is bounded in bytes as it arrives, before parsing; three fields only."""
+        too_large = DspError(ErrorCode.INPUT_INVALID, "the message is larger than 16 KiB")
+        if int(request.headers.get("content-length") or 0) > conversation.MAX_BYTES:
+            raise too_large
+        raw = bytearray()
+        async for chunk in request.stream():
+            raw.extend(chunk)
+            if len(raw) > conversation.MAX_BYTES:
+                raise too_large
+        try:
+            fields = json.loads(raw)
+        except ValueError:
+            raise DspError(ErrorCode.INPUT_INVALID, "the request body is not JSON") from None
+        if not isinstance(fields, dict) or set(fields) != MESSAGE_FIELDS:
+            raise DspError(
+                ErrorCode.INPUT_INVALID, "a message is its ID, text and expected revision"
+            )
+        if not all(isinstance(value, str) for value in fields.values()):
+            raise DspError(ErrorCode.INPUT_INVALID, "message fields are strings")
+        return commanded(conversation_id, None, **fields)
+
+    def commanded(
+        conversation_id: str,
+        job_id: str | None,
+        client_message_id: str,
+        text: str,
+        expected_revision: str,
+    ) -> dict[str, Any]:
+        store = ledger()
+        return controls.command(
+            ctx,
+            conversation_id,
+            client_message_id,
+            text,
+            expected_revision,
+            job_id=job_id,
+            ledger=store,
+            clock=clock,
+            new_id=_id,
+            workload=current_workload(ctx, store),
+            binding=LOCAL_DRAFT,
+        )
+
+    def controlled(job_id: str | None, command_id: str, action: str) -> dict[str, Any]:
+        revision = current_workload(ctx, ledger())["revision"]
+        return commanded(
+            controls.CONVERSATION, job_id, command_id, controls.PHRASES[action], revision
+        )
+
+    @app.post("/v1/jobs/{job_id}/control")
+    def control_job(
+        job_id: str,
+        command_id: Annotated[str, Body(min_length=1, max_length=160)],
+        action: Annotated[Literal["pause", "resume", "cancel", "status"], Body()],
+    ) -> dict[str, Any]:
+        return controlled(job_id, command_id, action)
+
+    @app.post("/v1/control")
+    def control_live(
+        command_id: Annotated[str, Body(min_length=1, max_length=160)],
+        action: Annotated[Literal["pause", "resume", "cancel", "status"], Body()],
+    ) -> dict[str, Any]:
+        """The native menu's door: the same control on whichever job is live."""
+        return controlled(None, command_id, action)
+
+    @app.post("/v1/jobs/{job_id}/checkpoint", dependencies=[Depends(native)])
+    def checkpoint(
+        job_id: str,
+        attempt: Annotated[int, Body()],
+        fence: Annotated[int, Body()],
+        sha256: Annotated[str, Body(pattern="^sha256:[a-f0-9]{64}$")],
+    ) -> dict[str, Any]:
+        return jobs.checkpoint(ctx, job_id, attempt, fence, sha256, ledger=ledger(), clock=clock)

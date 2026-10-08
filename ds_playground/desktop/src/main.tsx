@@ -1,7 +1,18 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { freshness, merge, trail, type LedgerEvent, type StageState } from "./trail";
+import {
+  activity,
+  expectedRevision,
+  freshness,
+  liveJob,
+  merge,
+  trail,
+  type Activity,
+  type JobView,
+  type LedgerEvent,
+  type StageState,
+} from "./trail";
 
 type Harness = { base_url: string; token: string };
 type Status =
@@ -25,6 +36,11 @@ type Plan = {
   alternatives: { option_id: string; disposition: string; reason: string }[];
   required_conditions: string[];
 };
+type Receipt = { command: string; operation: string; state: string; because?: string };
+
+const CONVERSATION = "conversation-local";
+const ENDED = new Set(["succeeded", "failed", "cancelled"]);
+const said = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 const RETRY_MS = 250;
 const GIVE_UP_MS = 15_000;
@@ -41,10 +57,14 @@ const WORDS: Record<StageState, string> = {
 const known = (value: number | string | null | undefined) => value ?? "unknown";
 
 /** One authenticated request to the harness. The token is held in memory only. */
-async function call<T>(harness: Harness, path: string, method = "GET"): Promise<T> {
+async function call<T>(harness: Harness, path: string, method = "GET", payload?: unknown): Promise<T> {
   const response = await fetch(`${harness.base_url}${path}`, {
     method,
-    headers: { Authorization: `Bearer ${harness.token}` },
+    headers: {
+      Authorization: `Bearer ${harness.token}`,
+      ...(payload === undefined ? {} : { "Content-Type": "application/json" }),
+    },
+    body: payload === undefined ? undefined : JSON.stringify(payload),
   });
   const body: T & { message?: string } = await response.json();
   if (!response.ok) throw new Error(body.message);
@@ -233,6 +253,129 @@ function ProposedPlan({ plan }: { plan: Plan | null }) {
 }
 
 /**
+ * Pause, resume and cancel for the live job: each press is one command with its own ID, sent on
+ * the fast path, and the answer is the job's actual state. Nothing here waits on anything else.
+ */
+function Controls({ harness, job }: { harness: Harness; job: JobView | null }) {
+  const [note, setNote] = useState("");
+  const send = async (action: string) => {
+    if (!job) return;
+    try {
+      const body = { command_id: crypto.randomUUID(), action };
+      const answer = await call<Receipt>(harness, `/v1/jobs/${job.id}/control`, "POST", body);
+      setNote(`${action}: ${answer.state}${answer.because ? ` · ${answer.because}` : ""}`);
+    } catch (error) {
+      setNote(`${action}: ${said(error)}`);
+    }
+  };
+  const paused = job?.state === "paused";
+  return (
+    <p className="controls">
+      <button type="button" onClick={() => send(paused ? "resume" : "pause")} disabled={!job}>
+        {paused ? "Resume" : "Pause"}
+      </button>
+      <button type="button" onClick={() => send("cancel")} disabled={!job || ENDED.has(job.state)}>
+        Cancel run
+      </button>
+      <span aria-live="polite">{note}</span>
+    </p>
+  );
+}
+
+/**
+ * The composer keeps its draft and its message ID until the harness has the message, so a retry
+ * after a lost answer is the same message, not a second one. The receipt shown is the harness's.
+ */
+function Composer({ harness, revision }: { harness: Harness; revision: string }) {
+  const [draft, setDraft] = useState("");
+  const [receipt, setReceipt] = useState("");
+  const messageId = useRef(crypto.randomUUID());
+  const send = async () => {
+    if (!draft.trim()) return;
+    const body = { client_message_id: messageId.current, text: draft, expected_revision: revision };
+    try {
+      const answer = await call<Receipt>(harness, `/v1/conversations/${CONVERSATION}/messages`, "POST", body);
+      setReceipt(`${answer.operation} · ${answer.state}${answer.because ? ` · ${answer.because}` : ""}`);
+      setDraft("");
+      messageId.current = crypto.randomUUID();
+    } catch (error) {
+      setReceipt(`not received: ${said(error)}`);
+    }
+  };
+  return (
+    <form
+      className="composer"
+      aria-label="Composer"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void send();
+      }}
+    >
+      <textarea
+        aria-label="Message"
+        rows={2}
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) void send();
+        }}
+      />
+      <button type="submit">Send</button>
+      <span aria-live="polite">{receipt}</span>
+    </form>
+  );
+}
+
+/** The one workload that exists: the hung test job, queued here and run by a worker process. */
+function Run({ harness }: { harness: Harness }) {
+  const [note, setNote] = useState("");
+  const start = async () => {
+    const body = {
+      operation: "analyse",
+      idempotency_key: crypto.randomUUID(),
+      task: { cues: ["hang"], seconds: 0 },
+    };
+    try {
+      const job = await call<{ id: string }>(harness, "/v1/jobs", "POST", body);
+      setNote(`Queued ${job.id}. Start a worker: uv run python -m fixtures.worker --job ${job.id}`);
+    } catch (error) {
+      setNote(`Not admitted: ${said(error)}`);
+    }
+  };
+  return (
+    <section aria-labelledby="run">
+      <h2 id="run">Run</h2>
+      <p>
+        <button type="button" onClick={start}>
+          Start the hung test job
+        </button>
+      </p>
+      {note && <p className="detail">{note}</p>}
+    </section>
+  );
+}
+
+/** Every committed event the owner would want to see, with the state each command reached. */
+function ActivityTrail({ items }: { items: Activity[] }) {
+  return (
+    <section aria-labelledby="activity">
+      <h2 id="activity">Activity</h2>
+      {items.length === 0 && <p>Nothing has happened yet.</p>}
+      <ol className="activity" aria-live="polite">
+        {items.map((item) => (
+          <li key={item.seq}>
+            <span>
+              {item.at.slice(11, 19)} {item.text}
+              {item.state && ` · ${item.state}`}
+            </span>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+/**
  * The workspace is a projection of the harness's ledger: it polls for events after its cursor
  * and derives everything shown from them. When a poll fails it keeps the last known state and
  * says so; it never assumes work stopped. It reconnects, and replays from its cursor, when the
@@ -285,6 +428,7 @@ function Workspace(props: { harness: Harness; version: string; pid: number }) {
   }, [planned]);
 
   const age = freshness(snapshot?.observed_at ?? null, now);
+  const live = liveJob(log);
   return (
     <>
       <p role="status">
@@ -292,7 +436,9 @@ function Workspace(props: { harness: Harness; version: string; pid: number }) {
       </p>
       <p className="detail">
         version {version} · process {pid}
+        {live && ` · job ${live.id.slice(-6)} ${live.state.replace("_", " ")}`}
       </p>
+      <Controls harness={harness} job={live} />
       <div className="workspace">
         <nav aria-label="Work trail">
           <ol>
@@ -314,8 +460,11 @@ function Workspace(props: { harness: Harness; version: string; pid: number }) {
             harness={harness}
             revision={log.filter((event) => event.type.startsWith("grant.")).length}
           />
+          <Run harness={harness} />
+          <ActivityTrail items={activity(log)} />
         </div>
       </div>
+      <Composer harness={harness} revision={expectedRevision(log)} />
       <section className="resources" aria-label="Resource status">
         {snapshot && age.seconds !== null
           ? `${known(snapshot.cpu.effective_cpu_quota)} processors · ` +
