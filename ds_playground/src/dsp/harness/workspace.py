@@ -16,27 +16,32 @@ from dsp.adapters.discovery import probes
 from dsp.adapters.duckdb_profile import profile_csv
 from dsp.adapters.ledger_sqlite import SqliteLedger
 from dsp.adapters.store_fs import ContentStore
-from dsp.application import jobs
+from dsp.application import admission, jobs
 from dsp.application.discovery import discover
 from dsp.application.grants import grant_folder, revoke, summary
 from dsp.application.packs import profile_granted
-from dsp.application.planning import propose_plan
+from dsp.application.planning import LOCAL_DRAFT, propose_plan
+from dsp.application.workloads import current_workload
 from dsp.contracts.errors import DspError, ErrorCode, TrustedContext
 
-STATUS = {
-    ErrorCode.INPUT_INVALID: 400,
-    ErrorCode.FORBIDDEN: 403,
-    ErrorCode.NOT_FOUND: 404,
-} | dict.fromkeys(
-    (
-        ErrorCode.IDEMPOTENCY_CONFLICT,
-        ErrorCode.REVISION_CONFLICT,
-        ErrorCode.PAUSED,
-        ErrorCode.PAUSE_REQUESTED,
-        ErrorCode.CANCEL_REQUESTED,
-        ErrorCode.CANCELLED,
-    ),
-    409,
+STATUS = (
+    {
+        ErrorCode.INPUT_INVALID: 400,
+        ErrorCode.FORBIDDEN: 403,
+        ErrorCode.NOT_FOUND: 404,
+    }
+    | dict.fromkeys(
+        (
+            ErrorCode.IDEMPOTENCY_CONFLICT,
+            ErrorCode.REVISION_CONFLICT,
+            ErrorCode.PAUSED,
+            ErrorCode.PAUSE_REQUESTED,
+            ErrorCode.CANCEL_REQUESTED,
+            ErrorCode.CANCELLED,
+        ),
+        409,
+    )
+    | {ErrorCode.QUOTA_EXCEEDED: 429, ErrorCode.DEPENDENCY_UNAVAILABLE: 503}
 )
 
 
@@ -193,8 +198,26 @@ def mount(
         return {"version": receipt["version"], "files": len(receipt["files"])}
 
     @app.post("/v1/jobs")
-    def submit_job(task: Annotated[dict[str, Any], Body(embed=True)]) -> dict[str, Any]:
-        return jobs.submit(ctx, task, ledger=ledger(), clock=clock, new_id=_id)
+    def submit_job(
+        operation: Annotated[
+            Literal["train", "evaluate", "optimise", "simulate", "infer", "prepare", "analyse"],
+            Body(),
+        ],
+        idempotency_key: Annotated[str, Body(min_length=1, max_length=160)],
+        task: Annotated[dict[str, Any], Body()],
+    ) -> dict[str, Any]:
+        store = ledger()
+        return admission.admit(
+            ctx,
+            operation,
+            idempotency_key,
+            task,
+            workload=current_workload(ctx, store),
+            binding=LOCAL_DRAFT,
+            ledger=store,
+            clock=clock,
+            new_id=_id,
+        )
 
     @app.get("/v1/jobs/{job_id}")
     def get_job(job_id: str) -> dict[str, Any]:

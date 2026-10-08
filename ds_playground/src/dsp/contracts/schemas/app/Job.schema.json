@@ -9,6 +9,16 @@
     "time": { "type": "string", "format": "date-time" },
     "maybe_time": { "anyOf": [{ "$ref": "#/$defs/time" }, { "type": "null" }] },
     "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "pinned": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "revision": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "sha256": { "$ref": "#/$defs/digest" }
+      },
+      "required": ["id", "revision", "sha256"]
+    },
     "attempt": { "type": "integer", "minimum": 1, "maximum": 3 },
     "fence": { "type": "integer", "minimum": 0 }
   },
@@ -34,6 +44,10 @@
       },
       "required": ["cues", "seconds"]
     },
+    "request_ref": { "$ref": "#/$defs/pinned" },
+    "workload_ref": { "$ref": "#/$defs/pinned" },
+    "reservation": { "type": ["string", "null"], "minLength": 1, "maxLength": 160 },
+    "idempotency_key": { "type": "string", "minLength": 1, "maxLength": 160 },
     "submitted_at": { "$ref": "#/$defs/time" },
     "attempts": { "type": "integer", "minimum": 0, "maximum": 3 },
     "fence": { "$ref": "#/$defs/fence" },
@@ -91,7 +105,8 @@
     "reason": { "type": ["string", "null"], "maxLength": 200 }
   },
   "required": [
-    "schema_version", "type", "id", "revision", "state", "task", "submitted_at", "attempts", "fence",
+    "schema_version", "type", "id", "revision", "state", "task", "request_ref", "workload_ref",
+    "reservation", "idempotency_key", "submitted_at", "attempts", "fence",
     "failures", "lease", "checkpoint", "result", "charged_minor", "acknowledged_at", "stopped_at", "reason"
   ]
 }

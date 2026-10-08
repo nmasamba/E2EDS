@@ -14,6 +14,7 @@ LEASE_SECONDS = 60  # D03
 HEARTBEAT_SECONDS = 15  # D03
 RETRIES = 2  # D03: automatic retries after the first attempt, for transient faults only
 LIVE = frozenset({"running", "checkpointed", "pause_requested", "cancel_requested"})
+RELEASES = frozenset({"succeeded", "failed", "cancelled"})  # states that give the reservation back
 REFUSAL = {
     "paused": ErrorCode.PAUSED,
     "pause_requested": ErrorCode.PAUSE_REQUESTED,
@@ -23,15 +24,19 @@ REFUSAL = {
 Transition = tuple[dict[str, Any], str | None, dict[str, Any]]
 
 
-def new(job_id: str, task: dict[str, Any], at: str) -> Transition:
-    """Return a queued job (revision 1.0.0, fence 0, no attempt yet) and its first event."""
+def new(job_id: str, at: str, **fields: Any) -> Transition:
+    """Return a queued job (revision 1.0.0, fence 0, no attempt yet) and its first event.
+
+    ``fields`` are what admission settled: the task, the pinned request and workload, the
+    reservation and the idempotency key.
+    """
     job = {
         "schema_version": "0.1.0",
         "type": "Job",
         "id": job_id,
         "revision": "1.0.0",
         "state": "queued",
-        "task": task,
+        **fields,
         "submitted_at": at,
         "attempts": 0,
         "fence": 0,
@@ -44,7 +49,7 @@ def new(job_id: str, task: dict[str, Any], at: str) -> Transition:
         "stopped_at": None,
         "reason": None,
     }
-    return job, "job.queued", _body(job, "queue", at, {"task": task})
+    return job, "job.queued", _body(job, "queue", at, fields)
 
 
 def due(job: dict[str, Any], at: str) -> bool:

@@ -8,6 +8,11 @@
   of a committed key gets the committed result back; cancel records acknowledge and stop times and never
   erases a committed result. `fixtures/worker.py` is the deterministic test worker (sleep, hang, crash
   before or after its commit, fail), the only workload this sprint.
+- Admission: a job is admitted only with the owner's authority, for an operation the workload declares
+  and the local option offers, with no accelerator the option lacks and no external charge (none can be
+  granted yet), after a fresh capacity check against the latest observation less what running jobs hold;
+  the request, its reservation and the job are recorded together, and a plan older than its inputs is
+  rechecked before anything is admitted. The plan now plans for the test job's WorkloadSpec.
 
 ## Sprint 2 — desktop shell, discovery and plan (2026-10-02)
 

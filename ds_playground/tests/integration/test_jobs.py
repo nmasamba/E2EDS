@@ -2,6 +2,7 @@
 
 import subprocess
 import time
+import uuid
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -24,8 +25,13 @@ KILLED = -9
 
 
 def submit(client: httpx.Client, *cues: str, seconds: float = 0.0) -> str:
-    """Queue a job for the test worker and return its ID."""
-    answer = client.post("/v1/jobs", json={"task": {"cues": list(cues), "seconds": seconds}})
+    """Admit a job for the test worker, observing the hardware first if needed; return its ID."""
+    if client.get("/v1/hardware").status_code == 404:
+        assert client.post("/v1/hardware").status_code == 200
+    request = {"operation": "analyse", "idempotency_key": uuid.uuid4().hex}
+    answer = client.post(
+        "/v1/jobs", json=request | {"task": {"cues": list(cues), "seconds": seconds}}
+    )
     assert answer.status_code == 200, answer.text
     return str(answer.json()["id"])
 
@@ -63,7 +69,7 @@ def replays_to(client: httpx.Client, job_id: str) -> None:
     """ADR02: folding the state machine over the job's events gives the job the ledger holds."""
     stored = job_of(client, job_id)
     first, *rest = events_of(client, job_id)
-    job, _, _ = machine.new(job_id, first["body"]["input"]["task"], first["body"]["at"])
+    job, _, _ = machine.new(job_id, first["body"]["at"], **first["body"]["input"])
     for event in rest:
         body = event["body"]
         job, _, _ = machine.advance(job, body["action"], body["at"], **body["input"])
@@ -326,6 +332,9 @@ def test_a03_a_failure_inside_the_result_transaction_commits_neither_the_result_
     The job stays at its previous revision and the retried commit lands exactly once.
     """
     ctx, broken = TrustedContext.local(), False
+    pinned = {"id": "x", "revision": "1.0.0", "sha256": SHA}
+    fields: dict[str, Any] = {"task": {"cues": ["sleep"], "seconds": 1}, "idempotency_key": "k"}
+    fields |= {"request_ref": pinned, "workload_ref": pinned, "reservation": None}
 
     def clock() -> str:
         if broken:
@@ -333,7 +342,7 @@ def test_a03_a_failure_inside_the_result_transaction_commits_neither_the_result_
         return "2026-10-08T10:00:00+00:00"
 
     ledger = SqliteLedger(tmp_path / "ledger.sqlite", clock)
-    job, kind, body = machine.new("job-1", {"cues": ["sleep"], "seconds": 1}, clock())
+    job, kind, body = machine.new("job-1", clock(), **fields)
     ledger.commit(ctx, "job:job-1", 0, "e1", kind or "", body, [job])
     leased, kind, body = machine.advance(job, "lease", clock(), worker="w")
     ledger.commit(ctx, "job:job-1", 1, "e2", kind or "", body, [leased])
@@ -371,7 +380,11 @@ def test_the_window_may_submit_and_cancel_but_is_not_a_worker(api: TestClient) -
     Leases, heartbeats and reports are refused with an Origin; every job route needs the token;
     a malformed task and an unknown job are refused.
     """
-    queued = api.post("/v1/jobs", headers=WINDOW, json={"task": {"cues": ["hang"], "seconds": 0}})
+    assert api.post("/v1/hardware", headers=WINDOW).status_code == 200
+    request = {"operation": "analyse", "idempotency_key": "window-1"}
+    queued = api.post(
+        "/v1/jobs", headers=WINDOW, json=request | {"task": {"cues": ["hang"], "seconds": 0}}
+    )
     assert queued.status_code == 200, queued.text
     job = queued.json()["id"]
     for route in WORKER_ROUTES:

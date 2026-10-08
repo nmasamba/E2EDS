@@ -6,7 +6,7 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 
 - **Sprint:** 3 — M1 jobs, admission, conversation and control (prompts 3.1 to 3.7). Sprints 1 and 2 are
   merged to `main` (PRs #1 to #5).
-- **Claimed prompt:** 3.2 — admission and reservations. 3.1 is done (below).
+- **Claimed prompt:** 3.3 — messages and receipts. 3.1 and 3.2 are done (below).
 - **Branch:** `sprint-3-control`, from `main` at `cbde3fd`
 
 ## Done
@@ -22,7 +22,7 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 | 0 | Setup | done | G0: PASS for synthetic scope |
 | 1 | M0 foundations and thin slice | merged to `main` (PR #1) | PASS, see below |
 | 2 | M1 desktop, discovery, plan | merged to `main` (PR #5) | PASS for Sprint 2 scope, see below |
-| 3 | M1 jobs, admission, conversation, control | in progress: 3.1 done, 3.2 claimed | — |
+| 3 | M1 jobs, admission, conversation, control | in progress: 3.1–3.2 done, 3.3 claimed | — |
 | 4–11 | M1 | not started | — |
 | 12–20 | M1B, M1C, M1R, M2, M3, M3Z, M4 | not started | — |
 
@@ -124,6 +124,21 @@ Code commit `2c81168`; the evidence and this file were committed after it.
   212 passed on macOS. Guards mutation-checked: lease held, retry bound, digest under a committed key,
   expiry and cancel advance the fence, result refused outside running/checkpointed, worker routes refuse
   the window, stale report recorded, expiry reconciled on touch (one redundant clause found and removed).
+
+## Prompt 3.2 — admission and reservations (2026-10-08)
+
+- `application/admission.py` + `domain/admission.py`: `POST /v1/jobs` admits an ExecutionRequest (suite
+  0.5.0) with a `Reservation` 0.1.0 and the queued job in one transaction on one aggregate; the test
+  job's WorkloadSpec 1.0.0 in `application/workloads.py`; the plan plans for it. Ledger stores typeless
+  suite objects by explicit kind.
+- Tests (`tests/integration/test_admission.py`, 5): role, undeclared operation (workload and binding),
+  accelerator on a CPU option and nonzero charge refused before any work and recorded; reservation held
+  and released with the terminal transition, idempotent key; A33 stale plan rechecked and refused, fresh
+  plan pinned, current plan reused; A08 race through the real harness five times; no observation refuses
+  the window's request and the window submits after discovery. `make test-fast` 217 passed on macOS.
+  Guards mutation-checked: scope, operation declared, operation offered, accelerator, charge, unknown
+  disposition, capacity after held, single admission aggregate, stale plan recheck, idempotent key,
+  release with the terminal transition (one redundant guard found and removed).
 
 ## Open defects and gaps
 

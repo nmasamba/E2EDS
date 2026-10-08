@@ -343,3 +343,47 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   leave a job's evidence unresolved (no external execution), so the schema's state list omits it; the
   Sprint 4 runner adds it with the first path that needs it. `Job` 0.1.0 is finalised at the end of this
   sprint; prompts 3.2 and 3.5 add fields to the same file before anything is released.
+- **2026-10-08 — S3 — DECISION — admission records (3.2)** — `POST /v1/jobs` is admission: the caller
+  supplies the operation, a logical idempotency key and the task; everything else is derived. One ledger
+  transaction on a single `admission:host-local` aggregate commits the suite `ExecutionRequest` 0.5.0
+  (`planning_only: false`, `state: admitted`, workload, binding and plan pinned by digest, authorisation
+  context the trusted principal), an app-owned `Reservation` 0.1.0 (cpu, memory, scratch, external charge
+  zero) and the queued `Job`. Two requests racing for the last reservation both read the same aggregate
+  sequence, so one commit conflicts, reloads what is held and is refused (A08). A refusal other than
+  missing authority is recorded as a rejected request with its reason; a missing scope is refused before
+  anything is read or written. The reservation is released in the same commit as the job's terminal
+  transition.
+- **2026-10-08 — S3 — DECISION — the test job's WorkloadSpec arrives with admission, not 3.5 (3.2)** — an
+  admitted ExecutionRequest must pin a workload revision by digest, and a conversation command must
+  reference one, so `application/workloads.py` defines revision 1.0.0 now (`workload-test-job`, the
+  smallest schema-valid WorkloadSpec: `data_analysis`, `exploratory_analysis`, `headless`, the orders
+  fixture's three field roles, 1 CPU, 1 GiB, 1 GiB scratch, 600 s, zero charge). It is a planning record
+  with null evidence references; it is stored with the first admission and read back as the current
+  revision; prompt 3.5 adds revisions. The plan now plans for it, so Sprint 2's `profile_draft` is gone;
+  the plan's text is unchanged because the resources are the same. The suite schema forces
+  `conversational` workloads to name an assistant binding, which does not exist until Sprint 5, hence
+  `headless`; the conversation references the workload, not the other way round.
+- **2026-10-08 — S3 — ASSUMPTION — the code task behind the test job (3.2)** — a non-planning
+  ExecutionRequest must reference a `source_code_task_ref` with a digest. No CodeTask object exists before
+  Sprint 4, so the reference is `code-task-test-worker` 1.0.0 with the digest of the task itself (its
+  cues and seconds): the declared work, content-addressed. Sprint 4 replaces it with the hashed CodeTask.
+- **2026-10-08 — S3 — DEVIATION — an unqualified local option may run the test job (3.2)** — the suite
+  admits only a qualified, authorised binding. The local draft binding has no qualification report and
+  its isolation is unknown until Sprint 4, so a strict reading would admit nothing this sprint. Admission
+  therefore refuses `blocked` (no family, paid at zero, no capacity) and `unknown` (nothing observed)
+  dispositions and admits `eligible` or `unqualified` ones for the local test worker; the plan it pins
+  records the disposition and the plan outcome stays INSUFFICIENT_EVIDENCE. The gate for real
+  workloads returns to "qualified only" with the runner's qualification evidence.
+- **2026-10-08 — S3 — DECISION — a stale plan is rechecked by proposing a fresh one (3.2)** — admission
+  pins the latest WorkflowPlan only when it names the current workload revision and the latest
+  HardwareSnapshot; otherwise it proposes a fresh plan from the current inputs (which supersedes the
+  stale one) and pins that, then applies the rule table and the reservation sum to the latest snapshot
+  (A33). A plan is advice; capacity is always rechecked at admission.
+- **2026-10-08 — S3 — DECISION — typeless suite objects are stored under an explicit kind (3.2)** — the
+  ledger keyed objects by their `type` field; `WorkloadSpec` (like `ComputeBinding`, `ReleaseManifest`
+  and `ServiceSpec`) has none and forbids unknown fields. `Ledger.commit` now also accepts
+  `(kind, object)` pairs. Alternative: an app envelope around suite objects, which would hash and store
+  something other than the suite object.
+- **2026-10-08 — S3 — FINDING — a redundant admission guard (3.2)** — an explicit "no snapshot" refusal
+  survived no mutation: the planner's rule table already judges a missing observation as `unknown`,
+  which admission refuses. Removed; the remaining eleven admission guards each fail a test when broken.

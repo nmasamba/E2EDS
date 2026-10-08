@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dsplayground.dev/schemas/app/0.1.0/Reservation.schema.json",
+  "title": "Reservation — app-owned contract",
+  "description": "Resources and spend one admitted job holds in a resource domain, from admission until the job ends or pauses. Held reservations bound what admission may still grant.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "0.1.0" },
+    "type": { "const": "Reservation" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 160, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$" },
+    "revision": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "job_ref": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "request_ref": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "domain": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "cpu_cores": { "type": "integer", "minimum": 1 },
+    "memory_gib": { "type": "number", "exclusiveMinimum": 0 },
+    "scratch_gib": { "type": "number", "minimum": 0 },
+    "external_charge_minor": { "type": "integer", "minimum": 0 },
+    "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+    "state": { "enum": ["held", "released"] },
+    "held_at": { "type": "string", "format": "date-time" },
+    "released_at": { "anyOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] }
+  },
+  "required": [
+    "schema_version", "type", "id", "revision", "job_ref", "request_ref", "domain", "cpu_cores",
+    "memory_gib", "scratch_gib", "external_charge_minor", "currency", "state", "held_at", "released_at"
+  ]
+}

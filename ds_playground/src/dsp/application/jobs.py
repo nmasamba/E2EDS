@@ -9,6 +9,7 @@ report is recorded as rejected and refused.
 from collections.abc import Callable
 from typing import Any
 
+from dsp.application.admission import released
 from dsp.contracts.canonical import canonical_json, digest
 from dsp.contracts.errors import DspError, ErrorCode, TrustedContext
 from dsp.contracts.schemas import validate
@@ -28,6 +29,8 @@ def _commit(
     objects = [job] if job["revision"] != before else []
     if objects:
         validate("Job", job)
+        if job["state"] in machine.RELEASES:
+            objects += released(ctx, job, body["at"], ledger)
     aggregate = f"job:{job['id']}"
     seq = ledger.seq(ctx, aggregate)
     event_id = f"{job['id']}:{seq + 1}:{digest(canonical_json(body))[7:19]}"
@@ -73,20 +76,6 @@ def _apply(
     raise DspError(
         ErrorCode.REVISION_CONFLICT, "the job changed under this request", {"retry": True}
     )
-
-
-def submit(
-    ctx: TrustedContext,
-    task: dict[str, Any],
-    *,
-    ledger: Ledger,
-    clock: Callable[[], str],
-    new_id: Callable[[], str],
-) -> dict[str, Any]:
-    """Queue a job for the one workload that exists, the test worker's task, and return it."""
-    job, kind, body = machine.new(f"job-{new_id()}", task, clock())
-    _commit(ctx, ledger, "", job, kind or "", body)
-    return job
 
 
 def inspect(

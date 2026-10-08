@@ -9,6 +9,14 @@ from dsp.domain import jobs as machine
 
 T0 = "2026-10-08T10:00:00+00:00"
 SHA = "sha256:" + "b" * 64
+PINNED = {"id": "x", "revision": "1.0.0", "sha256": SHA}
+FIELDS: dict[str, Any] = {
+    "task": {"cues": ["sleep"], "seconds": 1},
+    "request_ref": PINNED,
+    "workload_ref": PINNED,
+    "reservation": "reservation-1",
+    "idempotency_key": "k",
+}
 
 
 def at(seconds: float) -> str:
@@ -34,7 +42,7 @@ def refused(job: dict[str, Any], action: str, when: float, **given: Any) -> DspE
 @pytest.fixture
 def running() -> dict[str, Any]:
     """A job leased to its first attempt at T0 + 1 s."""
-    job, kind, body = machine.new("job-1", {"cues": ["sleep"], "seconds": 1}, T0)
+    job, kind, body = machine.new("job-1", T0, **FIELDS)
     assert (kind, body["state"], job["revision"]) == ("job.queued", "queued", "1.0.0")
     validate("Job", job)
     return step(job, "lease", 1, worker="w1")
@@ -97,7 +105,7 @@ def test_d03_the_third_transient_failure_is_final(running: dict[str, Any]) -> No
 
 def test_a07_cancel_in_every_state_records_acknowledge_and_stop(running: dict[str, Any]) -> None:
     """A07: queued cancels at once; running is requested, fenced, stopped; done is untouched."""
-    queued, _, _ = machine.new("job-2", {"cues": ["sleep"], "seconds": 1}, T0)
+    queued, _, _ = machine.new("job-2", T0, **FIELDS)
     cancelled = step(queued, "cancel", 5)
     assert (cancelled["state"], cancelled["acknowledged_at"], cancelled["stopped_at"]) == (
         "cancelled",
