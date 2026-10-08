@@ -13,6 +13,12 @@
   granted yet), after a fresh capacity check against the latest observation less what running jobs hold;
   the request, its reservation and the job are recorded together, and a plan older than its inputs is
   rechecked before anything is admitted. The plan now plans for the test job's WorkloadSpec.
+- Messages: `POST /v1/conversations/{id}/messages` stores each message as a command with a durable
+  receipt before it answers; a retried message ID gets the same receipt, the same ID with other text is
+  refused, bodies over 16 KiB are refused before they are parsed, and the window replays commands and
+  their states through the events it already polls. The exact phrases `pause`, `pause now`, `cancel this
+  run`, `stop this run`, `resume` and `status` are recognised as controls; other text is answered as
+  "assistant unavailable" until an assistant is bound.
 
 ## Sprint 2 — desktop shell, discovery and plan (2026-10-02)
 

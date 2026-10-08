@@ -61,7 +61,7 @@ def refusal(
     disposition, reason = judge(workload, binding, snapshot)
     if disposition == "blocked":
         return ErrorCode.QUOTA_EXCEEDED, reason
-    if disposition == "unknown":
+    if disposition == "unknown" or snapshot is None:
         return ErrorCode.DEPENDENCY_UNAVAILABLE, reason
     for unit, needed, usable in needs(workload, binding, snapshot):
         free = usable - held.get(UNITS[unit], 0)

@@ -16,7 +16,7 @@ from dsp.adapters.discovery import probes
 from dsp.adapters.duckdb_profile import profile_csv
 from dsp.adapters.ledger_sqlite import SqliteLedger
 from dsp.adapters.store_fs import ContentStore
-from dsp.application import admission, jobs
+from dsp.application import admission, conversation, jobs
 from dsp.application.discovery import discover
 from dsp.application.grants import grant_folder, revoke, summary
 from dsp.application.packs import profile_granted
@@ -41,8 +41,14 @@ STATUS = (
         ),
         409,
     )
-    | {ErrorCode.QUOTA_EXCEEDED: 429, ErrorCode.DEPENDENCY_UNAVAILABLE: 503}
+    | {
+        ErrorCode.QUOTA_EXCEEDED: 429,
+        ErrorCode.DEPENDENCY_UNAVAILABLE: 503,
+        ErrorCode.ASSISTANT_UNAVAILABLE: 503,
+    }
 )
+
+MESSAGE_FIELDS = {"client_message_id", "text", "expected_revision"}
 
 
 def _now() -> str:
@@ -252,6 +258,27 @@ def mount(
             fields |= {"transient": transient, "reason": reason}
         return jobs.report(
             ctx, job_id, attempt, fence, outcome, ledger=ledger(), clock=clock, **fields
+        )
+
+    @app.post("/v1/conversations/{conversation_id}/messages")
+    async def post_message(conversation_id: str, request: Request) -> dict[str, Any]:
+        """D18: the body is bounded in bytes before it is parsed; only three fields are accepted."""
+        declared = int(request.headers.get("content-length") or 0)
+        raw = b"" if declared > conversation.MAX_BYTES else await request.body()
+        if max(declared, len(raw)) > conversation.MAX_BYTES:
+            raise DspError(ErrorCode.INPUT_INVALID, "the message is larger than 16 KiB")
+        try:
+            fields = json.loads(raw)
+        except ValueError:
+            raise DspError(ErrorCode.INPUT_INVALID, "the request body is not JSON") from None
+        if not isinstance(fields, dict) or set(fields) != MESSAGE_FIELDS:
+            raise DspError(
+                ErrorCode.INPUT_INVALID, "a message is its ID, text and expected revision"
+            )
+        if not all(isinstance(value, str) for value in fields.values()):
+            raise DspError(ErrorCode.INPUT_INVALID, "message fields are strings")
+        return conversation.receive(
+            ctx, conversation_id, **fields, ledger=ledger(), clock=clock, new_id=_id
         )
 
     @app.post("/v1/jobs/{job_id}/control")

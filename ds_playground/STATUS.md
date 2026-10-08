@@ -6,7 +6,7 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 
 - **Sprint:** 3 — M1 jobs, admission, conversation and control (prompts 3.1 to 3.7). Sprints 1 and 2 are
   merged to `main` (PRs #1 to #5).
-- **Claimed prompt:** 3.3 — messages and receipts. 3.1 and 3.2 are done (below).
+- **Claimed prompt:** 3.4 — fast controls. 3.1 to 3.3 are done (below).
 - **Branch:** `sprint-3-control`, from `main` at `cbde3fd`
 
 ## Done
@@ -22,7 +22,7 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 | 0 | Setup | done | G0: PASS for synthetic scope |
 | 1 | M0 foundations and thin slice | merged to `main` (PR #1) | PASS, see below |
 | 2 | M1 desktop, discovery, plan | merged to `main` (PR #5) | PASS for Sprint 2 scope, see below |
-| 3 | M1 jobs, admission, conversation, control | in progress: 3.1–3.2 done, 3.3 claimed | — |
+| 3 | M1 jobs, admission, conversation, control | in progress: 3.1–3.3 done, 3.4 claimed | — |
 | 4–11 | M1 | not started | — |
 | 12–20 | M1B, M1C, M1R, M2, M3, M3Z, M4 | not started | — |
 
@@ -139,6 +139,19 @@ Code commit `2c81168`; the evidence and this file were committed after it.
   Guards mutation-checked: scope, operation declared, operation offered, accelerator, charge, unknown
   disposition, capacity after held, single admission aggregate, stale plan recheck, idempotent key,
   release with the terminal transition (one redundant guard found and removed).
+
+## Prompt 3.3 — messages and receipts (2026-10-08)
+
+- `application/conversation.py`, app `Conversation` 0.1.0, route `POST /v1/conversations/{id}/messages`
+  (size in bytes before parsing, three string fields only, suite ConversationCommand records, receipt
+  before acknowledgement, dedupe by client message ID, exact control phrases classified, instructions
+  rejected as ASSISTANT_UNAVAILABLE).
+- Tests (`tests/integration/test_messages.py`, 25 incl. parametrised): A27 same-ID retry, conflict,
+  dropped acknowledgement over a raw socket against the real harness, cursor replay in order; D18
+  16 KiB + 1 refused before parsing (also chunked), exact 16 KiB accepted, bytes not characters;
+  inbound field rules; phrase exactness. `make test-fast` 243 passed on macOS. Guards mutation-checked:
+  size before parsing, exactly three fields, string fields, service byte count, same ID one command,
+  other text conflicts, exact phrases, instruction rejected.
 
 ## Open defects and gaps
 

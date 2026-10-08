@@ -387,3 +387,23 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
 - **2026-10-08 — S3 — FINDING — a redundant admission guard (3.2)** — an explicit "no snapshot" refusal
   survived no mutation: the planner's rule table already judges a missing observation as `unknown`,
   which admission refuses. Removed; the remaining eleven admission guards each fail a test when broken.
+- **2026-10-08 — S3 — DECISION — messages and receipts (3.3)** — `POST /v1/conversations/{id}/messages`
+  reads the raw body, refuses more than 16 KiB before parsing it (declared length first, then the bytes
+  that arrive, so a chunked body is measured too), accepts exactly `client_message_id`, `text` and
+  `expected_revision` as strings, and commits a suite `ConversationCommand` 0.3.0 (`received`) with its
+  `message.received` event on the `conversation:<id>` aggregate before answering. The receipt names the
+  command and its receipt event; the command's `receipt_event_ref` carries the event body's digest. The
+  same ID again returns the same receipt and writes nothing; the same ID with other text is an
+  IDEMPOTENCY_CONFLICT. Replay is the existing `/v1/events` cursor. The first message of a conversation
+  creates an app-owned `Conversation` 0.1.0 in the same commit; the command pins it and the current
+  workload by digest.
+- **2026-10-08 — S3 — ASSUMPTION — operation classification without an assistant (3.3)** — the operation
+  is derived on the server by exact match on the six control phrases (case, surrounding whitespace and a
+  trailing full stop or exclamation mark ignored); anything else is an `instruction`. With no assistant
+  bound until Sprint 5, an instruction is recorded as received and then `rejected` with
+  ASSISTANT_UNAVAILABLE, which is the truthful answer; quoted or embedded phrases are instructions, so
+  text from a document never becomes a control. Prompt 3.5 adds the deterministic requirement-change
+  grammar in front of the assistant.
+- **2026-10-08 — S3 — ASSUMPTION — command state changes are revisions (3.3)** — a command's state moves
+  by a successor revision (`2.0.0`, `3.0.0`) with a `command.<state>` event, never in place, so the
+  activity trail can show the receipt and each later state from events alone.
