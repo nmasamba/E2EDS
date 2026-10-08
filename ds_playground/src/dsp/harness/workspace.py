@@ -16,7 +16,7 @@ from dsp.adapters.discovery import probes
 from dsp.adapters.duckdb_profile import profile_csv
 from dsp.adapters.ledger_sqlite import SqliteLedger
 from dsp.adapters.store_fs import ContentStore
-from dsp.application import admission, conversation, jobs
+from dsp.application import admission, controls, conversation, jobs
 from dsp.application.discovery import discover
 from dsp.application.grants import grant_folder, revoke, summary
 from dsp.application.packs import profile_granted
@@ -277,12 +277,57 @@ def mount(
             )
         if not all(isinstance(value, str) for value in fields.values()):
             raise DspError(ErrorCode.INPUT_INVALID, "message fields are strings")
-        return conversation.receive(
-            ctx, conversation_id, **fields, ledger=ledger(), clock=clock, new_id=_id
+        return commanded(conversation_id, None, **fields)
+
+    def commanded(
+        conversation_id: str,
+        job_id: str | None,
+        client_message_id: str,
+        text: str,
+        expected_revision: str,
+    ) -> dict[str, Any]:
+        store = ledger()
+        return controls.command(
+            ctx,
+            conversation_id,
+            client_message_id,
+            text,
+            expected_revision,
+            job_id=job_id,
+            ledger=store,
+            clock=clock,
+            new_id=_id,
+            workload=current_workload(ctx, store),
+            binding=LOCAL_DRAFT,
+        )
+
+    def controlled(job_id: str | None, command_id: str, action: str) -> dict[str, Any]:
+        revision = current_workload(ctx, ledger())["revision"]
+        return commanded(
+            controls.CONVERSATION, job_id, command_id, controls.PHRASES[action], revision
         )
 
     @app.post("/v1/jobs/{job_id}/control")
     def control_job(
-        job_id: str, action: Annotated[Literal["cancel"], Body(embed=True)]
+        job_id: str,
+        command_id: Annotated[str, Body(min_length=1, max_length=160)],
+        action: Annotated[Literal["pause", "resume", "cancel", "status"], Body()],
     ) -> dict[str, Any]:
-        return jobs.control(ctx, job_id, action, ledger=ledger(), clock=clock)
+        return controlled(job_id, command_id, action)
+
+    @app.post("/v1/control")
+    def control_live(
+        command_id: Annotated[str, Body(min_length=1, max_length=160)],
+        action: Annotated[Literal["pause", "resume", "cancel", "status"], Body()],
+    ) -> dict[str, Any]:
+        """The native menu's door: the same control on whichever job is live."""
+        return controlled(None, command_id, action)
+
+    @app.post("/v1/jobs/{job_id}/checkpoint", dependencies=[Depends(native)])
+    def checkpoint(
+        job_id: str,
+        attempt: Annotated[int, Body()],
+        fence: Annotated[int, Body()],
+        sha256: Annotated[str, Body(pattern="^sha256:[a-f0-9]{64}$")],
+    ) -> dict[str, Any]:
+        return jobs.checkpoint(ctx, job_id, attempt, fence, sha256, ledger=ledger(), clock=clock)

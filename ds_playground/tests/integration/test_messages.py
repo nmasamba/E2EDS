@@ -57,15 +57,17 @@ def test_a27_the_same_message_id_is_one_command_and_other_text_under_it_conflict
     first = api.post(ROUTE, headers=WINDOW, json=message("status"))
     assert first.status_code == 200, first.text
     again = api.post(ROUTE, headers=WINDOW, json=message("status"))
-    assert again.json() == first.json()
-    assert first.json()["operation"] == "status"
-    assert first.json()["state"] == "received"
+    stable = ("command", "revision", "operation", "state", "receipt")
+    assert {key: again.json()[key] for key in stable} == {key: first.json()[key] for key in stable}
+    assert (first.json()["operation"], first.json()["state"]) == ("status", "rejected")
+    assert first.json()["because"] == "no job is live"
     other = api.post(ROUTE, headers=WINDOW, json=message("cancel this run"))
     assert (other.status_code, other.json()["code"]) == (409, ErrorCode.IDEMPOTENCY_CONFLICT)
-    assert kinds(api) == [(1, "message.received", "m1")]
+    assert kinds(api) == [(1, "message.received", "m1"), (2, "command.rejected", "m1")]
     store = SqliteLedger(tmp_path / "home" / "ledger.sqlite", lambda: NOW)
     (command,) = store.current(CTX, "ConversationCommand")
     validate("ConversationCommand", command)
+    assert (command["state"], command["revision"]) == ("rejected", "2.0.0")
     conversation = store.get(CTX, "Conversation", "conversation-local", "1.0.0")
     validate("Conversation", conversation)
     assert command["conversation_ref"] == pin(conversation)
@@ -107,7 +109,7 @@ def test_a27_a_dropped_acknowledgement_then_the_same_id_gives_one_command(
             break
         time.sleep(0.05)
     (command,) = store.current(CTX, "ConversationCommand")
-    assert (command["state"], command["operation"]) == ("received", "pause")
+    assert (command["state"], command["operation"]) == ("rejected", "pause")
     retried = client.post(ROUTE, json=message("pause now", "lost-1")).json()
     assert (retried["command"], retried["receipt"]) == (
         command["id"],
@@ -115,7 +117,7 @@ def test_a27_a_dropped_acknowledgement_then_the_same_id_gives_one_command(
     )
     assert len(store.current(CTX, "ConversationCommand")) == 1
     events = client.get("/v1/events").json()["events"]
-    assert [event["type"] for event in events] == ["message.received"]
+    assert [event["type"] for event in events] == ["message.received", "command.rejected"]
 
 
 def test_a27_reconnect_with_a_cursor_replays_messages_in_order(api: TestClient) -> None:
@@ -132,18 +134,13 @@ def test_a27_reconnect_with_a_cursor_replays_messages_in_order(api: TestClient) 
     for mid, text in texts.items():
         assert api.post(ROUTE, headers=WINDOW, json=message(text, mid)).status_code == 200
     seen = kinds(api)
-    assert seen == [
-        (1, "message.received", "m1"),
-        (2, "message.received", "m2"),
-        (3, "message.received", "m3"),
-        (4, "command.rejected", "m3"),
-        (5, "message.received", "m4"),
-    ]
+    pairs = [(kind, mid) for mid in texts for kind in ("message.received", "command.rejected")]
+    assert seen == [(seq, kind, mid) for seq, (kind, mid) in enumerate(pairs, start=1)]
     assert kinds(api, after=2) == seen[2:]
-    assert kinds(api, after=5) == []
+    assert kinds(api, after=8) == []
     reset = api.get("/v1/events?after=50", headers=WINDOW).json()
-    assert (reset["reset"], len(reset["events"])) == (True, 5)
-    rejected = api.get("/v1/events?after=3", headers=WINDOW).json()["events"][0]
+    assert (reset["reset"], len(reset["events"])) == (True, 8)
+    rejected = api.get("/v1/events?after=5", headers=WINDOW).json()["events"][0]
     assert (rejected["body"]["because"], rejected["body"]["state"]) == (
         ErrorCode.ASSISTANT_UNAVAILABLE,
         "rejected",

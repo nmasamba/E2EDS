@@ -9,7 +9,7 @@ report is recorded as rejected and refused.
 from collections.abc import Callable
 from typing import Any
 
-from dsp.application.admission import released
+from dsp.application.admission import readmit, released
 from dsp.contracts.canonical import canonical_json, digest
 from dsp.contracts.errors import DspError, ErrorCode, TrustedContext
 from dsp.contracts.schemas import validate
@@ -159,9 +159,48 @@ def report(
     return {"state": job["state"], "committed": True}
 
 
-def control(
-    ctx: TrustedContext, job_id: str, action: str, *, ledger: Ledger, clock: Callable[[], str]
+def checkpoint(
+    ctx: TrustedContext,
+    job_id: str,
+    attempt: int,
+    fence: int,
+    sha256: str,
+    *,
+    ledger: Ledger,
+    clock: Callable[[], str],
 ) -> dict[str, Any]:
-    """Apply an explicit control and say what it changed; a finished job is left as it is."""
-    job, changed = _apply(ctx, job_id, action, ledger=ledger, clock=clock)
-    return {"job": job, "changed": changed}
+    """Record the live attempt's durable checkpoint; accepted while draining for a pause (A25)."""
+    given = {"attempt": attempt, "fence": fence, "sha256": sha256}
+    job, _ = _apply(ctx, job_id, "checkpoint", ledger=ledger, clock=clock, **given)
+    return {"state": job["state"], "checkpoint": job["checkpoint"]}
+
+
+def control(
+    ctx: TrustedContext,
+    job_id: str,
+    action: str,
+    *,
+    ledger: Ledger,
+    clock: Callable[[], str],
+    new_id: Callable[[], str],
+    workload: dict[str, Any],
+    binding: dict[str, Any],
+) -> tuple[dict[str, Any], bool]:
+    """Apply an explicit control on the fast path and return the job and whether it changed.
+
+    Pause and cancel advance the fence at once; resume is a fresh admission under the current
+    workload revision; status reads. A finished job is left as it is.
+    """
+    if action == "resume":
+        return readmit(
+            ctx,
+            job_id,
+            workload=workload,
+            binding=binding,
+            ledger=ledger,
+            clock=clock,
+            new_id=new_id,
+        )
+    if action == "status":
+        return inspect(ctx, job_id, ledger=ledger, clock=clock), False
+    return _apply(ctx, job_id, action, ledger=ledger, clock=clock)

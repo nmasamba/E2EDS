@@ -407,3 +407,41 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
 - **2026-10-08 — S3 — ASSUMPTION — command state changes are revisions (3.3)** — a command's state moves
   by a successor revision (`2.0.0`, `3.0.0`) with a `command.<state>` event, never in place, so the
   activity trail can show the receipt and each later state from events alone.
+- **2026-10-08 — S3 — DECISION — the fast path (3.4)** — `application/controls.py` is the one path for
+  the exact phrases, the window's buttons (`POST /v1/jobs/{id}/control`) and the native menu
+  (`POST /v1/control`, which acts on the live job): each becomes a ConversationCommand whose receipt is
+  committed first, then the coordinator transition, then the command's end state (`applied`,
+  `superseded` when the job had already settled it, `rejected` with the code when the state refuses it).
+  The path reads and writes the ledger only; no model and no worker is on it, which is what D18 asks and
+  what A24 measures. Pause advances the fence (the dispatch epoch) at once and the lease route refuses a
+  paused or pausing job; the worker learns of the pause at its next heartbeat, reports that it stopped,
+  and only then is the job `paused`. The command ID is the client's idempotency key: a repeated ID is
+  answered with the same receipt and the job as it is now, never applied twice.
+- **2026-10-08 — S3 — DECISION — resume is a readmission on the admission aggregate (3.4)** — resume
+  rechecks capacity against the latest observation less what is held, holds a new reservation (pause
+  released the old one) and sets the job's workload reference to the current revision, in one commit on
+  the admission aggregate so a race for capacity is serialised. A job transition that raced it loses on
+  the Job revision's immutability (the same successor revision cannot be written twice), which acts as a
+  per-object compare-and-swap; the loser reloads and reapplies. A refused resume is recorded as
+  `admission.rejected` naming the job, which stays paused. A cancelled job cannot resume (`CANCELLED`);
+  resuming a running job is refused.
+- **2026-10-08 — S3 — ASSUMPTION — one local conversation, and what a phrase names (3.4)** — the local
+  build has one conversation, `conversation-local`, which the buttons and the menu use. A phrase names no
+  job: with exactly one live job (queued, running, pausing, paused, cancelling) it acts on that job; with
+  none it is rejected ("no job is live"); with several it ends `needs_clarification`, as the suite asks
+  for ambiguity, and the job's own controls remain available. Found by the A24 measurement, whose first
+  version kept a second hung job alive as load and watched the phrase pause the wrong one.
+- **2026-10-08 — S3 — DECISION — the preflight grants two headers (3.4)** — the shell origin's preflight
+  now allows exactly `authorization` and `content-type`, so the window can send a JSON body; a preflight
+  naming any other header is refused with 403 and no CORS grant.
+- **2026-10-08 — S3 — FINDING — a checkpoint is only recorded, never resumed from (3.4)** — the worker
+  may post a durable checkpoint digest, which is kept across pause and resume and shown with the job;
+  the test worker never writes one and nothing restores from one until the Sprint 4 runner. During a
+  cancel no checkpoint is taken.
+- **2026-10-08 — S3 — DEFECT — a type error reached CI (3.2)** — the 3.2 push failed `mypy` on both
+  runners (the desktop jobs passed): the guard removed after the mutation check left `needs` with a
+  possibly-missing snapshot, and the type check was not rerun before the commit. Fixed in the 3.3 commit;
+  from here every commit chain ends with lint, types and boundaries.
+- **2026-10-08 — S3 — FINDING — the A24 measurement is slow (3.4)** — twenty pause and twenty cancel
+  trials, each with its own hung worker process under every processor saturated, take about 150 s on
+  this Mac; the test is `slow`, so it is in the gate and out of the inner loop.

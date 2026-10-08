@@ -228,7 +228,16 @@ def test_d05_an_admitted_job_holds_its_reservation_until_it_ends_and_its_key_is_
     assert raised.value.code is ErrorCode.IDEMPOTENCY_CONFLICT
     assert written(store) == {"Job": 1, "Reservation": 1, "ExecutionRequest": 1}
 
-    ended = jobs.control(CTX, job["id"], "cancel", ledger=store, clock=lambda: NOW)["job"]
+    ended, _ = jobs.control(
+        CTX,
+        job["id"],
+        "cancel",
+        ledger=store,
+        clock=lambda: NOW,
+        new_id=new_id,
+        workload=base_workload(CTX),
+        binding=LOCAL_DRAFT,
+    )
     released = store.latest(CTX, "Reservation", job["reservation"])
     assert ended["state"] == "cancelled"
     assert released is not None
@@ -324,9 +333,9 @@ def test_a08_two_admissions_racing_for_the_last_reservation_never_exceed_the_cap
         assert loser.json()["code"] == ErrorCode.QUOTA_EXCEEDED
         assert [r["cpu_cores"] for r in held()] == [1]
         winner = next(r for r in outcomes if r.status_code == 200).json()["id"]
-        assert client.post(f"/v1/jobs/{winner}/control", json={"action": "cancel"}).json()[
-            "changed"
-        ]
+        assert client.post(
+            f"/v1/jobs/{winner}/control", json={"command_id": winner, "action": "cancel"}
+        ).json()["changed"]
         assert held() == []
     kinds = [event["type"] for event in client.get("/v1/events").json()["events"]]
     assert (kinds.count("job.queued"), kinds.count("admission.rejected")) == (5, 5)

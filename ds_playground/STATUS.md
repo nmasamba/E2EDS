@@ -6,7 +6,7 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 
 - **Sprint:** 3 — M1 jobs, admission, conversation and control (prompts 3.1 to 3.7). Sprints 1 and 2 are
   merged to `main` (PRs #1 to #5).
-- **Claimed prompt:** 3.4 — fast controls. 3.1 to 3.3 are done (below).
+- **Claimed prompt:** 3.5 — requirement revisions. 3.1 to 3.4 are done (below).
 - **Branch:** `sprint-3-control`, from `main` at `cbde3fd`
 
 ## Done
@@ -22,7 +22,7 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 | 0 | Setup | done | G0: PASS for synthetic scope |
 | 1 | M0 foundations and thin slice | merged to `main` (PR #1) | PASS, see below |
 | 2 | M1 desktop, discovery, plan | merged to `main` (PR #5) | PASS for Sprint 2 scope, see below |
-| 3 | M1 jobs, admission, conversation, control | in progress: 3.1–3.3 done, 3.4 claimed | — |
+| 3 | M1 jobs, admission, conversation, control | in progress: 3.1–3.4 done, 3.5 claimed | — |
 | 4–11 | M1 | not started | — |
 | 12–20 | M1B, M1C, M1R, M2, M3, M3Z, M4 | not started | — |
 
@@ -152,6 +152,22 @@ Code commit `2c81168`; the evidence and this file were committed after it.
   inbound field rules; phrase exactness. `make test-fast` 243 passed on macOS. Guards mutation-checked:
   size before parsing, exactly three fields, string fields, service byte count, same ID one command,
   other text conflicts, exact phrases, instruction rejected.
+
+## Prompt 3.4 — fast controls (2026-10-08)
+
+- `application/controls.py` (phrases, buttons and menu on one path), pause/resume in the state machine,
+  resume as readmission, `POST /v1/jobs/{id}/control`, `POST /v1/control`, `POST /v1/jobs/{id}/checkpoint`,
+  the preflight grants `content-type`.
+- Tests: `tests/integration/test_controls.py` (6): A25 pause racing a checkpoint and a commit with an
+  explicit resume, a queued job pausing and resume as a fresh admission, phrases exact and quoted ones
+  inert, a phrase with two live jobs asks which, the menu door, checkpoints native only. SAT
+  `tests/sat/test_sprint_03.py` A24: 20 pause and 20 cancel phrases under full saturation with a hung
+  worker each, p95 asserted ≤ 2 s (numbers recorded by `make sat` at the gate). Preflight header tests in
+  `test_shell_origin.py`. `make test-fast` 254 passed on macOS. Guards mutation-checked: pause advances
+  the fence, only paused resumes, PAUSED refuses leases, pause releases the reservation, resume rechecks
+  capacity, repeated command not reapplied, ended jobs not live, command settled applied, refused
+  control recorded, checkpoints native only, preflight refuses other headers, checkpoint needs the live
+  attempt.
 
 ## Open defects and gaps
 

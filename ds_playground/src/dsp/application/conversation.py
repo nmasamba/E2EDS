@@ -74,7 +74,7 @@ def receive(
     clock: Callable[[], str],
     new_id: Callable[[], str],
 ) -> dict[str, Any]:
-    """Persist the message as a received ConversationCommand with its receipt event, then answer.
+    """Persist the message as a received ConversationCommand with its receipt event; return it.
 
     The same client message ID again returns the same receipt (A27: a lost acknowledgement); the
     same ID with other text is an IDEMPOTENCY_CONFLICT. The first message of a conversation creates
@@ -89,7 +89,7 @@ def receive(
         ):
             if earlier["text"] != text:
                 raise DspError(ErrorCode.IDEMPOTENCY_CONFLICT, "this message ID carried other text")
-            return receipt(earlier)
+            return earlier
     objects: list[dict[str, Any]] = []
     conversation = ledger.latest(ctx, "Conversation", conversation_id)
     if conversation is None:
@@ -152,7 +152,7 @@ def receive(
             ledger=ledger,
             clock=clock,
         )
-    return receipt(command)
+    return command
 
 
 def settle(

@@ -14,7 +14,7 @@ LEASE_SECONDS = 60  # D03
 HEARTBEAT_SECONDS = 15  # D03
 RETRIES = 2  # D03: automatic retries after the first attempt, for transient faults only
 LIVE = frozenset({"running", "checkpointed", "pause_requested", "cancel_requested"})
-RELEASES = frozenset({"succeeded", "failed", "cancelled"})  # states that give the reservation back
+RELEASES = frozenset({"succeeded", "failed", "cancelled", "paused"})  # give the reservation back
 REFUSAL = {
     "paused": ErrorCode.PAUSED,
     "pause_requested": ErrorCode.PAUSE_REQUESTED,
@@ -152,6 +152,24 @@ def advance(job: dict[str, Any], action: str, at: str, **given: Any) -> Transiti
             stopped = "cancelled" if state == "cancel_requested" else "paused"
             change = {"state": stopped, "lease": None, "stopped_at": at, "charged_minor": charged}
             kind = f"job.{stopped}"
+        case "pause":
+            if state in ("queued",):
+                change = {"state": "paused", "acknowledged_at": at, "stopped_at": at}
+                kind = "job.paused"
+            elif state in ("running", "checkpointed"):
+                change = {"state": "pause_requested", "fence": job["fence"] + 1}
+                change["acknowledged_at"] = at
+                kind = "job.pause_requested"
+            elif state in ("pause_requested", "paused"):
+                return job, None, {}
+            else:
+                raise _refusal(job, f"the job is {state}; it cannot pause")
+        case "resume":
+            if state != "paused":
+                raise _refusal(job, f"the job is {state}; only a paused job resumes")
+            change = {"state": "queued", "reason": None}
+            change |= {"reservation": given["reservation"], "workload_ref": given["workload_ref"]}
+            kind = "job.resumed"
         case "reject":
             return job, "job.result_rejected", _body(job, action, at, given)
         case _:

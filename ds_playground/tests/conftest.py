@@ -71,12 +71,13 @@ def evidence() -> Callable[..., None]:
         expected: str,
         actual: str,
         *limits: str,
+        sprint: int = 2,
     ) -> None:
         if folder := os.environ.get("DSP_EVIDENCE"):
             platform = f"{sys.platform}-{os.uname().machine}"
             record = {
                 "id": scenario,
-                "sprint": 2,
+                "sprint": sprint,
                 "os": platform,
                 "fixture": fixture,
                 "commit": os.environ.get("DSP_COMMIT", "unrecorded"),

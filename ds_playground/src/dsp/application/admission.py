@@ -164,6 +164,84 @@ def admit(
     raise DspError(ErrorCode.REVISION_CONFLICT, "admission raced three times; try again")
 
 
+def readmit(
+    ctx: TrustedContext,
+    job_id: str,
+    *,
+    workload: dict[str, Any],
+    binding: dict[str, Any],
+    ledger: Ledger,
+    clock: Callable[[], str],
+    new_id: Callable[[], str],
+) -> tuple[dict[str, Any], bool]:
+    """Resume a paused job: admit its remaining work again under the current revision.
+
+    Capacity is rechecked against the latest observation and a new reservation is held; a refusal
+    is recorded and leaves the job paused. The commit rides the admission aggregate, so a race for
+    capacity is serialised, and the job revision's immutability refuses a transition that raced it.
+    """
+    for _ in range(3):
+        seq, at = ledger.seq(ctx, AGGREGATE), clock()
+        job = ledger.latest(ctx, "Job", job_id)
+        if job is None:
+            raise DspError(ErrorCode.NOT_FOUND, "no such job")
+        reservation = {
+            "schema_version": "0.1.0",
+            "type": "Reservation",
+            "id": f"reservation-{new_id()}",
+            "revision": "1.0.0",
+            "job_ref": job_id,
+            "request_ref": job["request_ref"]["id"],
+            "domain": DOMAIN,
+            **rules.reservation(workload, binding),
+            "state": "held",
+            "held_at": at,
+            "released_at": None,
+        }
+        resumed, kind, body = machine.advance(
+            job, "resume", at, reservation=reservation["id"], workload_ref=pin(workload)
+        )
+        request = ledger.get(ctx, "ExecutionRequest", job["request_ref"]["id"], "1.0.0")
+        snapshots = ledger.current(ctx, "HardwareSnapshot")
+        snapshot = snapshots[-1] if snapshots else None
+        refused = rules.refusal(
+            request["operation"], workload, binding, snapshot, _held(ledger, ctx)
+        )
+        if refused:
+            code, reason = refused
+            rejected = {"job": job_id, "request": request["id"], "code": code, "reason": reason}
+            event_id = f"{job_id}:resume:{new_id()}"
+            ledger.commit(
+                ctx,
+                f"request:{request['id']}",
+                ledger.seq(ctx, f"request:{request['id']}"),
+                event_id,
+                "admission.rejected",
+                rejected,
+                [],
+            )
+            raise DspError(code, reason, {"job": job_id})
+        validate("Reservation", reservation)
+        validate("Job", resumed)
+        body |= {"reservation": reservation["id"], "requirement_revision": workload["revision"]}
+        try:
+            ledger.commit(
+                ctx,
+                AGGREGATE,
+                seq,
+                f"{job_id}:resumed:{resumed['revision']}",
+                kind or "",
+                body,
+                [reservation, resumed],
+            )
+        except DspError as error:
+            if error.code is ErrorCode.REVISION_CONFLICT:
+                continue
+            raise
+        return resumed, True
+    raise DspError(ErrorCode.REVISION_CONFLICT, "the job changed under this resume; try again")
+
+
 def released(
     ctx: TrustedContext, job: dict[str, Any], at: str, ledger: Ledger
 ) -> list[dict[str, Any]]:

@@ -61,8 +61,9 @@ def until(condition: Callable[[], bool], seconds: float = 20) -> None:
 
 
 def control(client: httpx.Client, job_id: str, action: str) -> Any:
-    """An explicit control sent the way the window sends it."""
-    return client.post(f"/v1/jobs/{job_id}/control", json={"action": action}).json()
+    """An explicit control sent the way the window sends it, with a command ID of its own."""
+    body = {"command_id": uuid.uuid4().hex, "action": action}
+    return client.post(f"/v1/jobs/{job_id}/control", json=body).json()
 
 
 def replays_to(client: httpx.Client, job_id: str) -> None:
@@ -224,7 +225,8 @@ def test_a07_cancel_while_queued_running_and_after_success(
     answer = control(client, queued, "cancel")
     assert (answer["changed"], answer["job"]["state"]) == (True, "cancelled")
     assert answer["job"]["acknowledged_at"] == answer["job"]["stopped_at"] is not None
-    assert control(client, queued, "cancel") == {"job": answer["job"], "changed": False}
+    again = control(client, queued, "cancel")
+    assert (again["changed"], again["job"]) == (False, answer["job"])
     refused = client.post(f"/v1/jobs/{queued}/lease", json={"worker": "w"})
     assert (refused.status_code, refused.json()["code"]) == (409, ErrorCode.CANCELLED)
 
@@ -259,7 +261,8 @@ def test_a07_cancel_while_queued_running_and_after_success(
     done = submit(client, "sleep", seconds=0.1)
     assert worker(done).wait(20) == 0
     before = events_of(client, done)
-    assert control(client, done, "cancel") == {"job": job_of(client, done), "changed": False}
+    finished = control(client, done, "cancel")
+    assert (finished["changed"], finished["state"]) == (False, "superseded")
     assert job_of(client, done)["state"] == "succeeded"
     assert events_of(client, done) == before
     for job in (queued, hung, done):
@@ -398,27 +401,21 @@ def test_the_window_may_submit_and_cancel_but_is_not_a_worker(api: TestClient) -
     assert api.post("/v1/jobs", json={}).status_code == 401
     assert api.get(f"/v1/jobs/{job}").status_code == 401
     assert api.post(f"/v1/jobs/{job}/control", json={}).status_code == 401
-    assert api.post(f"/v1/jobs/{job}/control", headers=WINDOW, json={"action": "cancel"}).json()[
-        "changed"
-    ]
+    cancel = {"command_id": "c1", "action": "cancel"}
+    assert api.post(f"/v1/jobs/{job}/control", headers=WINDOW, json=cancel).json()["changed"]
     assert api.get("/v1/jobs/job-absent", headers=WINDOW).status_code == 404
-    bad = api.post("/v1/jobs", headers=NATIVE, json={"task": {"cues": [], "seconds": 0}})
-    assert (bad.status_code, bad.json()["code"]) == (400, ErrorCode.INPUT_INVALID)
-    assert (
-        api.post(
-            "/v1/jobs", headers=NATIVE, json={"task": {"cues": ["nap"], "seconds": 0}}
-        ).status_code
-        == 400
-    )
-    assert (
-        api.post(f"/v1/jobs/{job}/control", headers=NATIVE, json={"action": "pause"}).status_code
-        == 400
-    )
-    assert (
-        api.post(
-            "/v1/jobs",
-            headers=NATIVE,
-            json={"task": {"cues": ["hang"], "seconds": 0, "path": "/x"}},
-        ).status_code
-        == 400
-    )
+    recorded = len(api.get("/v1/events", headers=WINDOW).json()["events"])
+    malformed = [
+        {"cues": [], "seconds": 0},
+        {"cues": ["nap"], "seconds": 0},
+        {"cues": ["hang"], "seconds": 0, "path": "/x"},
+        {"cues": ["hang"], "seconds": -1},
+    ]
+    for number, task in enumerate(malformed):
+        body = request | {"idempotency_key": f"bad-{number}", "task": task}
+        bad = api.post("/v1/jobs", headers=NATIVE, json=body)
+        assert (bad.status_code, bad.json()["code"]) == (400, ErrorCode.INPUT_INVALID), task
+        assert bad.json()["message"].startswith("Job: "), task
+    halt = {"command_id": "c2", "action": "halt"}
+    assert api.post(f"/v1/jobs/{job}/control", headers=NATIVE, json=halt).status_code == 400
+    assert len(api.get("/v1/events", headers=WINDOW).json()["events"]) == recorded
