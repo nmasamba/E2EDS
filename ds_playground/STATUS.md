@@ -4,9 +4,10 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 
 ## Now
 
-- **Sprint:** 2 — M1 desktop shell, discovery and plan: complete, gate below. Sprint 3 is next.
-- **Claimed prompt:** none. 2.1 to 2.3 are merged (PRs #2, #3, #4); 2.4 to 2.8 are done and waiting in PR #5.
-- **Branch:** `sprint-2-finish`, from `main` at `8909aa7`, with PR #5 open against `main`
+- **Sprint:** 3 — M1 jobs, admission, conversation and control (prompts 3.1 to 3.7). Sprints 1 and 2 are
+  merged to `main` (PRs #1 to #5).
+- **Claimed prompt:** 3.1 — job coordinator.
+- **Branch:** `sprint-3-control`, from `main` at `cbde3fd`
 
 ## Done
 
@@ -20,8 +21,9 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 |---|---|---|---|
 | 0 | Setup | done | G0: PASS for synthetic scope |
 | 1 | M0 foundations and thin slice | merged to `main` (PR #1) | PASS, see below |
-| 2 | M1 desktop, discovery, plan | done; 2.4–2.8 in PR #5 | PASS for Sprint 2 scope, see below |
-| 3–11 | M1 | not started | — |
+| 2 | M1 desktop, discovery, plan | merged to `main` (PR #5) | PASS for Sprint 2 scope, see below |
+| 3 | M1 jobs, admission, conversation, control | in progress: 3.1 claimed | — |
+| 4–11 | M1 | not started | — |
 | 12–20 | M1B, M1C, M1R, M2, M3, M3Z, M4 | not started | — |
 
 ## Environment observed (2026-10-01, this Mac)
