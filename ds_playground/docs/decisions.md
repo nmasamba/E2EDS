@@ -494,3 +494,34 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   quota admits one test job at a time, so a controls test and the A26 test, which admit two, failed in CI
   after the 3.4 push (every other job passed). They now fix the machine with the same probes the A08 test
   uses. Tests that need capacity must say so rather than inherit the host's.
+- **2026-10-08 — S3 — FINDING — no retention exists, so D06 holds by keeping everything (3.7)** — the
+  ledger deletes nothing: idempotency records, commands, result keys and events are kept for ever, which
+  meets D06's seven-day retry window trivially and is why an unknown cursor never means expired history.
+  A retention policy (and the explicit expired-cursor snapshot it would need) is later work.
+- **2026-10-08 — S3 — DECISION — evidence outcomes for Sprint 3 (3.7)** — by the Sprint 2 rule (PASS only
+  when the run showed the whole scenario as the suite words it): A03, A24 and A27 are PASS at local scope;
+  A04, A07, A08, A25, A26 and A33 are INSUFFICIENT_EVIDENCE because each names a part whose objects do not
+  exist yet (release pointers, a provider that keeps charging, paid calls and late receipts, promotion,
+  the evaluation owner and production, a model or provider to switch). Every part that could be exercised
+  passed; the records say which parts could not be.
+- **2026-10-08 — S3 — DECISION — the integrity review and what was done with it (3.7)** — the one
+  `integrity-reviewer` run (as a general-purpose agent carrying the reviewer's own instructions, because
+  the project's agent file is not in this session's registry; about 240k tokens) returned REVIEW: PASS with
+  two should-fix findings and six notes. Landed: (1) the hold after a requirement revision could refuse
+  (the held job had ended) and leave the revision's command `received` and the retry rejected; the hold is
+  now best effort and the command settles applied, with a test that forces the refusal. (2) The A27 SAT
+  claimed a dropped acknowledgement it did not perform; it now sends the first message over a raw socket
+  that closes before any answer. (3) A retry racing its own commit was recorded as a rejection; the
+  refusal is re-checked against the committed key. (5) A task longer than the workload's wall time
+  (`seconds` up to 3600 against 600) was admitted; admission now refuses it. (6) A chunked message body
+  was buffered whole before the size check; it is now bounded as it streams. (7) `readmit` and the
+  command path trusted their caller; both now check the context's scopes (`job:submit`;
+  `workload:interact` and `job:<action>`). (8) The admission compare-and-swap was proven only by thread
+  timing; a ledger that interposes a second admission between the read and the commit now proves it
+  deterministically. Logged, not fixed: (4) a worker's reported `charge_minor` is added to the job's
+  incurred charge without comparison to the reservation's approved cap of zero; the test worker reports
+  zero and cost settlement is out of this sprint's scope, so the record stays truthful but unflagged until
+  Sprint 4 brings the first real cost. Each new guard was mutation-checked.
+- **2026-10-08 — S3 — FINDING — no wall-time limit runs yet (3.7)** — admission refuses a task longer than
+  the workload's 600 s, but nothing stops a heartbeating attempt that overruns it; the limit is enforced
+  by the Sprint 4 runner.

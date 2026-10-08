@@ -4,10 +4,9 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 
 ## Now
 
-- **Sprint:** 3 — M1 jobs, admission, conversation and control (prompts 3.1 to 3.7). Sprints 1 and 2 are
-  merged to `main` (PRs #1 to #5).
-- **Claimed prompt:** 3.7 — gate. 3.1 to 3.6 are done (below).
-- **Branch:** `sprint-3-control`, from `main` at `cbde3fd`
+- **Sprint:** 3 — M1 jobs, admission, conversation and control: complete, gate below. Sprint 4 is next.
+- **Claimed prompt:** none. 3.1 to 3.7 are done and waiting in the pull request.
+- **Branch:** `sprint-3-control`, from `main` at `cbde3fd`, with a pull request open against `main`
 
 ## Done
 
@@ -22,7 +21,7 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 | 0 | Setup | done | G0: PASS for synthetic scope |
 | 1 | M0 foundations and thin slice | merged to `main` (PR #1) | PASS, see below |
 | 2 | M1 desktop, discovery, plan | merged to `main` (PR #5) | PASS for Sprint 2 scope, see below |
-| 3 | M1 jobs, admission, conversation, control | in progress: 3.1–3.6 done, 3.7 claimed | — |
+| 3 | M1 jobs, admission, conversation, control | done; in the pull request | PASS for Sprint 3 scope, see below |
 | 4–11 | M1 | not started | — |
 | 12–20 | M1B, M1C, M1R, M2, M3, M3Z, M4 | not started | — |
 
@@ -193,31 +192,63 @@ Code commit `2c81168`; the evidence and this file were committed after it.
   helpers moved to `tests/harness.ts`. Built-app test: Linux presses the real shortcuts and reads the
   trail through WebDriver across a relaunch; macOS drives the same requests against the bundled harness.
 
+## Sprint 3 gate (2026-10-08)
+
+- `make verify` on macOS arm64: format, lint, mypy strict, boundaries clean; **273 passed, 2 deselected**
+  (the two `desktop` tests), coverage 95%, 4 min 30 s (the A24 measurement is about 150 s of it).
+- `make verify-linux` (container, linux/arm64, Python 3.12.12): **273 passed, 2 deselected**, coverage 95%.
+- `make sat`: 13 passed on macOS; the same 13 in the container with `docs/evidence` mounted writable.
+  Evidence records for A03, A04, A07, A08, A24, A25, A26, A27 and A33 on darwin-arm64 and linux-aarch64
+  (24 records in `docs/evidence/` with Sprint 2's). ID trace for Sprint 3: all fifteen IDs covered.
+- **A24 measured p95** (20 pause and 20 cancel phrases, each trial with its own hung worker, every
+  processor saturated by busy processes): macOS arm64 pause 0.032 s, cancel 0.063 s (max 0.107 s);
+  Linux arm64 container pause 0.300 s, cancel 0.249 s (max 0.307 s). Threshold 2 s, unchanged.
+- Evidence outcomes, as the suite words each scenario: **A03 PASS, A24 PASS, A27 PASS**;
+  **A04, A07, A08, A25, A26, A33 INSUFFICIENT_EVIDENCE** on both OSes, each because a part of the
+  scenario names an object that does not exist yet (release pointers, a provider that keeps charging,
+  paid calls and late receipts, promotion, the evaluation owner and production, a model or provider to
+  switch under memory pressure). Every part that could be exercised passed; the records say which could not.
+- `make desktop-build` then `make e2e` on macOS: renderer 19 passed (Playwright + axe on a real harness,
+  including the keyboard-only pause, change, resume and cancel flow and the reload), shell 1 passed (Rust,
+  real harness, including the menu's Pause and Cancel commands), built app 2 passed (lifecycle, and the hung
+  job paused, resumed and cancelled through the requests the window and menu send, states read back after a
+  relaunch). CI: `verify` and `desktop` green on `ubuntu-24.04` and macOS for the 3.6 push (run
+  37830126122); on Linux the built app started the hung job from its window, pressed the real Ctrl+P and
+  Ctrl+. shortcuts and read the trail through WebDriver, again after a second launch.
+- Acceptance line ("start the hung test job from the app, pause, change a requirement, resume, cancel; the
+  trail shows receipts and actual states, and survives an app restart"): shown by the renderer test
+  (`work.spec.ts`, every step by keyboard, then a reload) and the built-app test (Linux with the real
+  shortcuts and the trail read; macOS through the bundled harness with the window open). Not run by hand
+  with the real macOS menu in this session (the owner's check).
+- `integrity-reviewer`: REVIEW: PASS; two should-fix findings and five notes landed, one note logged
+  (`docs/decisions.md`, 2026-10-08, "the integrity review").
+- Gate outcome: **PASS** for Sprint 3 scope. Scenario outcomes are as listed; none is rounded up.
+
 ## Open defects and gaps
 
 - Linux x86-64 is verified by CI only; the local container run is linux/arm64.
-- macOS: the window's text is not read by any automated test (no WebDriver for WKWebView). What is
-  checked there is behaviour: the built app's own window makes the first discovery, which only happens if
-  the real webview loaded, connected and posted to the bundled harness.
-- Linux: the desktop end-to-end test has run only in CI (x86-64). The AppImage is built but never launched;
-  the test launches the app unpacked from the deb. No Linux arm64 bundle is built.
-- macOS: the Quit menu item and window close are not scripted; Quit is tested as the request the shell
-  sends (Rust test) and, on Linux, by pressing the real shortcut. Quit from the Dock or a logout is treated
-  as a close and leaves the harness running. Sleep and wake are not exercised on either OS.
-- The feasibility rules cover family, charge cap, capacity, accelerators, evidence source and
-  qualification; they do not yet filter on operation, region, egress, isolation policy or data rights.
-- The plan shown in the app is for a draft of the built-in CSV profile with placeholder references; real
-  workloads arrive with Sprint 3. The header has no workload, budget, Pause or Cancel yet.
-- The window polls for events every two seconds; the SSE endpoint is served and tested but the window does
-  not use it. The ledger keeps every event, so "expired cursor" means a cursor it never issued.
+- macOS: the window's text is not read by any automated test (no WebDriver for WKWebView). The built-app
+  tests check behaviour through the bundled harness: the window's own discovery, and in Sprint 3 the
+  same requests the window and the menu send. The real Pause and Cancel menu items are exercised on
+  Linux in CI and, on macOS, only as the request the shell sends (Rust test) and by the owner by hand.
+- Linux: the desktop end-to-end test has run only in CI (x86-64). The AppImage is built but never
+  launched. No Linux arm64 bundle is built.
+- Jobs: a worker that dies is shown as running until the next operation touches its job (a lease,
+  heartbeat, report, control or read reconciles the expired lease); no reconciler runs on a timer until
+  the Sprint 4 runner. The only worker is the test worker, started outside the harness; a queued job
+  waits for one. A checkpoint is recorded but nothing restores from it yet.
+- Controls: a phrase with several live jobs needs clarification; only the job's own controls (buttons)
+  name a job. There is no Resume menu item. Resume and admission are serialised on one aggregate; a
+  revision followed by a crash before the hold leaves a job on the old revision until its next resume.
+- Requirements: three change instructions are understood by a fixed grammar; a budget or evaluation
+  change is refused because the owner action that would approve it does not exist yet.
+- Admission: the local draft option is unqualified (no qualification report, isolation unknown) and is
+  admitted for the test job by an explicit deviation; the plan outcome stays INSUFFICIENT_EVIDENCE.
+- The A24 measurement takes about 150 s under full saturation and is in the gate (`slow`).
+- Sleep and wake are not exercised on either OS. Choosing a folder in the native dialog is not automated.
+- The feasibility rules do not yet filter on operation, region, egress, isolation policy or data rights.
 - Discovery lists only NVIDIA accelerators on Linux and estimates available memory on macOS.
-- Choosing a folder in the native dialog is not automated on either OS (see `docs/decisions.md`,
-  2026-10-02). The owner checked it by hand on 2026-10-02: a source folder can be added and removed in the
-  real app and appears by its name.
-- The window cannot yet send a request with a body (the preflight allows only `authorization`), so profiling
-  is reachable from the CLI only.
-- A proposed OutputBinding declares `max_export_bytes` that nothing enforces yet, and names a placeholder
-  project and output.
+- A proposed OutputBinding declares `max_export_bytes` that nothing enforces yet.
 
 ## Waiting on the owner
 
@@ -225,21 +256,20 @@ Nothing. Standing approvals are in `docs/decisions.md`.
 
 ## Handoff note
 
-Sprints 1 and 2 are built. Prompts 2.1 to 2.3 are merged to `main` (PRs #2 to #4); 2.4 to 2.8 (hardware
-discovery, feasibility plan, event stream and work trail, lifecycle, the gate) are on `sprint-2-finish` and
-waiting for the owner in PR #5; merging is the owner's. **Next is Sprint 3, prompt 3.1**, on a new branch
-from `main` once PR #5 is merged.
+Sprints 1 to 3 are built. Sprint 3 (prompts 3.1 to 3.7) is on `sprint-3-control`, pull request against
+`main` titled "Sprint 3: jobs, admission, conversation and control"; merging is the owner's. **Next is
+Sprint 4, prompt 4.1**, on a new branch from `main` once the pull request is merged.
 
-Notes for the next session: every CLI command except `dsp verify` goes through the harness, so tests that
-call the CLI use the `home` fixture, which stops the harness they start; to check that a harness has exited,
-use the `harness_stopped` fixture (the Linux container has no `ps`). `make sat` and `make e2e` write evidence
-records to `docs/evidence/` (an `evidence` fixture; give it the scenario's real outcome); the Linux A44
-record comes from the CI desktop job's artifact, and the Linux A31/A32 records from running `tests/sat` in
-the container with `docs/evidence` mounted writable. The frozen sidecar must be rebuilt (`make
-desktop-build`) after any Python change before `make e2e`; new package data needs a `--collect-data` flag in
-`make harness-bin`. The Makefile puts the keg-only Rust on PATH for its own targets; outside make, prepend
-`/opt/homebrew/opt/rustup/bin` and `~/.cargo/bin`. `make e2e` needs Playwright's Chromium (`pnpm --dir
-desktop exec playwright install chromium`). The dev window is refused by a harness that was not spawned
-with `--dev`, so run `dsp stop` before `make desktop-dev`. Sprint 3 brings jobs: the stage reducer
-(`desktop/src/trail.ts`), the event endpoints and the shutdown drain are the pieces it extends, and the
-window needs `content-type` allowed in the preflight before it can send a request with a body.
+Notes for the next session: the `harness` fixture serves the real app from the test process on a loopback
+socket with a clock the test moves (`clock.advance(61)` expires a lease); the `worker` fixture starts
+`fixtures/worker.py` as a real process (`heartbeat=0` makes it silent). Tests that admit more than one job
+must fix the machine with `fixed_probes` (the Linux runner admits one test job on its own quota). Every
+coordinator operation reconciles an expired lease first; a result commit needs the live attempt in a
+result-accepting state; pause and cancel advance the fence. Admission commits request, reservation and
+job together on the `admission:host-local` aggregate; resume rides the same aggregate and relies on Job
+revision immutability against a racing transition. The window derives everything from `/v1/events`
+(`trail.ts`: `trail`, `jobs`, `liveJob`, `expectedRevision`, `activity`); the Rust menu posts
+`/v1/control`. `make e2e` needs `make desktop-build` after any Python change; the Rust build in a fresh
+worktree takes several minutes. `make sat` writes evidence with `sprint=3` for the Sprint 3 scenarios;
+the Linux records come from running `tests/sat` in the container with `docs/evidence` mounted writable,
+and the Linux A44 record from the CI artifact. Run `uv run mypy` in the chain before every commit.

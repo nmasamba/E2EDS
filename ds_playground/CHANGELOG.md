@@ -1,6 +1,6 @@
 # Changelog
 
-## Sprint 3 — in progress
+## Sprint 3 — jobs, admission, conversation and control (2026-10-08)
 
 - Durable jobs: `POST /v1/jobs` queues a job; a worker process leases one attempt at a time (60 s lease,
   15 s heartbeat), reports once, and is fenced out when its lease expires or the job is cancelled. At most
