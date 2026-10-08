@@ -303,3 +303,43 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   `ps`, so tests wait for the harness's instance lock to be free instead; a window close under Xvfb is asked
   of the window manager with `wmctrl`, because an Alt+F4 chord sent with xdotool did not close it. The gate
   now takes about 50 s on macOS: the CLI and lifecycle tests start real harness processes.
+
+## Sprint 3
+
+- **2026-10-08 — S3 — DECISION — job record and fence (3.1)** — a job is an app-owned `Job` 0.1.0 object whose
+  every transition is a new immutable revision committed with one `job.*` event in one ledger transaction
+  under the job aggregate's compare-and-swap; the event body carries the action and its input, so the
+  pure state machine (`domain/jobs.py`) replays a job's events to the stored job. One integer `fence`
+  serves as the dispatch epoch: lease expiry, pause and cancel each advance it. A result commit needs the
+  live attempt (its attempt number and the fence it was leased under) and a state that accepts results;
+  pause and cancel leave those states as they advance the fence, so a fenced attempt can still report that
+  it stopped (drain evidence) but never commit a result. Alternative: event-sourced jobs with no object
+  row, which would make every list and capacity check a scan of the event log.
+- **2026-10-08 — S3 — FINDING — a redundant fence clause (3.1)** — the explicit check that the lease's fence
+  still equals the job's fence survived no mutation test: every fence advance either clears the lease or
+  leaves the result-accepting states, so the attempt-and-state check already enforces it. Removed, as
+  Sprint 2 removed its redundant guard; the state check was then mutated and is caught by the A07 tests.
+- **2026-10-08 — S3 — DECISION — lease expiry is reconciled on touch (3.1)** — a lease that has run out is
+  expired, and the fence advanced, by the next coordinator operation on that job (a lease request, a
+  heartbeat, a report, a control or a read); the expiry counts as one transient failure, so three silent
+  attempts end in `failed`. Consequence until the Sprint 4 runner brings a reconciler: a job whose worker
+  died is shown as running until something touches it. Alternative: a timer thread in the harness; not
+  needed by any test or flow this sprint.
+- **2026-10-08 — S3 — ASSUMPTION — the worker runs outside the harness (3.1)** — the only workload is the
+  deterministic test worker in `fixtures/worker.py`, a separate process started by the tests, by
+  `make e2e`, or by the owner with the pasted command; the harness never spawns it, and the frozen
+  sidecar does not carry test fixtures. A queued job therefore waits for a worker. The sandboxed runner of
+  Sprint 4 is the first worker the harness dispatches itself.
+- **2026-10-08 — S3 — ASSUMPTION — worker routes are native only (3.1)** — `lease`, `heartbeat` and `report`
+  refuse a request with an `Origin` header, like `POST /v1/grants`: the window may queue and control jobs
+  but is never a worker. A stale or refused report is recorded on the job as `job.result_rejected` with its
+  attempt, fence and the refusing code, so a fenced worker's return is visible (A04), then refused.
+- **2026-10-08 — S3 — ASSUMPTION — test harness on a movable clock (3.1)** — leases are 60 s and tests must
+  not wait: the `harness` fixture serves the real app from the test process on a loopback socket with a
+  clock the test moves forward (the clock is now a parameter of `workspace.mount`), and worker processes
+  find it through `harness.json` like any harness. Heartbeats are the worker's real time (`--heartbeat-
+  seconds`, default 15; 0 makes a silent worker). No production code knows it is under test.
+- **2026-10-08 — S3 — ASSUMPTION — `inconclusive` is not produced yet (3.1)** — nothing in this sprint can
+  leave a job's evidence unresolved (no external execution), so the schema's state list omits it; the
+  Sprint 4 runner adds it with the first path that needs it. `Job` 0.1.0 is finalised at the end of this
+  sprint; prompts 3.2 and 3.5 add fields to the same file before anything is released.

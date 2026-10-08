@@ -23,6 +23,12 @@ class Ledger(Protocol):
     def current(self, ctx: TrustedContext, kind: str) -> list[dict[str, Any]]:
         """Return the latest revision of every object of one kind in this tenant."""
 
+    def latest(self, ctx: TrustedContext, kind: str, object_id: str) -> dict[str, Any] | None:
+        """Return the newest revision of one object, or None when the tenant has none."""
+
+    def seq(self, ctx: TrustedContext, aggregate: str) -> int:
+        """Return an aggregate's current sequence: what ``commit`` must be told to expect."""
+
 
 class Store(Protocol):
     """Content-addressed artifact storage with attempt-scoped staging."""

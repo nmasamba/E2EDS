@@ -1,6 +1,15 @@
 # Changelog
 
-## Sprint 2 — in progress
+## Sprint 3 — in progress
+
+- Durable jobs: `POST /v1/jobs` queues a job; a worker process leases one attempt at a time (60 s lease,
+  15 s heartbeat), reports once, and is fenced out when its lease expires or the job is cancelled. At most
+  two automatic retries after a transient failure; a result is committed once per result key and a retry
+  of a committed key gets the committed result back; cancel records acknowledge and stop times and never
+  erases a committed result. `fixtures/worker.py` is the deterministic test worker (sleep, hang, crash
+  before or after its commit, fail), the only workload this sprint.
+
+## Sprint 2 — desktop shell, discovery and plan (2026-10-02)
 
 - Local harness: one authenticated, loopback-only instance per user profile; `dsp status` starts or
   reconnects to it.

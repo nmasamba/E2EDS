@@ -1,13 +1,13 @@
 import json
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import uuid4
 
 import uvicorn
-from fastapi import Body, FastAPI, Query, Request
+from fastapi import Body, Depends, FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 
@@ -16,13 +16,28 @@ from dsp.adapters.discovery import probes
 from dsp.adapters.duckdb_profile import profile_csv
 from dsp.adapters.ledger_sqlite import SqliteLedger
 from dsp.adapters.store_fs import ContentStore
+from dsp.application import jobs
 from dsp.application.discovery import discover
 from dsp.application.grants import grant_folder, revoke, summary
 from dsp.application.packs import profile_granted
 from dsp.application.planning import propose_plan
 from dsp.contracts.errors import DspError, ErrorCode, TrustedContext
 
-STATUS = {ErrorCode.INPUT_INVALID: 400, ErrorCode.FORBIDDEN: 403, ErrorCode.NOT_FOUND: 404}
+STATUS = {
+    ErrorCode.INPUT_INVALID: 400,
+    ErrorCode.FORBIDDEN: 403,
+    ErrorCode.NOT_FOUND: 404,
+} | dict.fromkeys(
+    (
+        ErrorCode.IDEMPOTENCY_CONFLICT,
+        ErrorCode.REVISION_CONFLICT,
+        ErrorCode.PAUSED,
+        ErrorCode.PAUSE_REQUESTED,
+        ErrorCode.CANCEL_REQUESTED,
+        ErrorCode.CANCELLED,
+    ),
+    409,
+)
 
 
 def _now() -> str:
@@ -33,17 +48,28 @@ def _id() -> str:
     return uuid4().hex
 
 
-def mount(app: FastAPI, state_dir: Path, server: uvicorn.Server | None = None) -> None:
-    """Add the workspace routes: grants, profiling, discovery, planning and events, on one ledger.
+def mount(
+    app: FastAPI,
+    state_dir: Path,
+    server: uvicorn.Server | None = None,
+    clock: Callable[[], str] = _now,
+) -> None:
+    """Add the workspace routes: grants, profiling, discovery, planning, events and jobs.
 
     Every caller is the local owner, established by the token the guard has already checked;
     nothing in a request body is treated as authority. ``server`` is the running server, whose
-    shutdown ends open event streams.
+    shutdown ends open event streams; ``clock`` is the one source of time for the ledger and the
+    job coordinator.
     """
     ctx = TrustedContext.local()
 
     def ledger() -> SqliteLedger:
-        return SqliteLedger(state_dir / "ledger.sqlite", _now)
+        return SqliteLedger(state_dir / "ledger.sqlite", clock)
+
+    def native(request: Request) -> None:
+        """A lease, a heartbeat or a report comes from a worker process, never from the window."""
+        if "origin" in request.headers:
+            raise DspError(ErrorCode.FORBIDDEN, "accepted from the shell, the CLI or a worker only")
 
     @app.exception_handler(DspError)
     async def refused(request: Request, error: DspError) -> JSONResponse:
@@ -165,3 +191,48 @@ def mount(app: FastAPI, state_dir: Path, server: uvicorn.Server | None = None) -
             new_id=_id,
         )
         return {"version": receipt["version"], "files": len(receipt["files"])}
+
+    @app.post("/v1/jobs")
+    def submit_job(task: Annotated[dict[str, Any], Body(embed=True)]) -> dict[str, Any]:
+        return jobs.submit(ctx, task, ledger=ledger(), clock=clock, new_id=_id)
+
+    @app.get("/v1/jobs/{job_id}")
+    def get_job(job_id: str) -> dict[str, Any]:
+        return jobs.inspect(ctx, job_id, ledger=ledger(), clock=clock)
+
+    @app.post("/v1/jobs/{job_id}/lease", dependencies=[Depends(native)])
+    def lease_job(job_id: str, worker: Annotated[str, Body(embed=True)]) -> dict[str, Any]:
+        return jobs.lease(ctx, job_id, worker, ledger=ledger(), clock=clock)
+
+    @app.post("/v1/jobs/{job_id}/heartbeat", dependencies=[Depends(native)])
+    def heartbeat(
+        job_id: str, attempt: Annotated[int, Body()], fence: Annotated[int, Body()]
+    ) -> dict[str, Any]:
+        return jobs.heartbeat(ctx, job_id, attempt, fence, ledger=ledger(), clock=clock)
+
+    @app.post("/v1/jobs/{job_id}/report", dependencies=[Depends(native)])
+    def report(
+        job_id: str,
+        attempt: Annotated[int, Body()],
+        fence: Annotated[int, Body()],
+        outcome: Annotated[Literal["succeeded", "failed", "stopped"], Body()],
+        charge_minor: Annotated[int, Body(ge=0)] = 0,
+        key: Annotated[str | None, Body()] = None,
+        sha256: Annotated[str | None, Body()] = None,
+        transient: Annotated[bool, Body()] = False,
+        reason: Annotated[str, Body(max_length=200)] = "",
+    ) -> dict[str, Any]:
+        fields: dict[str, Any] = {"charge_minor": charge_minor}
+        if outcome == "succeeded":
+            fields |= {"key": key, "sha256": sha256}
+        if outcome == "failed":
+            fields |= {"transient": transient, "reason": reason}
+        return jobs.report(
+            ctx, job_id, attempt, fence, outcome, ledger=ledger(), clock=clock, **fields
+        )
+
+    @app.post("/v1/jobs/{job_id}/control")
+    def control_job(
+        job_id: str, action: Annotated[Literal["cancel"], Body(embed=True)]
+    ) -> dict[str, Any]:
+        return jobs.control(ctx, job_id, action, ledger=ledger(), clock=clock)

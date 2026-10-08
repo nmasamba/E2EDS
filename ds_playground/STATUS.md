@@ -6,7 +6,7 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 
 - **Sprint:** 3 — M1 jobs, admission, conversation and control (prompts 3.1 to 3.7). Sprints 1 and 2 are
   merged to `main` (PRs #1 to #5).
-- **Claimed prompt:** 3.1 — job coordinator.
+- **Claimed prompt:** 3.2 — admission and reservations. 3.1 is done (below).
 - **Branch:** `sprint-3-control`, from `main` at `cbde3fd`
 
 ## Done
@@ -22,7 +22,7 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 | 0 | Setup | done | G0: PASS for synthetic scope |
 | 1 | M0 foundations and thin slice | merged to `main` (PR #1) | PASS, see below |
 | 2 | M1 desktop, discovery, plan | merged to `main` (PR #5) | PASS for Sprint 2 scope, see below |
-| 3 | M1 jobs, admission, conversation, control | in progress: 3.1 claimed | — |
+| 3 | M1 jobs, admission, conversation, control | in progress: 3.1 done, 3.2 claimed | — |
 | 4–11 | M1 | not started | — |
 | 12–20 | M1B, M1C, M1R, M2, M3, M3Z, M4 | not started | — |
 
@@ -112,6 +112,18 @@ Code commit `2c81168`; the evidence and this file were committed after it.
   hardware with its reason), the CLI acceptance test (stop, reopen, identical state) and the owner's manual
   folder pick. Run for real with the installed CLI: `dsp hardware`, `dsp plan`, `dsp stop`.
 - Gate outcome: **PASS** for Sprint 2 scope. Scenario outcomes are as listed; none is rounded up.
+
+## Prompt 3.1 — job coordinator (2026-10-08)
+
+- Pure state machine `src/dsp/domain/jobs.py`, coordinator `src/dsp/application/jobs.py`, app-owned `Job`
+  0.1.0 schema, ledger `latest` and `seq`, routes `POST /v1/jobs`, `GET /v1/jobs/{id}`, `lease`,
+  `heartbeat`, `report` (native only) and `control` (cancel). Test worker `fixtures/worker.py`.
+- Tests: 8 unit (machine) + 8 integration (real harness on a movable clock, real worker processes):
+  A03 before and after commit, A04, A07 (queued, running, after success, silent worker), D03 retries,
+  mid-transaction failure, events replay to the stored job, window-versus-worker routes. `make test-fast`
+  212 passed on macOS. Guards mutation-checked: lease held, retry bound, digest under a committed key,
+  expiry and cancel advance the fence, result refused outside running/checkpointed, worker routes refuse
+  the window, stale report recorded, expiry reconciled on touch (one redundant clause found and removed).
 
 ## Open defects and gaps
 

@@ -107,6 +107,23 @@ class SqliteLedger:
         loaded: dict[str, Any] = json.loads(row[0])
         return loaded
 
+    def latest(self, ctx: TrustedContext, kind: str, object_id: str) -> dict[str, Any] | None:
+        """Return the newest revision of one object, or None when this tenant has none."""
+        row = self._db.execute(
+            "SELECT body FROM objects WHERE tenant = ? AND kind = ? AND id = ?"
+            " ORDER BY rowid DESC LIMIT 1",
+            (ctx.tenant, kind, object_id),
+        ).fetchone()
+        return None if row is None else dict(json.loads(row[0]))
+
+    def seq(self, ctx: TrustedContext, aggregate: str) -> int:
+        """Return an aggregate's current sequence: what ``commit`` must be told to expect."""
+        (current,) = self._db.execute(
+            "SELECT COALESCE(MAX(aggregate_seq), 0) FROM events WHERE tenant = ? AND aggregate = ?",
+            (ctx.tenant, aggregate),
+        ).fetchone()
+        return int(current)
+
     def current(self, ctx: TrustedContext, kind: str) -> list[dict[str, Any]]:
         """Return the latest revision of every object of one kind in this tenant, oldest first."""
         rows = self._db.execute(
