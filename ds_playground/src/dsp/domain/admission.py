@@ -33,6 +33,7 @@ def reservation(workload: dict[str, Any], binding: dict[str, Any]) -> dict[str, 
 
 def refusal(
     operation: str,
+    task: dict[str, Any],
     workload: dict[str, Any],
     binding: dict[str, Any],
     snapshot: dict[str, Any] | None,
@@ -40,7 +41,8 @@ def refusal(
 ) -> tuple[ErrorCode, str] | None:
     """Return why the request is refused, or None when it may be admitted.
 
-    In order: the operation must be declared by the workload and offered by the binding; an
+    In order: the operation must be declared by the workload and offered by the binding; the
+    task must fit the workload's wall time; an
     accelerator needs a binding that has one; any external charge needs a spend grant, and none
     exists, so the charge is zero or the request is refused; then the planner's rule table against
     the latest observation (none observed is "unknown", so nothing is admitted blind), and finally
@@ -51,6 +53,12 @@ def refusal(
         return ErrorCode.INPUT_INVALID, f"operation {operation} is not declared by the workload"
     if operation not in binding["capabilities"]["declared_operations"]:
         return ErrorCode.INPUT_INVALID, f"the compute option does not offer {operation}"
+    if task["seconds"] > asked["wall_time_seconds"]:
+        allowed = asked["wall_time_seconds"]
+        return (
+            ErrorCode.INPUT_INVALID,
+            f"the task asks for {task['seconds']:g} s of {allowed} s allowed",
+        )
     if asked["gpu_count"] and not binding["capabilities"]["gpu_capable"]:
         return ErrorCode.QUOTA_EXCEEDED, "an accelerator is requested and the option has none"
     if asked["max_external_charge_minor"]:

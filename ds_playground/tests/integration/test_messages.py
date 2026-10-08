@@ -49,7 +49,7 @@ def kinds(api: TestClient, after: int = 0) -> list[tuple[int, str, str]]:
 def test_a27_the_same_message_id_is_one_command_and_other_text_under_it_conflicts(
     api: TestClient, tmp_path: Path
 ) -> None:
-    """A27, D05: the same message ID is one command; other text under it conflicts.
+    """A27, D05, D06: the same message ID is one command; other text under it conflicts.
 
     A retried ID returns the same receipt and writes nothing; the command and its conversation
     validate against their schemas and pin each other by digest.

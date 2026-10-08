@@ -1,5 +1,6 @@
 """Fast controls driven for real: pause, resume, cancel and status on the hung test job."""
 
+import itertools
 import subprocess
 import threading
 import uuid
@@ -12,12 +13,15 @@ import pytest
 from fastapi.testclient import TestClient
 
 from dsp.adapters.ledger_sqlite import SqliteLedger
+from dsp.application import admission, controls
+from dsp.application.planning import LOCAL_DRAFT
+from dsp.application.workloads import base_workload
 from dsp.contracts.canonical import pin
-from dsp.contracts.errors import ErrorCode, TrustedContext
+from dsp.contracts.errors import DspError, ErrorCode, TrustedContext
 from dsp.harness import workspace
 from dsp.harness.app import SHELL_ORIGIN, create_app
 from tests.conftest import Clock
-from tests.integration.test_admission import fixed_probes
+from tests.integration.test_admission import attempt, fixed_probes, ledger, observed
 from tests.integration.test_jobs import job_of, kinds_of, replays_to, submit, until
 
 Harness = tuple[httpx.Client, Clock]
@@ -315,3 +319,46 @@ def test_checkpoints_come_from_workers_only_and_controls_need_a_command_id(api: 
     assert api.post("/v1/control", headers=window, json=halt).status_code == 400
     assert api.post("/v1/control", json={"command_id": "c1", "action": "pause"}).status_code == 401
     assert api.get("/v1/events", headers=window).json()["events"] == []
+
+
+def test_r05_a_context_without_the_scope_cannot_command_or_resume(tmp_path: Path) -> None:
+    """R05: the services check the trusted context's scopes, whatever door called them.
+
+    Without workload:interact nothing is recorded; with it but without job:pause the message is
+    received and the control rejected; with both the control acts; resume needs the submit scope.
+    """
+    store = ledger(tmp_path)
+    observed(store)
+    job = attempt(store)
+    counter = itertools.count()
+    settings: dict[str, Any] = {"ledger": store, "clock": lambda: NOW}
+    settings["new_id"] = lambda: f"x{next(counter)}"
+    settings |= {"workload": base_workload(CTX), "binding": LOCAL_DRAFT}
+    viewer = TrustedContext("viewer", CTX.tenant, frozenset({"workload:read"}))
+    with pytest.raises(DspError) as raised:
+        controls.command(viewer, "c", "m1", "pause now", "1.0.0", job_id=None, **settings)
+    assert raised.value.code is ErrorCode.FORBIDDEN
+    assert store.current(CTX, "ConversationCommand") == []
+    talker = TrustedContext("talker", CTX.tenant, frozenset({"workload:interact"}))
+    answer = controls.command(talker, "c", "m2", "pause now", "1.0.0", job_id=None, **settings)
+    assert (answer["state"], answer["because"]) == ("rejected", "this context may not pause")
+    held = store.latest(CTX, "Job", job["id"])
+    assert held is not None
+    assert held["state"] == "queued"
+    pauser = TrustedContext("pauser", CTX.tenant, frozenset({"workload:interact", "job:pause"}))
+    paused = controls.command(pauser, "c", "m3", "pause now", "1.0.0", job_id=None, **settings)
+    assert paused["job"]["state"] == "paused"
+    with pytest.raises(DspError) as refused:
+        admission.readmit(
+            viewer,
+            job["id"],
+            workload=base_workload(CTX),
+            binding=LOCAL_DRAFT,
+            ledger=store,
+            clock=lambda: NOW,
+            new_id=lambda: "x2",
+        )
+    assert refused.value.code is ErrorCode.FORBIDDEN
+    still = store.latest(CTX, "Job", job["id"])
+    assert still is not None
+    assert still["state"] == "paused"

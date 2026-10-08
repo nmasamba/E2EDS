@@ -267,11 +267,15 @@ def mount(
 
     @app.post("/v1/conversations/{conversation_id}/messages")
     async def post_message(conversation_id: str, request: Request) -> dict[str, Any]:
-        """D18: the body is bounded in bytes before it is parsed; only three fields are accepted."""
-        declared = int(request.headers.get("content-length") or 0)
-        raw = b"" if declared > conversation.MAX_BYTES else await request.body()
-        if max(declared, len(raw)) > conversation.MAX_BYTES:
-            raise DspError(ErrorCode.INPUT_INVALID, "the message is larger than 16 KiB")
+        """D18: the body is bounded in bytes as it arrives, before parsing; three fields only."""
+        too_large = DspError(ErrorCode.INPUT_INVALID, "the message is larger than 16 KiB")
+        if int(request.headers.get("content-length") or 0) > conversation.MAX_BYTES:
+            raise too_large
+        raw = bytearray()
+        async for chunk in request.stream():
+            raw.extend(chunk)
+            if len(raw) > conversation.MAX_BYTES:
+                raise too_large
         try:
             fields = json.loads(raw)
         except ValueError:

@@ -5,6 +5,7 @@ ConversationCommand and the same coordinator transition. The path touches the le
 model, no worker, nothing that a hung generation or a saturated task could hold up (D18, A24).
 """
 
+import contextlib
 from collections.abc import Callable
 from typing import Any
 
@@ -17,6 +18,7 @@ from dsp.ports import Ledger
 
 CONVERSATION = "conversation-local"
 ACTIONS = {"pause", "resume", "cancel", "status"}
+INTERACT = {"*", "workload:interact"}
 PHRASES = {"pause": "pause", "resume": "resume", "cancel": "cancel this run", "status": "status"}
 ENDED = {"succeeded", "failed", "cancelled"}
 
@@ -48,6 +50,8 @@ def command(
     rejected and one with several live jobs needs clarification, since a phrase names no job; a
     repeated client message ID is not applied twice. The answer carries the job's actual state.
     """
+    if not INTERACT & ctx.scopes:
+        raise DspError(ErrorCode.FORBIDDEN, "this context may not send commands")
     received = receive(
         ctx,
         conversation_id,
@@ -72,9 +76,13 @@ def command(
             binding=binding,
         )
     if received["state"] != "received" or received["operation"] not in ACTIONS:
-        effect = received["effect_ref"]
+        effect = received["effect_ref"] if received["operation"] in ACTIONS else None
         shown = jobs.inspect(ctx, effect["id"], ledger=ledger, clock=clock) if effect else None
         return answer | {"job": shown, "changed": False}
+    if not {"*", f"job:{received['operation']}"} & ctx.scopes:
+        settled = settle(ctx, received, "rejected", because="FORBIDDEN", ledger=ledger, clock=clock)
+        because = f"this context may not {received['operation']}"
+        return receipt(settled) | {"job": None, "changed": False, "because": because}
     live = [] if job_id else live_jobs(ctx, ledger)
     if not job_id and len(live) != 1:
         state = "rejected" if not live else "needs_clarification"
@@ -133,16 +141,18 @@ def change(
         )
         return receipt(rejected) | {"job": None, "changed": False, "because": error.message}
     for job_id in impact["holds"]:
-        jobs.control(
-            ctx,
-            job_id,
-            "pause",
-            ledger=ledger,
-            clock=clock,
-            new_id=new_id,
-            workload=workload,
-            binding=binding,
-        )
+        # A job that ended or was fenced since the impact was read needs no hold.
+        with contextlib.suppress(DspError):
+            jobs.control(
+                ctx,
+                job_id,
+                "pause",
+                ledger=ledger,
+                clock=clock,
+                new_id=new_id,
+                workload=workload,
+                binding=binding,
+            )
     applied = settle(
         ctx, received, "applied", effect=pin(successor), patch=patch, ledger=ledger, clock=clock
     )

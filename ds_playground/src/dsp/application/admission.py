@@ -103,7 +103,7 @@ def admit(
             "requirement_revision": workload["revision"],
             "workflow_plan_ref": pin(plan) if plan else None,
         }
-        refused = rules.refusal(operation, workload, binding, snapshot, _held(ledger, ctx))
+        refused = rules.refusal(operation, task, workload, binding, snapshot, _held(ledger, ctx))
         if refused:
             code, reason = refused
             request["state"] = "rejected"
@@ -180,6 +180,8 @@ def readmit(
     is recorded and leaves the job paused. The commit rides the admission aggregate, so a race for
     capacity is serialised, and the job revision's immutability refuses a transition that raced it.
     """
+    if not SUBMIT & ctx.scopes:
+        raise DspError(ErrorCode.FORBIDDEN, "this context may not resume work")
     for _ in range(3):
         seq, at = ledger.seq(ctx, AGGREGATE), clock()
         job = ledger.latest(ctx, "Job", job_id)
@@ -205,7 +207,7 @@ def readmit(
         snapshots = ledger.current(ctx, "HardwareSnapshot")
         snapshot = snapshots[-1] if snapshots else None
         refused = rules.refusal(
-            request["operation"], workload, binding, snapshot, _held(ledger, ctx)
+            request["operation"], job["task"], workload, binding, snapshot, _held(ledger, ctx)
         )
         if refused:
             code, reason = refused

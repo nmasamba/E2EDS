@@ -125,10 +125,11 @@ def test_a03_a_worker_killed_before_its_commit_is_retried_once_and_commits_one_r
 def test_a03_a_worker_killed_after_its_commit_gets_that_result_on_retry_and_never_a_second(
     harness: Harness, worker: Worker
 ) -> None:
-    """A03, D05: an attempt that dies after its commit gets that result on retry, never a second.
+    """A03, D05, D06: an attempt that dies after its commit gets that result on retry, not a second.
 
     The same key with other bytes, a new key and a new lease are all refused and the refusals
-    are recorded; one result stays committed.
+    are recorded; one result stays committed. Nothing is ever deleted from the ledger, so the
+    retry window is at least the seven days D06 asks for.
     """
     client, _ = harness
     job = submit(client, "crash_after_commit", seconds=0.1)
@@ -419,3 +420,32 @@ def test_the_window_may_submit_and_cancel_but_is_not_a_worker(api: TestClient) -
     halt = {"command_id": "c2", "action": "halt"}
     assert api.post(f"/v1/jobs/{job}/control", headers=NATIVE, json=halt).status_code == 400
     assert len(api.get("/v1/events", headers=WINDOW).json()["events"]) == recorded
+
+
+def test_a03_a_retry_that_races_its_own_commit_is_answered_not_recorded_as_rejected(
+    harness: Harness, worker: Worker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A03, D05: a retry whose committed-key check misses once is still answered as committed.
+
+    Another retry committed between the check and the apply; the refusal is re-checked against
+    the committed key and answered, with no rejection recorded.
+    """
+    from dsp.application import jobs as coordinator
+
+    client, _ = harness
+    job = submit(client, "sleep", seconds=0.1)
+    assert worker(job).wait(20) == 0
+    committed = next(e for e in events_of(client, job) if e["type"] == "job.succeeded")
+    real, calls = coordinator.machine.committed, []
+
+    def misses_once(*args: Any) -> bool:
+        calls.append(1)
+        return False if len(calls) == 1 else real(*args)
+
+    monkeypatch.setattr(coordinator.machine, "committed", misses_once)
+    body = committed["body"]["input"] | {"outcome": "succeeded"}
+    assert client.post(f"/v1/jobs/{job}/report", json=body).json() == {
+        "state": "succeeded",
+        "committed": False,
+    }
+    assert "job.result_rejected" not in kinds_of(client, job)

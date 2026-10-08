@@ -147,14 +147,16 @@ def report(
             **fields,
         )
     except DspError as error:
-        if error.code is not ErrorCode.NOT_FOUND and not error.details.get("retry"):
-            rejected = {
-                "attempt": attempt,
-                "fence": fence,
-                "outcome": outcome,
-                "because": error.code,
-            }
-            _apply(ctx, job_id, "reject", ledger=ledger, clock=clock, **rejected)
+        if error.code is ErrorCode.NOT_FOUND or error.details.get("retry"):
+            raise
+        if (
+            outcome == "succeeded"
+            and error.code is not ErrorCode.IDEMPOTENCY_CONFLICT
+            and machine.committed(_load(ctx, job_id, ledger), fields["key"], fields["sha256"])
+        ):
+            return {"state": "succeeded", "committed": False}  # a retry that raced its own commit
+        rejected = {"attempt": attempt, "fence": fence, "outcome": outcome, "because": error.code}
+        _apply(ctx, job_id, "reject", ledger=ledger, clock=clock, **rejected)
         raise
     return {"state": job["state"], "committed": True}
 

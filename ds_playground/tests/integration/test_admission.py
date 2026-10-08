@@ -136,6 +136,11 @@ def test_a18_role_operation_accelerator_and_charge_are_refused_before_any_work(
         validate("WorkloadSpec", workload)
     cases = [
         ({"ctx": viewer}, ErrorCode.FORBIDDEN, "may not submit"),
+        (
+            {"task": {"cues": ["sleep"], "seconds": 601}},
+            ErrorCode.INPUT_INVALID,
+            "of 600 s allowed",
+        ),
         ({"operation": "train"}, ErrorCode.INPUT_INVALID, "not declared by the workload"),
         (
             {"operation": "prepare", "workload": broad},
@@ -148,7 +153,7 @@ def test_a18_role_operation_accelerator_and_charge_are_refused_before_any_work(
     for choices, code, text in cases:
         error = refused_by(store, **choices)
         assert (error.code, text in error.message) == (code, True), choices
-    assert written(store) == {"Job": 0, "Reservation": 0, "ExecutionRequest": 4}
+    assert written(store) == {"Job": 0, "Reservation": 0, "ExecutionRequest": 5}
     requests = store.current(CTX, "ExecutionRequest")
     for request in requests:
         validate("ExecutionRequest", request)
@@ -158,6 +163,7 @@ def test_a18_role_operation_accelerator_and_charge_are_refused_before_any_work(
         )
     rejections = [event for event in store.events(CTX) if event["type"] == "admission.rejected"]
     assert [event["body"]["code"] for event in rejections] == [
+        ErrorCode.INPUT_INVALID,
         ErrorCode.INPUT_INVALID,
         ErrorCode.INPUT_INVALID,
         ErrorCode.QUOTA_EXCEEDED,
@@ -372,3 +378,44 @@ def test_admission_needs_an_observation_and_the_window_may_submit(api: TestClien
         == 400
     )
     assert api.post("/v1/jobs", headers=WINDOW, json={"task": TASK}).status_code == 400
+
+
+class Interposed(SqliteLedger):
+    """A ledger that lets another admission land between this one's read and its commit."""
+
+    def __init__(self, path: Path, intruder: Callable[[], Any]) -> None:
+        super().__init__(path, lambda: NOW)
+        self.intruder, self.armed = intruder, True
+
+    def commit(
+        self,
+        ctx: TrustedContext,
+        aggregate: str,
+        expected_seq: int,
+        event_id: str,
+        event_type: str,
+        body: dict[str, Any],
+        objects: Any = (),
+    ) -> None:
+        """Before the first commit on the admission aggregate, admit someone else's job."""
+        if aggregate == admission.AGGREGATE and self.armed:
+            self.armed = False
+            self.intruder()
+        super().commit(ctx, aggregate, expected_seq, event_id, event_type, body, objects)
+
+
+def test_a08_an_admission_that_lands_between_read_and_commit_is_seen_every_time(
+    tmp_path: Path,
+) -> None:
+    """A08: the compare-and-swap on the admission aggregate, without relying on thread timing.
+
+    Another admission takes the last place after this one read what is held; this one's commit
+    conflicts, it reloads and is refused; one job exists.
+    """
+    store = ledger(tmp_path)
+    observed(store, cpus=2)
+    racing = Interposed(tmp_path / "ledger.sqlite", lambda: attempt(ledger(tmp_path)))
+    with pytest.raises(DspError) as raised:
+        attempt(racing)
+    assert raised.value.code is ErrorCode.QUOTA_EXCEEDED
+    assert written(store) == {"Job": 1, "Reservation": 1, "ExecutionRequest": 2}

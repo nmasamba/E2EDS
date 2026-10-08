@@ -1,5 +1,6 @@
 """Requirement revisions driven for real: typed patches, impact, stale marks and conflicts (A26)."""
 
+import itertools
 import subprocess
 import threading
 import uuid
@@ -11,13 +12,15 @@ import httpx
 import pytest
 
 from dsp.adapters.ledger_sqlite import SqliteLedger
+from dsp.application import controls
+from dsp.application.planning import LOCAL_DRAFT
 from dsp.application.workloads import base_workload, impact_of, patch_for
 from dsp.contracts.canonical import pin
-from dsp.contracts.errors import ErrorCode, TrustedContext
+from dsp.contracts.errors import DspError, ErrorCode, TrustedContext
 from dsp.contracts.schemas import validate
 from dsp.harness import workspace
 from tests.conftest import Clock
-from tests.integration.test_admission import fixed_probes
+from tests.integration.test_admission import attempt, fixed_probes, ledger, observed
 from tests.integration.test_controls import control, say
 from tests.integration.test_jobs import job_of, submit, until
 
@@ -221,3 +224,40 @@ def test_the_dependency_graph_marks_only_what_depends_on_the_change(tmp_path: Pa
         ]
         == []
     )
+
+
+def test_a26_a_hold_that_can_no_longer_apply_does_not_undo_the_revision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A26: the held job ended between the impact and the hold; the revision and its command stand.
+
+    The hold is refused by the coordinator; the command still settles applied with the new
+    revision, so a retry of the same message is the same applied command, not a rejection.
+    """
+    store = ledger(tmp_path)
+    observed(store)
+    queued = attempt(store)
+
+    def ended(*args: Any, **kwargs: Any) -> Any:
+        raise DspError(ErrorCode.REVISION_CONFLICT, "the job is succeeded; it cannot pause")
+
+    monkeypatch.setattr(controls.jobs, "control", ended)
+    counter = itertools.count()
+    settings: dict[str, Any] = {"ledger": store, "clock": lambda: NOW}
+    settings["new_id"] = lambda: f"x{next(counter)}"
+    settings |= {"workload": base_workload(CTX), "binding": LOCAL_DRAFT}
+    answer = controls.command(
+        CTX, "c", "m1", "exclude field region", "1.0.0", job_id=None, **settings
+    )
+    assert (answer["state"], answer["workload"]["revision"], answer["impact"]["holds"]) == (
+        "applied",
+        "2.0.0",
+        [queued["id"]],
+    )
+    again = controls.command(
+        CTX, "c", "m1", "exclude field region", "1.0.0", job_id=None, **settings
+    )
+    assert (again["command"], again["state"]) == (answer["command"], "applied")
+    stored = store.latest(CTX, "WorkloadSpec", "workload-test-job")
+    assert stored is not None
+    assert stored["revision"] == "2.0.0"
