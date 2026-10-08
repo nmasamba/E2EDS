@@ -6,7 +6,7 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 
 - **Sprint:** 3 — M1 jobs, admission, conversation and control (prompts 3.1 to 3.7). Sprints 1 and 2 are
   merged to `main` (PRs #1 to #5).
-- **Claimed prompt:** 3.5 — requirement revisions. 3.1 to 3.4 are done (below).
+- **Claimed prompt:** 3.6 — composer and activity. 3.1 to 3.5 are done (below).
 - **Branch:** `sprint-3-control`, from `main` at `cbde3fd`
 
 ## Done
@@ -22,7 +22,7 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 | 0 | Setup | done | G0: PASS for synthetic scope |
 | 1 | M0 foundations and thin slice | merged to `main` (PR #1) | PASS, see below |
 | 2 | M1 desktop, discovery, plan | merged to `main` (PR #5) | PASS for Sprint 2 scope, see below |
-| 3 | M1 jobs, admission, conversation, control | in progress: 3.1–3.4 done, 3.5 claimed | — |
+| 3 | M1 jobs, admission, conversation, control | in progress: 3.1–3.5 done, 3.6 claimed | — |
 | 4–11 | M1 | not started | — |
 | 12–20 | M1B, M1C, M1R, M2, M3, M3Z, M4 | not started | — |
 
@@ -168,6 +168,19 @@ Code commit `2c81168`; the evidence and this file were committed after it.
   capacity, repeated command not reapplied, ended jobs not live, command settled applied, refused
   control recorded, checkpoints native only, preflight refuses other headers, checkpoint needs the live
   attempt.
+
+## Prompt 3.5 — requirement revisions (2026-10-08)
+
+- `application/workloads.py`: change grammar, typed patch, impact through the dependency graph,
+  immutable revision under compare-and-swap, stale marks; `controls.change` holds live work;
+  `GET /v1/workload`.
+- Tests (`tests/integration/test_revisions.py`, 4): A26 exclude a field mid-run (diff, impact, new
+  revision, provenance, old result untouched on the old revision, hold and resume under the new revision,
+  next admission on the new revision), two concurrent edits conflict predictably, budget and evaluation
+  refused without the owner and unknown fields refused, the dependency graph. `make test-fast` 259
+  passed on macOS. Guards mutation-checked: expected revision compared, owner paths refused, allowed
+  predictor only, stale marks, holds, anchored grammar, provenance recorded, hold pauses, revision
+  advances.
 
 ## Open defects and gaps
 

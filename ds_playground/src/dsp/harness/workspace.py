@@ -45,6 +45,7 @@ STATUS = (
         ErrorCode.QUOTA_EXCEEDED: 429,
         ErrorCode.DEPENDENCY_UNAVAILABLE: 503,
         ErrorCode.ASSISTANT_UNAVAILABLE: 503,
+        ErrorCode.REQUIRES_CONFIRMATION: 409,
     }
 )
 
@@ -259,6 +260,10 @@ def mount(
         return jobs.report(
             ctx, job_id, attempt, fence, outcome, ledger=ledger(), clock=clock, **fields
         )
+
+    @app.get("/v1/workload")
+    def latest_workload() -> dict[str, Any]:
+        return current_workload(ctx, ledger())
 
     @app.post("/v1/conversations/{conversation_id}/messages")
     async def post_message(conversation_id: str, request: Request) -> dict[str, Any]:

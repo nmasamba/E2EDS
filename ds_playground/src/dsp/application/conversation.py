@@ -10,7 +10,7 @@ from collections.abc import Callable
 from typing import Any
 
 from dsp.application.grants import PROJECT
-from dsp.application.workloads import current_workload
+from dsp.application.workloads import current_workload, parse_change
 from dsp.contracts.canonical import canonical_json, digest, pin
 from dsp.contracts.errors import DspError, ErrorCode, TrustedContext
 from dsp.contracts.schemas import validate
@@ -28,8 +28,11 @@ CONTROLS = {
 
 
 def classify(text: str) -> str:
-    """The operation the text asks for: an exact control phrase, or else an instruction."""
-    return CONTROLS.get(text.strip().lower().rstrip(".!"), "instruction")
+    """The operation the text asks for: a control phrase, a known change, else an instruction."""
+    phrase = text.strip().lower().rstrip(".!")
+    if phrase in CONTROLS:
+        return CONTROLS[phrase]
+    return "change_requirements" if parse_change(text) else "instruction"
 
 
 def receipt(command: dict[str, Any]) -> dict[str, Any]:
@@ -164,12 +167,14 @@ def settle(
     clock: Callable[[], str],
     effect: dict[str, Any] | None = None,
     because: str | None = None,
+    patch: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Record the command's next state as a new revision with a `command.<state>` event."""
     settled = command | {
         "revision": f"{int(command['revision'].split('.')[0]) + 1}.0.0",
         "state": state,
         "effect_ref": effect,
+        "proposed_patch": patch if patch is not None else command["proposed_patch"],
     }
     validate("ConversationCommand", settled)
     body = {
@@ -181,6 +186,7 @@ def settle(
         "state": state,
         "because": because,
         "effect": effect,
+        "patch": settled["proposed_patch"],
         "at": clock(),
     }
     _record(ctx, settled, f"command.{state}", body, [settled], ledger)

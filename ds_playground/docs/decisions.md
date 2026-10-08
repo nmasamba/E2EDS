@@ -445,3 +445,26 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
 - **2026-10-08 — S3 — FINDING — the A24 measurement is slow (3.4)** — twenty pause and twenty cancel
   trials, each with its own hung worker process under every processor saturated, take about 150 s on
   this Mac; the test is `slow`, so it is in the gate and out of the inner loop.
+- **2026-10-08 — S3 — DECISION — requirement revisions (3.5)** — a change instruction becomes a typed
+  JSON-Patch-style list on the WorkloadSpec (`proposed_patch` on the command record), an impact preview
+  (changed paths, the evidence kinds that depend on them through a small dependency graph, the stale
+  items of jobs on this revision, the live jobs to hold), and a new immutable revision committed on the
+  `workload:<id>` aggregate with a `workload.revised` event. The expected revision the message named must
+  be the current one (REVISION_CONFLICT otherwise), and two edits that read the same revision are
+  serialised by the aggregate so the second conflicts. Old revisions and the Job records that point at
+  them are untouched; the stale marks live in the revision event. Live jobs on the old revision are paused
+  after the revision commits, so the owner's explicit resume readmits them under the new one (a crash
+  between the two leaves a job on the old revision until its next resume, which readmits anyway).
+- **2026-10-08 — S3 — ASSUMPTION — the change grammar stands in for the assistant (3.5)** — with no
+  assistant until Sprint 5, three deterministic instructions are understood: `exclude [the] field <name>`
+  (keywords in any case, the field as typed; only a currently allowed predictor), `set [the] budget to
+  <n>` and `change|set|replace [the] evaluation …`. The last two are typed on the owner's paths and
+  refused with REQUIRES_CONFIRMATION, since budget and evaluation changes need the owner's own action
+  (which does not exist yet as a UI). Anything else is an instruction. The assistant will propose patches
+  into the same validation and application path.
+- **2026-10-08 — S3 — ASSUMPTION — the dependency graph (3.5)** — three edges are enough for the sprint's
+  workload: a feature change invalidates results and checkpoints; a resource change, reservations; an
+  evaluation change, evaluations. The revision also makes the latest plan stale, so the next admission
+  re-proposes it (A33) and pins the new `requirement_revision`.
+- **2026-10-08 — S3 — DECISION — `GET /v1/workload` (3.5)** — the window reads the current revision to
+  send as `expected_revision` and to show the fields; it is the current WorkloadSpec as stored.

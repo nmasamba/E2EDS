@@ -25,6 +25,11 @@
   before the job shows as paused, resume re-admits the job under the current requirements, and a
   cancelled job cannot resume. A phrase with several live jobs asks which; a quoted or embedded phrase
   does nothing. Workers may record a checkpoint. The window may now send JSON bodies.
+- Requirement revisions: "exclude field <name>" while work runs becomes a typed change with an impact
+  preview and a new immutable revision of the workload; results already committed stay on the old
+  revision and are marked stale; the running job is held and resumes, explicitly, under the new
+  revision; two edits against the same revision conflict predictably; a budget or evaluation change is
+  refused until the owner acts on it. `GET /v1/workload` shows the current revision.
 
 ## Sprint 2 — desktop shell, discovery and plan (2026-10-02)
 
