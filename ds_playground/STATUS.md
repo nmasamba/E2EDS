@@ -242,8 +242,8 @@ Code commit `2c81168`; the evidence and this file were committed after it.
 - Controls: a phrase with several live jobs needs clarification; only the job's own controls (buttons)
   name a job. There is no Resume menu item. **Open DEFECT (2026-10-12):** on macOS neither Cmd+. nor a trial
   CmdOrCtrl+Shift+C fired the Cancel run item from the real menu, while Cmd+P fired Pause; cause unknown,
-  menu item untried by mouse, chord unchanged. **Open DEFECT (2026-10-12):** action outcomes are shown in
-  four places with differing wording and no central place; the activity trail should be the one place. Resume and admission are serialised on one aggregate; a
+  menu item untried by mouse, chord unchanged. Action outcomes are shown in the activity trail only, with one
+  wording (closed in Sprint 4 housekeeping). Resume and admission are serialised on one aggregate; a
   revision followed by a crash before the hold leaves a job on the old revision until its next resume.
 - Requirements: three change instructions are understood by a fixed grammar; a budget or evaluation
   change is refused because the owner action that would approve it does not exist yet.

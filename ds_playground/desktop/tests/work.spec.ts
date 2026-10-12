@@ -42,18 +42,23 @@ async function pressByKeyboard(page: Page, name: string) {
   throw new Error(`${name} was not reached by Tab`);
 }
 
-test("A27, R15: the composer sends and shows the harness's receipt; the activity shows each command's state", async ({
+test("A27, R15: the composer's receipts, and a message the harness never had, are shown in the activity trail only", async ({
   page,
 }) => {
   await open(page, harness);
   await expect(page.getByRole("status")).toHaveText("● Harness connected");
   await expect(activity(page)).toContainText("Environment observed: observed");
   await say(page, "status");
-  await expect(composer(page)).toContainText("status · rejected · no job is live");
   await expect(activity(page)).toContainText("You: status · rejected · no job is live");
   await say(page, "please summarise the data");
-  await expect(composer(page)).toContainText("instruction · rejected · no assistant is bound yet");
+  await expect(activity(page)).toContainText("You: please summarise the data · rejected · no assistant is bound yet");
   await expect(page.getByRole("textbox", { name: "Message" })).toHaveValue("");
+  await page.route("**/v1/conversations/**", (route) => route.abort());
+  await say(page, "hello");
+  await expect(activity(page)).toContainText("You: hello · not received · the harness did not answer");
+  await expect(page.getByRole("textbox", { name: "Message" })).toHaveValue("hello");
+  await page.unrouteAll();
+  await expect(composer(page)).not.toContainText("received");
   await expect(page.getByRole("button", { name: "Pause" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Cancel run" })).toBeDisabled();
   await expectNoAxeViolations(page);
@@ -72,23 +77,24 @@ test("A24, A25, A26, R15: pause, change, resume and cancel the hung job by keybo
   await expect(stage(page, "Environment and context")).toContainText("● Completed");
   await page.getByRole("button", { name: "Start the hung test job" }).click();
   await expect(develop(page)).toContainText("○ Not started · queued, waiting for a worker");
-  const queued = await page.getByRole("region", { name: "Run" }).textContent();
-  const job = /Queued (job-[0-9a-f]+)/.exec(queued ?? "")?.[1];
+  const queued = await native<{ events: { type: string; body: { job?: string } }[] }>(harness, "/v1/events");
+  const job = queued.events.filter((event) => event.type === "job.queued").at(-1)?.body.job;
   expect(job).toBeTruthy();
+  await expect(page.getByRole("region", { name: "Run" })).toHaveText("RunStart the hung test job");
   const first = worker(job!);
   await expect(develop(page)).toContainText("◐ Running", { timeout: 30_000 });
   await expect(page.getByText(`job ${job!.slice(-6)} running`)).toBeVisible();
 
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await pressByKeyboard(page, "Pause");
-  await expect(page.getByText("pause: applied")).toBeVisible();
+  await expect(activity(page)).toContainText("You: pause · applied");
   await expect(develop(page)).toContainText("◆ Waiting for you · paused", { timeout: 30_000 });
   await expect.poll(() => first.exitCode, { timeout: 30_000 }).toBe(0);
   await expect(activity(page)).toContainText(`Job ${job!.slice(-6)}: pause requested (attempt 1, fence 1)`);
   await expect(activity(page)).toContainText(`Job ${job!.slice(-6)}: paused`);
 
   await say(page, "exclude field region");
-  await expect(composer(page)).toContainText("change_requirements · applied");
+  await expect(activity(page)).toContainText("You: exclude field region · applied");
   await expect(activity(page)).toContainText(
     "Requirements 1.0.0 → 2.0.0: allowed_fields, excluded_fields; 0 stale, 0 held",
   );
@@ -96,7 +102,7 @@ test("A24, A25, A26, R15: pause, change, resume and cancel the hung job by keybo
 
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await pressByKeyboard(page, "Resume");
-  await expect(page.getByText("resume: applied")).toBeVisible();
+  await expect(activity(page)).toContainText("You: resume · applied");
   await expect(develop(page)).toContainText("queued, waiting for a worker");
   const second = worker(job!);
   await expect(develop(page)).toContainText("◐ Running", { timeout: 30_000 });
@@ -104,7 +110,7 @@ test("A24, A25, A26, R15: pause, change, resume and cancel the hung job by keybo
 
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await pressByKeyboard(page, "Cancel run");
-  await expect(page.getByText("cancel: applied")).toBeVisible();
+  await expect(activity(page)).toContainText("You: cancel this run · applied");
   await expect(develop(page)).toContainText("◇ Inconclusive · cancelled", { timeout: 30_000 });
   await expect.poll(() => second.exitCode, { timeout: 30_000 }).toBe(0);
   await expect(page.getByRole("button", { name: "Cancel run" })).toBeDisabled();
@@ -127,7 +133,7 @@ test("A24, A25, A26, R15: pause, change, resume and cancel the hung job by keybo
   ];
   for (const line of lines) await expect(activity(page)).toContainText(line);
   await say(page, "status");
-  await expect(composer(page)).toContainText("status · rejected · no job is live");
+  await expect(activity(page).getByRole("listitem").last()).toContainText("You: status · rejected · no job is live");
   const events = await native<{ events: { type: string; body: { text?: string; expected_revision?: string } }[] }>(
     harness,
     "/v1/events",
@@ -151,5 +157,23 @@ test("A24, A25, A26, R15: pause, change, resume and cancel the hung job by keybo
     "job.cancel_requested",
     "job.cancelled",
   ]);
+  await expectNoAxeViolations(page);
+});
+
+test("A08, R20: the Run button's result and a refused admission are shown in the activity trail only", async ({ page }) => {
+  await open(page, harness);
+  await expect(stage(page, "Environment and context")).toContainText("● Completed");
+  test.setTimeout(180_000);
+  const lines = activity(page).getByRole("listitem");
+  // Queued jobs hold their reservations, so pressing Run again and again exhausts the machine.
+  for (let press = 0; press < 64 && !(await activity(page).textContent())?.includes("Admission refused"); press++) {
+    const before = await lines.count();
+    await page.getByRole("button", { name: "Start the hung test job" }).click();
+    await expect.poll(() => lines.count()).toBeGreaterThan(before);
+  }
+  await expect(activity(page)).toContainText(/Job [0-9a-f]{6}: queued/);
+  await expect(activity(page)).toContainText(/Admission refused: needs .+ free after what live jobs hold/);
+  await expect(activity(page)).not.toContainText("not received");
+  await expect(page.getByRole("region", { name: "Run" })).toHaveText("RunStart the hung test job");
   await expectNoAxeViolations(page);
 });

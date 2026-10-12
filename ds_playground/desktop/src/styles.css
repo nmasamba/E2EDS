@@ -13,12 +13,6 @@ main {
   margin-left: 0.25rem;
 }
 
-.controls span,
-.composer span {
-  margin-left: 0.75rem;
-  font-size: 0.875rem;
-}
-
 .activity li span {
   display: inline;
   font-size: 0.875rem;

@@ -2,7 +2,6 @@
 
 import json
 import os
-import re
 import signal
 import subprocess
 import sys
@@ -343,8 +342,9 @@ def drive_controls(binary: Path, state_dir: Path) -> None:
                 eventually(lambda: shown(first, "Harness connected"))
                 eventually(lambda: shown(first, "Environment and context\n● Completed"))
                 run(first, CLICK.format(name="Start the hung test job"))
-                text = eventually(lambda: shown(first, "queued, waiting for a worker"))
-                job = re.search(r"Queued (job-[0-9a-f]+)", text).group(1)  # type: ignore[union-attr]
+                eventually(lambda: shown(first, "queued, waiting for a worker"))
+                events = harness(state_dir).get("/v1/events").json()["events"]
+                job = next(e["body"]["job"] for e in events if e["type"] == "job.queued")
                 workers.append(worker(state_dir, job))
                 eventually(lambda: shown(first, "◐ Running"))
                 press("ctrl+p")  # the real Pause shortcut

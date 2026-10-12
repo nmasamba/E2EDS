@@ -36,11 +36,12 @@ type Plan = {
   alternatives: { option_id: string; disposition: string; reason: string }[];
   required_conditions: string[];
 };
-type Receipt = { command: string; operation: string; state: string; because?: string };
 
 const CONVERSATION = "conversation-local";
 const ENDED = new Set(["succeeded", "failed", "cancelled"]);
-const said = (error: unknown) => (error instanceof Error ? error.message : String(error));
+const LABELS: Record<string, string> = { pause: "Pause", resume: "Resume", cancel: "Cancel run" };
+/** Shows, in the activity trail, a request the harness never recorded. */
+type NotReceived = (what: string) => (error: unknown) => void;
 
 const RETRY_MS = 250;
 const GIVE_UP_MS = 15_000;
@@ -254,19 +255,14 @@ function ProposedPlan({ plan }: { plan: Plan | null }) {
 
 /**
  * Pause, resume and cancel for the live job: each press is one command with its own ID, sent on
- * the fast path, and the answer is the job's actual state. Nothing here waits on anything else.
+ * the fast path. The outcome is the command's committed state, shown in the activity trail.
  */
-function Controls({ harness, job }: { harness: Harness; job: JobView | null }) {
-  const [note, setNote] = useState("");
-  const send = async (action: string) => {
+function Controls(props: { harness: Harness; job: JobView | null; notReceived: NotReceived }) {
+  const { harness, job, notReceived } = props;
+  const send = (action: string) => {
     if (!job) return;
-    try {
-      const body = { command_id: crypto.randomUUID(), action };
-      const answer = await call<Receipt>(harness, `/v1/jobs/${job.id}/control`, "POST", body);
-      setNote(`${action}: ${answer.state}${answer.because ? ` · ${answer.because}` : ""}`);
-    } catch (error) {
-      setNote(`${action}: ${said(error)}`);
-    }
+    const body = { command_id: crypto.randomUUID(), action };
+    call(harness, `/v1/jobs/${job.id}/control`, "POST", body).catch(notReceived(LABELS[action]));
   };
   const paused = job?.state === "paused";
   return (
@@ -277,29 +273,27 @@ function Controls({ harness, job }: { harness: Harness; job: JobView | null }) {
       <button type="button" onClick={() => send("cancel")} disabled={!job || ENDED.has(job.state)}>
         Cancel run
       </button>
-      <span aria-live="polite">{note}</span>
     </p>
   );
 }
 
 /**
  * The composer keeps its draft and its message ID until the harness has the message, so a retry
- * after a lost answer is the same message, not a second one. The receipt shown is the harness's.
+ * after a lost answer is the same message, not a second one. Its receipt is in the activity trail.
  */
-function Composer({ harness, revision }: { harness: Harness; revision: string }) {
+function Composer(props: { harness: Harness; revision: string; notReceived: NotReceived }) {
+  const { harness, revision, notReceived } = props;
   const [draft, setDraft] = useState("");
-  const [receipt, setReceipt] = useState("");
   const messageId = useRef(crypto.randomUUID());
   const send = async () => {
     if (!draft.trim()) return;
     const body = { client_message_id: messageId.current, text: draft, expected_revision: revision };
     try {
-      const answer = await call<Receipt>(harness, `/v1/conversations/${CONVERSATION}/messages`, "POST", body);
-      setReceipt(`${answer.operation} · ${answer.state}${answer.because ? ` · ${answer.because}` : ""}`);
+      await call(harness, `/v1/conversations/${CONVERSATION}/messages`, "POST", body);
       setDraft("");
       messageId.current = crypto.randomUUID();
     } catch (error) {
-      setReceipt(`not received: ${said(error)}`);
+      notReceived(`You: ${draft}`)(error);
     }
   };
   return (
@@ -321,26 +315,24 @@ function Composer({ harness, revision }: { harness: Harness; revision: string })
         }}
       />
       <button type="submit">Send</button>
-      <span aria-live="polite">{receipt}</span>
     </form>
   );
 }
 
-/** The one workload that exists: the hung test job, queued here and run by a worker process. */
-function Run({ harness }: { harness: Harness }) {
-  const [note, setNote] = useState("");
-  const start = async () => {
+/**
+ * The one workload that exists: the hung test job, queued here and run by a worker process. A
+ * queued job and a refused admission are both committed events, so the trail shows the result.
+ */
+function Run({ harness, notReceived }: { harness: Harness; notReceived: NotReceived }) {
+  const start = () => {
     const body = {
       operation: "analyse",
       idempotency_key: crypto.randomUUID(),
       task: { cues: ["hang"], seconds: 0 },
     };
-    try {
-      const job = await call<{ id: string }>(harness, "/v1/jobs", "POST", body);
-      setNote(`Queued ${job.id}. Start a worker: uv run python -m fixtures.worker --job ${job.id}`);
-    } catch (error) {
-      setNote(`Not admitted: ${said(error)}`);
-    }
+    call(harness, "/v1/jobs", "POST", body).catch(
+      (error) => error instanceof TypeError && notReceived("Start the hung test job")(error),
+    );
   };
   return (
     <section aria-labelledby="run">
@@ -350,17 +342,19 @@ function Run({ harness }: { harness: Harness }) {
           Start the hung test job
         </button>
       </p>
-      {note && <p className="detail">{note}</p>}
     </section>
   );
 }
 
-/** Every committed event the owner would want to see, with the state each command reached. */
-function ActivityTrail({ items }: { items: Activity[] }) {
+/**
+ * Every outcome, in one place: each committed event the owner would want to see with the state
+ * each command reached, then any request this window sent that the harness never recorded.
+ */
+function ActivityTrail({ items, unheard }: { items: Activity[]; unheard: string[] }) {
   return (
     <section aria-labelledby="activity">
       <h2 id="activity">Activity</h2>
-      {items.length === 0 && <p>Nothing has happened yet.</p>}
+      {items.length + unheard.length === 0 && <p>Nothing has happened yet.</p>}
       <ol className="activity" aria-live="polite">
         {items.map((item) => (
           <li key={item.seq}>
@@ -368,6 +362,11 @@ function ActivityTrail({ items }: { items: Activity[] }) {
               {item.at.slice(11, 19)} {item.text}
               {item.state && ` · ${item.state}`}
             </span>
+          </li>
+        ))}
+        {unheard.map((line, index) => (
+          <li key={`unheard-${index}`}>
+            <span>{line}</span>
           </li>
         ))}
       </ol>
@@ -393,6 +392,11 @@ function Workspace(props: { harness: Harness; version: string; pid: number }) {
   const [now, setNow] = useState(Date.now());
   const cursor = useRef(0);
   const started = useRef(false);
+  const [unheard, setUnheard] = useState<string[]>([]);
+  const notReceived: NotReceived = (what) => (error) => {
+    const why = error instanceof TypeError ? "the harness did not answer" : String((error as Error).message);
+    setUnheard((lines) => [...lines, `${what} · not received · ${why}`]);
+  };
 
   const observe = () => void call(address.current, "/v1/hardware", "POST").catch(() => undefined);
   useEffect(() => {
@@ -438,7 +442,7 @@ function Workspace(props: { harness: Harness; version: string; pid: number }) {
         version {version} · process {pid}
         {live && ` · job ${live.id.slice(-6)} ${live.state.replace("_", " ")}`}
       </p>
-      <Controls harness={harness} job={live} />
+      <Controls harness={harness} job={live} notReceived={notReceived} />
       <div className="workspace">
         <nav aria-label="Work trail">
           <ol>
@@ -460,11 +464,11 @@ function Workspace(props: { harness: Harness; version: string; pid: number }) {
             harness={harness}
             revision={log.filter((event) => event.type.startsWith("grant.")).length}
           />
-          <Run harness={harness} />
-          <ActivityTrail items={activity(log)} />
+          <Run harness={harness} notReceived={notReceived} />
+          <ActivityTrail items={activity(log)} unheard={unheard} />
         </div>
       </div>
-      <Composer harness={harness} revision={expectedRevision(log)} />
+      <Composer harness={harness} revision={expectedRevision(log)} notReceived={notReceived} />
       <section className="resources" aria-label="Resource status">
         {snapshot && age.seconds !== null
           ? `${known(snapshot.cpu.effective_cpu_quota)} processors · ` +

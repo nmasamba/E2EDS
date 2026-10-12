@@ -17,6 +17,7 @@ from dsp.contracts.schemas import validate
 from dsp.ports import Ledger
 
 MAX_BYTES = 16 * 1024  # D18
+NO_ASSISTANT = "no assistant is bound yet"
 CONTROLS = {
     "pause": "pause",
     "pause now": "pause",
@@ -152,6 +153,7 @@ def receive(
             command,
             "rejected",
             because=ErrorCode.ASSISTANT_UNAVAILABLE,
+            reason=NO_ASSISTANT,
             ledger=ledger,
             clock=clock,
         )
@@ -167,9 +169,14 @@ def settle(
     clock: Callable[[], str],
     effect: dict[str, Any] | None = None,
     because: str | None = None,
+    reason: str | None = None,
     patch: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Record the command's next state as a new revision with a `command.<state>` event."""
+    """Record the command's next state as a new revision with a `command.<state>` event.
+
+    ``because`` is the refusal's code; ``reason`` is the one wording every door answers with and
+    the activity trail shows.
+    """
     settled = command | {
         "revision": f"{int(command['revision'].split('.')[0]) + 1}.0.0",
         "state": state,
@@ -185,6 +192,7 @@ def settle(
         "operation": command["operation"],
         "state": state,
         "because": because,
+        "reason": reason,
         "effect": effect,
         "patch": settled["proposed_patch"],
         "at": clock(),

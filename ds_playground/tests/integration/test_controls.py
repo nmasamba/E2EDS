@@ -133,6 +133,9 @@ def test_a25_pause_racing_a_checkpoint_and_a_commit_then_an_explicit_resume(
     again = control(client, job, "resume")
     assert (again["state"], again["job"]["state"]) == ("rejected", "running")
     assert "only a paused job resumes" in again["because"]
+    events = client.get("/v1/events").json()["events"]
+    refused = [event["body"] for event in events if event["type"] == "command.rejected"][-1]
+    assert (refused["because"], refused["reason"]) == ("REVISION_CONFLICT", again["because"])
 
     cancelled = control(client, job, "cancel")
     assert (cancelled["state"], cancelled["job"]["state"]) == ("applied", "cancel_requested")

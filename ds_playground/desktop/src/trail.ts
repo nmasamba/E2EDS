@@ -143,7 +143,8 @@ export const expectedRevision = (log: LedgerEvent[]) =>
 const tail = (id: unknown) => String(id).slice(-6);
 
 /**
- * The activity trail: what the owner said with the state each command reached, every job
+ * The activity trail, the one place an outcome is shown: what the owner said (typed, a button, a
+ * shortcut or the menu) with the state each command reached and its reason, every job
  * transition except heartbeats, requirement revisions, refused admissions and the workspace's own
  * events, in commit order. Nothing here is a model's narration; every line is a committed event.
  */
@@ -151,7 +152,7 @@ export function activity(log: LedgerEvent[]): Activity[] {
   const settled = new Map<string, string>();
   for (const { type, body } of log)
     if (type.startsWith("command."))
-      settled.set(String(body.command), `${body.state}${body.because ? ` · ${body.because}` : ""}`);
+      settled.set(String(body.command), [body.state, body.reason ?? body.because].filter(Boolean).join(" · "));
   const items: Activity[] = [];
   for (const { seq, recorded_at: at, type, body } of log) {
     const add = (text: string, state = "") => items.push({ seq, at, text, state });

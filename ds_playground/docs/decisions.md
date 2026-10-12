@@ -548,3 +548,13 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   waited out its 10 s connect timeout, which pushed the renderer's "lost harness, restarted one rejoined"
   test past its 30 s limit on every run (it passed at the Sprint 3 gate). The listener now listens before
   the port is published; a test connects to the published port before the server loop runs.
+- **2026-10-12 — S4 — DECISION — the activity trail is the one place outcomes appear (housekeeping)** —
+  closes the 2026-10-12 feedback defect. The notes beside the header buttons, under the composer and in
+  the Run section are gone. Every outcome the harness commits is shown once, in the activity trail, from
+  its events: command receipts and states with one wording (`command.*` events now carry `reason`, the
+  same sentence the HTTP answer gives, beside the `because` code), job states, refused admissions and
+  the job the Run button queued. A request the harness never recorded (no answer, or refused before it
+  was read) is listed in the same trail as "not received" with the reason; the Run button adds such a
+  line only when the harness did not answer, since every admission refusal is itself an event. The
+  folder list keeps its own alert: a refused grant is not an event. Tested once in Vitest (`activity`)
+  and once in Playwright (composer, buttons, a dropped request, Run and a refused admission).
