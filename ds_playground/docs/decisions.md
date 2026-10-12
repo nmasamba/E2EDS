@@ -480,7 +480,7 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   types, so a spoofed type with a `state` field changes nothing. Plain CSS; axe clean on every page state
   the tests reach; Pause, Resume and Cancel are pressed with the keyboard alone in the renderer tests.
 - **2026-10-08 — S3 — DECISION — the native menu's Pause and Cancel (3.6)** — two menu items, `Pause`
-  (CmdOrCtrl+P) and `Cancel run` (CmdOrCtrl+Shift+C, see the 2026-10-12 defect), send `POST /v1/control` from the Rust side the way Quit sends
+  (CmdOrCtrl+P) and `Cancel run` (CmdOrCtrl+., see the 2026-10-12 defect), send `POST /v1/control` from the Rust side the way Quit sends
   the shutdown: no renderer in the loop, so they work while the window is busy, and the command is in the
   ledger for the window to show. The command ID is the shell's process ID and a counter. There is no
   Resume item: resume is the header button or the phrase, an explicit act on a visible paused job.
@@ -525,10 +525,17 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
 - **2026-10-08 — S3 — FINDING — no wall-time limit runs yet (3.7)** — admission refuses a task longer than
   the workload's 600 s, but nothing stops a heartbeating attempt that overruns it; the limit is enforced
   by the Sprint 4 runner.
-- **2026-10-12 — S3 — DEFECT — Cmd+. never reached the Cancel run menu item on macOS (fixed)** — the
-  owner's hands-on check of the built app: Cmd+P paused the job through the real menu (the ledger holds
-  the shell's own command IDs), but Cmd+. did nothing. muda registers "." as a real key equivalent, so the
-  item was there; AppKit treats Cmd+. as the cancel key and the webview, as first responder, consumes it
-  before the menu sees it. The shortcut is now CmdOrCtrl+Shift+C on both OSes; the Linux end-to-end test
-  presses the new chord. Lesson recorded in STATUS: macOS menu shortcuts are proven only by a press in the
-  real window, which this session cannot make.
+- **2026-10-12 — S3 — DEFECT — the Cancel run shortcut does not fire on macOS (open)** — the owner's
+  hands-on check of the built app: Cmd+P paused the job through the real menu three times (the ledger
+  holds the shell's own command IDs), but Cmd+. produced nothing, and neither did a rebuilt app with
+  CmdOrCtrl+Shift+C. muda registers both chords as real key equivalents, so the item exists; the
+  difference from Pause is not understood yet, and the Cancel run item was not tried by mouse. Nothing
+  shipped: the chord stays CmdOrCtrl+., which the Linux end-to-end test presses successfully in CI. The
+  owner's one key press is the only way to prove a macOS chord from a session like this one; Sprint 4's
+  housekeeping takes it up, with a renderer-handled shortcut (testable in Playwright) as the proposed
+  route and the menu item kept for the mouse.
+- **2026-10-12 — S3 — DEFECT — action feedback is scattered in the window (open)** — the owner's check:
+  outcomes appear next to the buttons, next to the composer, in the Run section and in the status line,
+  with no single place to read them, and the wording differs between places and from what the activity
+  trail shows. Sprint 4's housekeeping makes the activity trail the one place every outcome appears,
+  removes the inline notes, and tests the wording once.

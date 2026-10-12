@@ -218,8 +218,9 @@ Code commit `2c81168`; the evidence and this file were committed after it.
 - Acceptance line ("start the hung test job from the app, pause, change a requirement, resume, cancel; the
   trail shows receipts and actual states, and survives an app restart"): shown by the renderer test
   (`work.spec.ts`, every step by keyboard, then a reload) and the built-app test (Linux with the real
-  shortcuts and the trail read; macOS through the bundled harness with the window open). Not run by hand
-  with the real macOS menu in this session (the owner's check).
+  shortcuts and the trail read; macOS through the bundled harness with the window open). Run by hand on macOS on
+  2026-10-12: Pause from the real menu, the typed change and resume, and cancel through the menu's route
+  all held; the Cancel run shortcut did not fire (open defect above).
 - `integrity-reviewer`: REVIEW: PASS; two should-fix findings and five notes landed, one note logged
   (`docs/decisions.md`, 2026-10-08, "the integrity review").
 - Gate outcome: **PASS** for Sprint 3 scope. Scenario outcomes are as listed; none is rounded up.
@@ -238,8 +239,10 @@ Code commit `2c81168`; the evidence and this file were committed after it.
   the Sprint 4 runner. The only worker is the test worker, started outside the harness; a queued job
   waits for one. A checkpoint is recorded but nothing restores from it yet.
 - Controls: a phrase with several live jobs needs clarification; only the job's own controls (buttons)
-  name a job. There is no Resume menu item. Cancel run's shortcut is CmdOrCtrl+Shift+C after the owner
-  found Cmd+. swallowed by the webview on macOS (2026-10-12); the new chord awaits the owner's press. Resume and admission are serialised on one aggregate; a
+  name a job. There is no Resume menu item. **Open DEFECT (2026-10-12):** on macOS neither Cmd+. nor a trial
+  CmdOrCtrl+Shift+C fired the Cancel run item from the real menu, while Cmd+P fired Pause; cause unknown,
+  menu item untried by mouse, chord unchanged. **Open DEFECT (2026-10-12):** action outcomes are shown in
+  four places with differing wording and no central place; the activity trail should be the one place. Resume and admission are serialised on one aggregate; a
   revision followed by a crash before the hold leaves a job on the old revision until its next resume.
 - Requirements: three change instructions are understood by a fixed grammar; a budget or evaluation
   change is refused because the owner action that would approve it does not exist yet.
