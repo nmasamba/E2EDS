@@ -5,7 +5,7 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 ## Now
 
 - **Sprint:** 4 — M1 sandboxed native runner (B26; A28; R16; C14, C18; D01, D21).
-- **Claimed prompt:** 4.6 (containment suite).
+- **Claimed prompt:** 4.7 (Sprint 4 gate).
 - **Branch:** `sprint-4-runner`, from `main` at `0cb7674` (PRs #1 to #7 merged).
 
 ## Done
@@ -339,6 +339,30 @@ Code commit `2c81168`; the evidence and this file were committed after it.
   attempt, the dispatcher runs only sandboxed jobs, no runner no sandboxed job, the macOS orphan
   watcher. Found by the checks: a fenced run kept running until its end (now stops), and `tidy`'s
   live-attempt check could never matter under the lock (removed).
+
+## Fixes after CI run 38305340576 (2026-10-12)
+
+- CI on `addc8f7` (4.4): verify failed on `ubuntu-24.04` (every sandboxed task ended with status 1:
+  bubblewrap could not build its namespaces there) and on macOS (the jetsam limit did not stop a 2 GiB
+  allocation on GitHub's VM); the Linux desktop job's window showed "Resources not observed"; macOS
+  desktop passed. Fixed in four commits: the harness's background work ends with its server (a stopped
+  test server had kept a test process alive); macOS memory is also polled from the kernel's footprint
+  (checked here with jetsam disabled: the poll alone stopped the task) and the runner keeps the OS's
+  errno under a wrapper; CI gives `/usr/bin/bwrap` alone an AppArmor profile for user namespaces, then
+  proves a sandbox can be built; the window reads the snapshot and plan again until a read succeeds.
+
+## Prompt 4.6 — containment suite (2026-10-12)
+
+- `tests/sat/test_sprint_04.py` (8, sandbox): a planted host secret and a key under `~/.ssh`; an HTTP
+  fetch from a loopback listener and a name lookup; pip and a write into the runner environment; a
+  state-folder file standing for a sealed partition; the ledger and the task's own declaration; fork
+  and a shell's spawn; CPU, memory, wall time, output and scratch; the source and attempts kept. Each
+  runs real Python through admission, the dispatcher and the OS sandbox, and writes its A28 part
+  (`make sat`) at `os_sandbox_single_user` assurance. The evidence fixture records `assurance`.
+- `make verify-linux` (container): **332 passed, 2 deselected**, coverage 90.15%, 6 min 07 s.
+  `make verify` on macOS: **332 passed, 2 deselected**, 7 min 15 s of tests (one run's wall time was
+  22 min, not reproduced: decisions, 2026-10-13); a rerun of the gate's pytest: 332 passed, coverage
+  90%.
 
 ## Open defects and gaps
 

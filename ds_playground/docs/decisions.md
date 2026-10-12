@@ -827,3 +827,36 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   arrived and dropped a failed read. Why that read failed on that run is not established from the log.
   The window now reads the snapshot and the plan the events name again on every poll until a read
   succeeds.
+- **2026-10-12 — S4 — DECISION — the A28 containment suite (4.6)** — `tests/sat/test_sprint_04.py` runs
+  every item of the skill's list as real Python through admission, the dispatcher and this host's
+  sandbox, and writes one A28 evidence part per item (`make sat`), each at `os_sandbox_single_user`
+  assurance with the limit that this is not VM isolation: a planted host secret and a key under the
+  home's `.ssh`; an HTTP fetch from a listener on this host and a name lookup; starting pip and writing
+  into the runner environment; a file in the state folder standing for a sealed final partition; writing
+  the ledger and the task's own declaration; fork and a shell's spawn; CPU, memory, wall time, output
+  and scratch limits; the source and every attempt kept. Each part is PASS only when the run showed it.
+  The scenario as the suite words it also needs model-generated code and at most two repairs (Sprint 5)
+  and real sealed partitions (Sprint 9); the overall A28 record (4.7) says so.
+- **2026-10-13 — S4 — FINDING — one gate took 22 minutes for 7 of tests (4.6)** — a `make verify` on this
+  Mac reported 332 passed in 7 min 15 s and ended 22 min after it began. A rerun of the same pytest
+  command with a thread dump armed for a process that outlived its summary ended 7 s after its summary
+  (10 min 29 s of tests); the cause of the first is not established. The gate is longer than at Sprint 3
+  (about 7 to 10 minutes on this Mac, 6 in the Linux container) because some 60 tests now start a
+  sandboxed task, each about 1.7 s on macOS for its scratch volume.
+- **2026-10-13 — S4 — DEFECT — the built-app tests stopped a harness with a window still open (fixed)**
+  — on macOS both built-app tests sent the stop request while an app window was open; the shell then
+  starts a new harness, as designed, so the lock could be taken again before the test saw it free
+  (one run of the second test failed so), and the first test left a harness running after it. Sprint
+  4's harness releases the lock about a second later than before (its background threads end first),
+  which widened the race. The tests now close the remaining window before the stop request. That was
+  not all of it: every launch spawns a harness, which exits when the profile is already served, but
+  a frozen harness takes about 3 s to reach the profile lock (measured: 2.95 to 3.36 s, unpacking a
+  21 MB one-file binary), and the tests waited a fixed 3 s after a launch. A harness still starting
+  when the serving one stopped took the lock: the failing check and the harnesses left running. The
+  tests now wait until each launch made while another harness serves has spawned its own harness and
+  seen it exit (the first version checked before the shell had spawned it, and passed at once). Three
+  runs then passed. A one-directory bundle would start faster; that is packaging work, logged.
+- **2026-10-13 — S4 — FINDING — a harness sometimes outlives the built-app tests on macOS** — in two of
+  three passing runs one bundled harness was still running afterwards, on one test's profile, started
+  by a process that had exited; where it comes from is not established. The tests pass; the process
+  holds only its temporary profile and stops on SIGTERM.
