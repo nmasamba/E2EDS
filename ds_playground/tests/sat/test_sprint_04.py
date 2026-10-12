@@ -13,7 +13,9 @@ from typing import Any
 
 import httpx
 import pytest
+from typer.testing import CliRunner
 
+from dsp.interfaces.cli import app
 from tests.conftest import Clock
 from tests.integration.test_jobs import job_of, until
 
@@ -277,6 +279,55 @@ def test_a28_code_and_attempts_are_kept(
         f"{told(job)}; source stored by digest; {len(started)} attempt started and ended",
         LIMIT,
         "repairs (at most two per task, D17) need the assistant of Sprint 5",
+        sprint=4,
+        assurance=ASSURANCE,
+    )
+
+
+def test_a28_the_acceptance_line_read_secret_is_denied_by_the_os(
+    home: Path, evidence: Evidence
+) -> None:
+    """A28, B26: `dsp run-task fixtures/tasks/read_secret.json` is refused by the OS (acceptance).
+
+    The overall A28 record stays INSUFFICIENT_EVIDENCE: the scenario names model-generated code
+    and at most two repairs, which need the assistant of Sprint 5, real sealed partitions (Sprint
+    9), and VM isolation, which this build replaces with an OS sandbox by owner decision.
+    """
+    task = Path(__file__).parents[2] / "fixtures" / "tasks" / "read_secret.json"
+    ran = CliRunner().invoke(app, ["run-task", str(task)])
+    said = ran.output.strip().split(" ", 1)[1]
+    assert ran.exit_code == 2, ran.output
+    assert said.startswith("failed: undeclared_read: 1 open(s) outside the declaration; the OS")
+    evidence(
+        "A28",
+        "acceptance-read-secret",
+        "PASS",
+        "fixtures/tasks/read_secret.json",
+        "dsp run-task fixtures/tasks/read_secret.json, whose Python opens /etc/passwd, ends failed "
+        "with the OS's refusal and exit status 2",
+        f"exit status {ran.exit_code}; {said}",
+        LIMIT,
+        sprint=4,
+        assurance=ASSURANCE,
+    )
+    evidence(
+        "A28",
+        "generated-code-containment",
+        "INSUFFICIENT_EVIDENCE",
+        "containment-v1: the A28 parts on this OS",
+        "real generated Python attempting a host-secret read, a network fetch, a dependency "
+        "install, final-set access and metadata mutation is denied at the enforced boundary; CPU, "
+        "disk and output are bounded; code and attempts are preserved; at most two repairs",
+        "every part exercised passed on this OS, through the job path and the OS sandbox: "
+        "host-secret, network-fetch, dependency-install, final-set (a stand-in file), "
+        "metadata-mutation, process, bounds (CPU, memory, wall time, output, scratch), preserved, "
+        f"and the acceptance line ({said})",
+        LIMIT,
+        "the code was written by hand: model-generated code and its at most two repairs (D17) "
+        "need the assistant of Sprint 5",
+        "sealed final partitions do not exist until Sprint 9; a plain file stood for one",
+        "the suite asks for a dedicated VM; this build runs an OS sandbox by owner decision "
+        "(2026-10-01), so the assurance is os_sandbox_single_user",
         sprint=4,
         assurance=ASSURANCE,
     )

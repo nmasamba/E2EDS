@@ -1,4 +1,4 @@
-.PHONY: install runner-env format test-fast sat verify verify-linux harness-bin desktop-dev desktop-build e2e
+.PHONY: install runner-env format test-fast sat sat-linux verify verify-linux harness-bin desktop-dev desktop-build e2e
 
 # rustup from Homebrew is keg-only on macOS; the extra entries are harmless elsewhere.
 export PATH := /opt/homebrew/opt/rustup/bin:$(HOME)/.cargo/bin:$(PATH)
@@ -35,6 +35,11 @@ LINUX_RUN = sh tools/verify.sh
 
 verify-linux:   ## the same gate in a Linux container: repo read-only, bubblewrap, an unprivileged user
 	$(LINUX)
+
+sat-linux:      ## every sprint's acceptance tests in the Linux container; evidence copied to docs/evidence
+	$(MAKE) verify-linux LINUX_MOUNTS='-v "$(CURDIR)/docs/evidence":/evidence' \
+		LINUX_RUN='DSP_EVIDENCE=/tmp/evidence DSP_COMMIT=$(shell git rev-parse --short HEAD) uv run pytest tests/sat'
+
 
 harness-bin:    ## freeze the harness into one executable, named for the target triple, for the bundle
 	uv run --frozen --group build pyinstaller --noconfirm --onefile --copy-metadata dsp \

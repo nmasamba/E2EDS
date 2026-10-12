@@ -5,4 +5,6 @@ set -e
 apt-get update -qq
 apt-get install -y -qq --no-install-recommends bubblewrap >/dev/null
 useradd --create-home dsp
-exec setpriv --reuid=dsp --regid=dsp --init-groups env HOME=/home/dsp sh -c "$1"
+setpriv --reuid=dsp --regid=dsp --init-groups env HOME=/home/dsp sh -c "$1"
+# `make sat-linux`: the evidence the run wrote, copied out through the one writable mount.
+if [ -d /evidence ] && [ -d /tmp/evidence ]; then cp /tmp/evidence/*.json /evidence/; fi
