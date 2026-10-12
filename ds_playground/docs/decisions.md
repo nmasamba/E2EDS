@@ -821,3 +821,9 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   and then builds the smallest sandbox bubblewrap can make, so a failure names its cause. It changes
   only the throwaway CI runner. A user on Ubuntu 24.04 needs the same profile for the Linux sandbox to
   work: a distribution matter, logged.
+- **2026-10-12 — S4 — DEFECT — a lost read left the window without its snapshot (after CI run
+  38305340576, fixed)** — the Linux built-app test saw "Environment observed" in the trail while the
+  window still said "Resources not observed": the window read the snapshot once when the discovery event
+  arrived and dropped a failed read. Why that read failed on that run is not established from the log.
+  The window now reads the snapshot and the plan the events name again on every poll until a read
+  succeeds.

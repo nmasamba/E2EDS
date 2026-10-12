@@ -438,12 +438,20 @@ function Workspace(props: { harness: Harness; version: string; pid: number }) {
 
   const latest = (type: string) => log.filter((event) => event.type === type).at(-1)?.seq ?? 0;
   const [discovered, planned] = [latest("discovery.finished"), latest("plan.proposed")];
+  // Read the snapshot and plan the events name, again on every poll until a read succeeds.
+  const read = useRef({ snapshot: 0, plan: 0 });
   useEffect(() => {
-    if (discovered) void call<Snapshot>(harness, "/v1/hardware").then(setSnapshot, () => undefined);
-  }, [discovered]);
-  useEffect(() => {
-    if (planned) void call<Plan>(harness, "/v1/plan").then(setPlan, () => undefined);
-  }, [planned]);
+    if (discovered && read.current.snapshot !== discovered)
+      void call<Snapshot>(harness, "/v1/hardware").then((found) => {
+        read.current.snapshot = discovered;
+        setSnapshot(found);
+      }, () => undefined);
+    if (planned && read.current.plan !== planned)
+      void call<Plan>(harness, "/v1/plan").then((found) => {
+        read.current.plan = planned;
+        setPlan(found);
+      }, () => undefined);
+  }, [discovered, planned, now]);
 
   const age = freshness(snapshot?.observed_at ?? null, now);
   const live = liveJob(log);
