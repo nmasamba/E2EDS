@@ -63,6 +63,7 @@ def admit(
     store: Store,
     clock: Callable[[], str],
     new_id: Callable[[], str],
+    environment: str | None = None,
 ) -> dict[str, Any]:
     """Admit the request and return the queued job, or record the rejection and raise.
 
@@ -70,14 +71,15 @@ def admit(
     before anything is read or written. Any other refusal is recorded as a rejected
     ExecutionRequest, pinning the CodeTask it declared, with its reason; no job and no reservation
     exist for it. Every input must be data captured through a grant, and the source must be in
-    the content store.
+    the content store. ``environment`` is the runner environment's lock digest, recorded on a
+    Python or SQL CodeTask.
     """
     if not SUBMIT & ctx.scopes:
         raise DspError(ErrorCode.FORBIDDEN, "this context may not submit work")
     payload = digest(canonical_json(task))
     if existing := _same_request(ctx, idempotency_key, operation, payload, ledger):
         return existing
-    code = rules.code_task(task, workload)
+    code = rules.code_task(task, workload, environment)
     validate("CodeTask", code)
     cues = None if "language" in task else task
     captured = {manifest["sha256"] for manifest in ledger.current(ctx, "DataManifest")}

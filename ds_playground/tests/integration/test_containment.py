@@ -11,6 +11,8 @@ import json
 import os
 import shutil
 import socket
+import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -326,3 +328,66 @@ def test_c14_confinement_that_cannot_be_applied_runs_nothing(
     result = confined.run(task, source, {}, folder / "attempt")
     assert (result["outcome"], result["failure"]["kind"]) == ("failed", "crash")
     assert not planted.exists()
+
+
+SUPERVISOR = """
+import sys
+from pathlib import Path
+from dsp.adapters import sandbox
+from dsp.application.workloads import base_workload
+from dsp.contracts.canonical import file_digest
+from dsp.contracts.errors import TrustedContext
+from dsp.domain.admission import code_task
+
+env, folder = Path(sys.argv[1]), Path(sys.argv[2])
+source = folder / "source"
+source.write_text("import time\\ntime.sleep(60)\\n")
+spec = {"language": "python", "source_sha256": file_digest(source), "outputs": ["out.json"]}
+task = code_task(spec, base_workload(TrustedContext.local()))
+
+
+class Told(type(sandbox.local(env))):
+    def start(self, task, work, channel):
+        pid = super().start(task, work, channel)
+        (folder / "pid").write_text(str(pid))
+        return pid
+
+
+Told(env).run(task, source, {}, folder / "attempt")
+"""
+
+
+def alive(pid: int) -> bool:
+    """Whether a process other than our child is still running (a zombie is not)."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    stat = Path(f"/proc/{pid}/stat")  # where the OS has one, a zombie says so
+    return not (stat.exists() and stat.read_text().rsplit(")", 1)[-1].split()[0] == "Z")
+
+
+def test_d24_a_task_whose_harness_dies_ends_with_it(tmp_path: Path, runner_env: Path) -> None:
+    """D24, C14: when the harness supervising a task is killed, the task ends within seconds.
+
+    On Linux the kernel's parent-death signal ends it; on macOS a watcher in the task's own
+    process does, since the harness's limits on wall and CPU time end with the harness.
+    """
+    root = Path(__file__).parents[2]
+    command = [sys.executable, "-c", SUPERVISOR, str(runner_env), str(tmp_path)]
+    harness = subprocess.Popen(command, cwd=root)
+    for _ in range(300):
+        if (tmp_path / "pid").exists() and (tmp_path / "pid").read_text():
+            break
+        time.sleep(0.05)
+    task = int((tmp_path / "pid").read_text())
+    time.sleep(1)
+    assert alive(task)
+    harness.kill()
+    harness.wait(10)
+    deadline = time.monotonic() + 10
+    while alive(task) and time.monotonic() < deadline:
+        time.sleep(0.1)
+    assert not alive(task)
+    sandbox.local(runner_env).release(tmp_path / "attempt")  # what the dead harness left
+    assert not os.path.ismount(tmp_path / "attempt" / "scratch")

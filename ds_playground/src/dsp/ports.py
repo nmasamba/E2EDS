@@ -1,4 +1,4 @@
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -49,18 +49,33 @@ class Store(Protocol):
     def path(self, ctx: TrustedContext, digest: str) -> Path:
         """Return the stored file for a digest."""
 
+    def attempts(self) -> list[Path]:
+        """Return the staging directories that exist now."""
+
+    def discard(self, staging: Path) -> None:
+        """Delete one staging directory and everything left in it."""
+
 
 class Runner(Protocol):
     """Runs one CodeTask confined by the OS sandbox and reports what happened (B26)."""
 
     def run(
-        self, task: dict[str, Any], source: Path, inputs: Mapping[str, Path], work: Path
+        self,
+        task: dict[str, Any],
+        source: Path,
+        inputs: Mapping[str, Path],
+        work: Path,
+        proceed: Callable[[], bool] = lambda: True,
     ) -> dict[str, Any]:
         """Run the task on its source and declared inputs in the fresh attempt directory ``work``.
 
-        Return the outcome, the failure's kind and message, and the declared outputs, each staged
-        under ``work/out`` with the digest and size taken here: nothing the task wrote is trusted.
+        ``proceed`` is asked as the task runs; False stops it (failure kind ``stopped``). Return
+        the outcome, the failure's kind and message, and the declared outputs, each staged under
+        ``work/out`` with the digest and size taken here: nothing the task wrote is trusted.
         """
+
+    def release(self, work: Path) -> None:
+        """Release what a run set up in ``work`` and may have left behind, as after a crash."""
 
 
 class Exporter(Protocol):

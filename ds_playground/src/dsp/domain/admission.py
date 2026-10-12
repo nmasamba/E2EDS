@@ -37,13 +37,16 @@ def envelope(workload: dict[str, Any]) -> dict[str, int]:
     }
 
 
-def code_task(task: dict[str, Any], workload: dict[str, Any]) -> dict[str, Any]:
+def code_task(
+    task: dict[str, Any], workload: dict[str, Any], environment: str | None = None
+) -> dict[str, Any]:
     """The CodeTask a submitted task declares, written for the current requirement revision.
 
     A task with ``language`` is Python or SQL: the caller supplies only the source digest, inputs,
-    outputs, limits within the workload's envelope and permissions; the rest is derived. Any other
-    task is the test worker's cues, recorded by their digest. The ID is derived from the content,
-    so the same declaration under the same revision is the same CodeTask.
+    outputs, limits within the workload's envelope and permissions; the rest is derived, the runner
+    environment's lock digest (``environment``) included. Any other task is the test worker's cues,
+    recorded by their digest. The ID is derived from the content, so the same declaration under the
+    same revision and environment is the same CodeTask.
     """
     if "language" in task:
         if unknown := sorted(set(task) - set(SUPPLIED)):
@@ -60,7 +63,7 @@ def code_task(task: dict[str, Any], workload: dict[str, Any]) -> dict[str, Any]:
         "revision": "1.0.0",
         "parent_ref": None,
         "requirement_revision": workload["revision"],
-        "environment_lock_sha256": None,
+        "environment_lock_sha256": environment if "language" in task else None,
         **declared,
     }
     limits = declared.get("limits", {})

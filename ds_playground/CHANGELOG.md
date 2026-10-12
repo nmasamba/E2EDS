@@ -16,8 +16,15 @@
   permission is refused.
 - The runner: `python -m dsp_runner <attempt>/task.json` runs one CodeTask's Python, or its DuckDB SQL
   against the inputs loaded as tables, in the task's scratch folder, and sends a result and the declared
-  outputs on one bounded channel. `make runner-env` builds its locked environment. Not yet reachable from
-  the app: the OS sandbox comes first.
+  outputs on one bounded channel. `make runner-env` builds its locked environment.
+- Generated or submitted Python and SQL run only in the OS sandbox: Seatbelt on macOS, bubblewrap with a
+  seccomp filter on Linux, at single-user OS-sandbox assurance (not VM isolation). A task reads only its
+  declared inputs and the runner, writes only its scratch folder, has no network, cannot start a process,
+  and is stopped at its CPU, memory, time, output and scratch limits.
+- `dsp run-task <task.json>` runs a declared task in the sandbox as a job and reports how it ended;
+  `fixtures/tasks/read_secret.json` is refused by the OS. `dsp profile` now runs its profiling in the
+  sandbox as a job the activity trail follows, and `profile.json` names its schema. A sandboxed job's
+  failure appears in the trail with its reason.
 
 ## Sprint 3 — jobs, admission, conversation and control (2026-10-08)
 

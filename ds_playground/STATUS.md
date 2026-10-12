@@ -5,7 +5,7 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 ## Now
 
 - **Sprint:** 4 — M1 sandboxed native runner (B26; A28; R16; C14, C18; D01, D21).
-- **Claimed prompt:** 4.5 (CodeTasks through jobs).
+- **Claimed prompt:** 4.6 (containment suite).
 - **Branch:** `sprint-4-runner`, from `main` at `0cb7674` (PRs #1 to #7 merged).
 
 ## Done
@@ -315,6 +315,30 @@ Code commit `2c81168`; the evidence and this file were committed after it.
   `clone3`'s ENOSYS rather than EPERM (threads do not use it on this glibc). Found by the checks: the
   first pass's survivors led to the thread, abstract-socket and `clone3` probes, and to dropping
   `--clearenv`, which duplicated the spawn's scrubbed environment.
+
+## Prompt 4.5 — CodeTasks through jobs (2026-10-12)
+
+- Coordinator: `execute`, `reconcile` (the tick), `tidy`; the harness's dispatcher and tick; app
+  RunRecord 0.1.0 and Profile 0.1.0; the profiling recipe in the sandbox (`src/dsp/recipes`);
+  `POST /v1/sources`; `dsp run-task`; `fixtures/tasks/read_secret.json`; the macOS orphan watcher; the
+  trail's failure reasons. Run for real on macOS: `dsp run-task fixtures/tasks/read_secret.json` →
+  `failed: undeclared_read: 1 open(s) outside the declaration; the OS answered PermissionError:
+  [Errno 1] Operation not permitted`, exit 2.
+- Tests: `tests/integration/test_runs.py` (9, sandbox): a sandboxed job commits a RunRecord naming its
+  outputs, events replay; over the size cap fails, nothing stored; a late result after its fence moved
+  is refused, nothing kept; cancel mid-run kills the task, no success, no artifact; the tick expires a
+  dead attempt untouched; a lease expiring mid-run stops the run and attempt 2 commits; tidy finishes a
+  crash between commit and storage; no runner environment refuses sandboxed work; a staged output
+  changed after hashing is never stored. `test_containment.py` +1 (a dead harness ends its task);
+  `test_profile_export.py` reworked (the recipe's logic unit-tested, the CLI path sandboxed); the
+  built-app test profiles in the sandbox and sees the OS refuse `/etc/passwd`. Vitest 10, Playwright
+  `runs.spec.ts` 1 (real sandboxed jobs in the trail). Guards mutation-checked (13): the tick expires
+  due leases, the tick runs with the server, a stop request stops the run, a fenced attempt stops its
+  run, outputs stored only after the commit, a refused result leaves no staging, a task's failure is
+  final, stored bytes are the hashed bytes, tidy finishes a committed promotion, tidy clears a dead
+  attempt, the dispatcher runs only sandboxed jobs, no runner no sandboxed job, the macOS orphan
+  watcher. Found by the checks: a fenced run kept running until its end (now stops), and `tidy`'s
+  live-attempt check could never matter under the lock (removed).
 
 ## Open defects and gaps
 

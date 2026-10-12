@@ -1,4 +1,5 @@
 import os
+import shutil
 from pathlib import Path
 
 from dsp.contracts.canonical import file_digest
@@ -16,6 +17,15 @@ class ContentStore:
         path = self._root / "staging" / attempt
         path.mkdir(parents=True)
         return path
+
+    def attempts(self) -> list[Path]:
+        """Return the staging directories that exist now."""
+        staging = self._root / "staging"
+        return sorted(staging.iterdir()) if staging.is_dir() else []
+
+    def discard(self, staging: Path) -> None:
+        """Delete one staging directory and everything left in it."""
+        shutil.rmtree(staging, ignore_errors=True)
 
     def commit(self, ctx: TrustedContext, path: Path) -> str:
         """Move a staged file into the store atomically and return its digest."""

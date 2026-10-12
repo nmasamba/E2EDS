@@ -6,7 +6,9 @@ concurrent transition that wins the race is retried from the reloaded job; a wor
 report is recorded as rejected and refused.
 """
 
+import json
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from dsp.application.admission import readmit, released
@@ -14,9 +16,10 @@ from dsp.contracts.canonical import canonical_json, digest
 from dsp.contracts.errors import DspError, ErrorCode, TrustedContext
 from dsp.contracts.schemas import validate
 from dsp.domain import jobs as machine
-from dsp.ports import Ledger
+from dsp.ports import Ledger, Runner, Store
 
 OUTCOMES = {"succeeded": "succeed", "failed": "fail", "stopped": "stop"}
+WORKER = "runner-local"  # the harness's own worker, which runs sandboxed attempts
 
 
 class _RacedError(Exception):
@@ -206,3 +209,130 @@ def control(
     if action == "status":
         return inspect(ctx, job_id, ledger=ledger, clock=clock), False
     return _apply(ctx, job_id, action, ledger=ledger, clock=clock)
+
+
+def reconcile(ctx: TrustedContext, *, ledger: Ledger, clock: Callable[[], str]) -> None:
+    """The reconcile tick (D03): expire every lease that has run out, with nobody touching its job.
+
+    The harness runs it every second, so a dead worker's attempt is expired, its fence advanced and
+    a retry queued within one lease of its last heartbeat, whether or not anyone reads the job.
+    """
+    for job in ledger.current(ctx, "Job"):
+        if machine.due(job, clock()):
+            inspect(ctx, job["id"], ledger=ledger, clock=clock)
+
+
+def execute(
+    ctx: TrustedContext,
+    job_id: str,
+    *,
+    ledger: Ledger,
+    store: Store,
+    runner: Runner,
+    clock: Callable[[], str],
+    timer: Callable[[], float],
+) -> dict[str, Any]:
+    """Run one attempt of a sandboxed job and commit what it produced under the attempt's fence.
+
+    The attempt is leased to the harness's own worker and heartbeats every 15 s while the task
+    runs; a pause or cancel request, or a lease that is no longer this attempt's (it expired and
+    the fence moved), stops the task within a quarter of a second. The outputs stay in the
+    attempt's staging folder until the result that names them (a RunRecord, by digest) is
+    committed as the job's result; only then do they move into the content store. A task that
+    fails has failed for good (a repair is a new task); a result the fence refuses leaves
+    nothing behind.
+    """
+    granted = lease(ctx, job_id, WORKER, ledger=ledger, clock=clock)
+    attempt, fence = granted["attempt"], granted["fence"]
+    pinned = _load(ctx, job_id, ledger)["request_ref"]
+    request = ledger.get(ctx, "ExecutionRequest", pinned["id"], pinned["revision"])
+    ref = request["source_code_task_ref"]
+    code = ledger.get(ctx, "CodeTask", ref["id"], ref["revision"])
+    work = store.staging(f"{job_id}.{attempt}")
+    due, asked = {"beat": timer() + machine.HEARTBEAT_SECONDS, "look": 0.0}, {"stop": False}
+
+    def proceed() -> bool:
+        now = timer()
+        if now < due["look"]:
+            return True
+        due["look"] = now + 0.25
+        try:
+            if now >= due["beat"]:
+                due["beat"] = now + machine.HEARTBEAT_SECONDS
+                heartbeat(ctx, job_id, attempt, fence, ledger=ledger, clock=clock)
+            job = _load(ctx, job_id, ledger)
+        except DspError:
+            return False  # fenced out: another attempt may run now
+        asked["stop"] = job["state"] in ("pause_requested", "cancel_requested")
+        lease = job["lease"] or {}
+        return not asked["stop"] and (lease.get("attempt"), lease.get("fence")) == (attempt, fence)
+
+    inputs = {item["name"]: store.path(ctx, item["sha256"]) for item in code["inputs"]}
+    result = runner.run(code, store.path(ctx, code["source_sha256"]), inputs, work, proceed)
+    outcome: dict[str, Any] = {}
+    if result["outcome"] == "succeeded":
+        record = {
+            "schema_version": "0.1.0",
+            "type": "RunRecord",
+            "job": job_id,
+            "attempt": attempt,
+            "fence": fence,
+            "code_task_ref": ref,
+            "compute_binding_ref": request["compute_binding_ref"],
+            "assurance": "os_sandbox_single_user",
+            "outputs": result["outputs"],
+        }
+        validate("RunRecord", record)
+        (work / "run.json").write_bytes(canonical_json(record))
+        outcome = {"outcome": "succeeded", "key": work.name}
+        outcome["sha256"] = digest(canonical_json(record))
+    elif result["failure"]["kind"] != "stopped":
+        reason = f"{result['failure']['kind']}: {result['failure']['message']}"
+        outcome = {"outcome": "failed", "transient": False, "reason": reason[:200]}
+    elif asked["stop"]:
+        outcome = {"outcome": "stopped"}
+    committed = False
+    try:
+        if outcome:
+            answer = report(ctx, job_id, attempt, fence, ledger=ledger, clock=clock, **outcome)
+            committed = answer["committed"] and outcome["outcome"] == "succeeded"
+    except DspError:
+        pass  # refused, and recorded on the job as a rejected result
+    if committed:
+        _promote(ctx, store, work)  # a failure here leaves the folder for tidy to finish
+    else:
+        store.discard(work)
+    return _load(ctx, job_id, ledger)
+
+
+def tidy(ctx: TrustedContext, *, ledger: Ledger, store: Store, runner: Runner) -> None:
+    """Finish or clear what a crash left in staging, between runs (never during one).
+
+    A committed result whose outputs are still staged is moved into the content store; every
+    other attempt's folder is released (a mounted scratch volume, say) and deleted.
+    """
+    for work in store.attempts():
+        job_id, _, number = work.name.rpartition(".")
+        job = ledger.latest(ctx, "Job", job_id) if number.isdigit() else None
+        if job is None:
+            continue
+        result = job["result"]
+        if (
+            job["state"] == "succeeded"
+            and result["key"] == work.name
+            and work.joinpath("run.json").exists()
+        ):
+            _promote(ctx, store, work)
+        else:
+            runner.release(work)
+            store.discard(work)
+
+
+def _promote(ctx: TrustedContext, store: Store, work: Path) -> None:
+    """Move a committed attempt's outputs and RunRecord into the content store; clear the rest."""
+    record = json.loads((work / "run.json").read_bytes())
+    for output in record["outputs"]:
+        if store.commit(ctx, work / "out" / output["name"]) != output["sha256"]:
+            raise DspError(ErrorCode.INTERNAL_ERROR, "a staged output changed after it was hashed")
+    store.commit(ctx, work / "run.json")
+    store.discard(work)

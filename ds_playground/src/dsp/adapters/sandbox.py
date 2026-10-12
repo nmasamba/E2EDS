@@ -17,11 +17,12 @@ import tarfile
 import threading
 import time
 from abc import ABC, abstractmethod
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from importlib.metadata import distributions
 from pathlib import Path
 from typing import Any
 
-from dsp.contracts.canonical import canonical_json, file_digest
+from dsp.contracts.canonical import canonical_json, digest, file_digest
 from dsp.contracts.errors import DspError
 from dsp.contracts.schemas import validate
 
@@ -39,7 +40,7 @@ class Confined(ABC):
 
     A subclass starts the confined process, may stop it on a limit its OS measures but does not
     enforce (``exceeded``), names a kill it cannot otherwise explain (``killed``) and releases what
-    it set up (``end``).
+    it set up (``release``).
     """
 
     killed = "killed"
@@ -60,12 +61,17 @@ class Confined(ABC):
         """True when the running process is past a limit its OS does not stop it at."""
         return False
 
-    def end(self, work: Path) -> None:
+    def release(self, work: Path) -> None:
         """Release whatever ``start`` set up for this attempt."""
         return None
 
     def run(
-        self, task: dict[str, Any], source: Path, inputs: Mapping[str, Path], work: Path
+        self,
+        task: dict[str, Any],
+        source: Path,
+        inputs: Mapping[str, Path],
+        work: Path,
+        proceed: Callable[[], bool] = lambda: True,
     ) -> dict[str, Any]:
         """Run the task on its source and declared inputs; see ``ports.Runner``."""
         work, limits = work.resolve(), task["limits"]
@@ -80,7 +86,7 @@ class Confined(ABC):
             pid = self.start(task, work, write)
         except BaseException:
             os.close(read)
-            self.end(work)
+            self.release(work)
             raise
         finally:
             os.close(write)
@@ -105,11 +111,16 @@ class Confined(ABC):
 
         reader = threading.Thread(target=drain)
         reader.start()
-        deadline, late, spent = time.monotonic() + limits["wall_seconds"], False, False
+        deadline, late, spent, halted = (
+            time.monotonic() + limits["wall_seconds"],
+            False,
+            False,
+            False,
+        )
         try:
             while not (reaped := os.wait4(pid, os.WNOHANG))[0]:
                 late = time.monotonic() >= deadline
-                if late or (spent := self.exceeded(pid, task)):
+                if late or (spent := self.exceeded(pid, task)) or (halted := not proceed()):
                     stop()
                     reaped = os.wait4(pid, 0)
                     break
@@ -117,11 +128,13 @@ class Confined(ABC):
             stop()  # a group outlives its reaped leader under the same ID: nothing it began stays
             reader.join()
         finally:
-            self.end(work)
+            self.release(work)
         code, usage = os.waitstatus_to_exitcode(reaped[1]), reaped[2]
         if self.relays_signals and code > 128:
             code = 128 - code
         cpu = usage.ru_utime + usage.ru_stime
+        if halted:
+            return failed("stopped", "stopped on request")
         if late:
             return failed("timeout", f"stopped at the {limits['wall_seconds']} s wall-clock limit")
         if over.is_set():
@@ -160,6 +173,13 @@ def chain(path: Path) -> list[Path]:
         found.append(link)
         path = Path(os.path.normpath(link.parent / os.readlink(link))) / path.relative_to(link)
     return [*found, path]
+
+
+def lock(environment: Path) -> str:
+    """The digest of what the runner environment holds: each distribution's name and version."""
+    sites = [str(site) for site in environment.glob("lib/python*/site-packages")]
+    held = sorted(f"{d.metadata['Name']}=={d.version}" for d in distributions(path=sites))
+    return digest("\n".join(held).encode())
 
 
 def scrubbed(work: Path) -> dict[str, str]:

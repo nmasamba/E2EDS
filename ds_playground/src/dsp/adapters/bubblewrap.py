@@ -128,13 +128,17 @@ class Bubblewrap(Confined):
 
     relays_signals = True
 
+    def __init__(self, environment: Path) -> None:
+        super().__init__(environment)
+        prlimit, bwrap = shutil.which("prlimit"), shutil.which("bwrap")
+        if not (prlimit and bwrap):
+            raise DspError(ErrorCode.DEPENDENCY_UNAVAILABLE, "bubblewrap or prlimit is missing")
+        self.tools = prlimit, bwrap
+
     def arguments(self, task: dict[str, Any], work: Path) -> list[str]:
         """The fixed argument vector from ``prlimit`` to the runner; no string is a shell's."""
-        tools = [shutil.which("prlimit"), shutil.which("bwrap")]
-        if not all(tools):
-            raise DspError(ErrorCode.DEPENDENCY_UNAVAILABLE, "bubblewrap or prlimit is missing")
         limits, python = task["limits"], chain(self.environment / "bin" / "python")
-        argv = [str(tools[0]), f"--as={limits['memory_mib'] * 2**20}", "--", str(tools[1])]
+        argv = [self.tools[0], f"--as={limits['memory_mib'] * 2**20}", "--", self.tools[1]]
         argv += ["--unshare-all", "--as-pid-1", "--die-with-parent", "--new-session"]
         for path in SYSTEM:
             if path.is_symlink():

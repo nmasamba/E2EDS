@@ -134,7 +134,7 @@ class Seatbelt(Confined):
         limit: int = task["limits"]["cpu_seconds"]
         return ticks * self.tick >= limit
 
-    def end(self, work: Path) -> None:
+    def release(self, work: Path) -> None:
         """Detach the scratch volume and delete its image: scratch is never a result."""
         if os.path.ismount(work / "scratch"):
             detach = ["hdiutil", "detach", "-quiet", "-force", str(work / "scratch")]

@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dsplayground.dev/schemas/app/0.1.0/Profile.schema.json",
+  "title": "Profile — app-owned contract",
+  "description": "The column profile of one CSV file, written by the built-in profiling recipe inside the sandbox (D20 bounds: at most 200 columns). Untrusted until it validates; the harness renders the report from it, escaping every value.",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {
+    "count": { "type": "integer", "minimum": 0 },
+    "value": { "type": ["string", "number", "null"] }
+  },
+  "properties": {
+    "schema_version": { "const": "0.1.0" },
+    "type": { "const": "Profile" },
+    "rows": { "$ref": "#/$defs/count" },
+    "rows_rejected": { "$ref": "#/$defs/count" },
+    "columns": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string", "maxLength": 1000 },
+          "proposed_type": { "enum": ["integer", "number", "timestamp", "string", "unknown"] },
+          "non_null": { "$ref": "#/$defs/count" },
+          "nulls": { "$ref": "#/$defs/count" },
+          "distinct": { "$ref": "#/$defs/count" },
+          "min": { "$ref": "#/$defs/value" },
+          "max": { "$ref": "#/$defs/value" }
+        },
+        "required": ["name", "proposed_type", "non_null", "nulls", "distinct", "min", "max"]
+      }
+    }
+  },
+  "required": ["schema_version", "type", "rows", "rows_rejected", "columns"]
+}

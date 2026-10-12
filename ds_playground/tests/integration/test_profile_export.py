@@ -8,13 +8,11 @@ import pytest
 from typer.testing import CliRunner
 
 from dsp.adapters import export_fs
-from dsp.adapters.duckdb_profile import profile_csv
 from dsp.adapters.ledger_sqlite import SqliteLedger
-from dsp.adapters.store_fs import ContentStore
-from dsp.application.packs import profile_and_export
 from dsp.contracts.canonical import file_digest
 from dsp.contracts.errors import DspError, ErrorCode, TrustedContext
 from dsp.interfaces.cli import app
+from dsp.recipes.profile_csv import profile as profile_csv
 from fixtures.operations import write_orders
 
 CTX = TrustedContext.local()
@@ -43,8 +41,9 @@ def _columns(folder: Path) -> dict[str, dict[str, Any]]:
     return {column["name"]: column for column in profile["columns"]}
 
 
+@pytest.mark.sandbox
 def test_profile_exports_a_verified_pack(tmp_path: Path, out: Path) -> None:
-    """R11, D23: a CSV becomes a new version folder whose files match the manifest digests."""
+    """R11, D23, B26: a CSV, profiled in the sandbox, becomes a verified new version folder."""
     source = tmp_path / "orders.csv"
     write_orders(source, orders=50, accounts=10)
     assert _run("profile", source, "--out", out).exit_code == 0
@@ -72,6 +71,7 @@ def test_profile_exports_a_verified_pack(tmp_path: Path, out: Path) -> None:
     assert str(tmp_path) not in (out / "v1" / "manifest.json").read_text()
 
 
+@pytest.mark.sandbox
 def test_re_export_makes_a_new_version_and_keeps_the_old(tmp_path: Path, out: Path) -> None:
     """D23: exporting again never overwrites; the same source gives a byte-identical manifest."""
     source = tmp_path / "orders.csv"
@@ -105,21 +105,29 @@ def test_nulls_and_rejected_rows_are_counted_not_dropped(tmp_path: Path) -> None
     assert profile["columns"][1]["nulls"] == 1
 
 
-def test_bounds_are_refused_without_truncation(tmp_path: Path, out: Path) -> None:
-    """D20: 100,000 rows pass; 100,001 rows and 201 columns are refused and nothing is exported."""
+def test_bounds_are_refused_without_truncation(tmp_path: Path) -> None:
+    """D20: 100,000 rows pass; 100,001 rows and 201 columns are refused, never truncated."""
     assert profile_csv(_csv(tmp_path, "n\n" + "1\n" * 100_000))["rows"] == 100_000
     too_wide = _csv(
         tmp_path, ",".join(f"c{i}" for i in range(201)) + "\n" + ",".join("1" * 201) + "\n"
     )
-    with pytest.raises(DspError) as raised:
+    with pytest.raises(ValueError, match="exceed the D20 limits"):
         profile_csv(too_wide)
-    assert raised.value.details == {"limit": "D20"}
+
+
+@pytest.mark.sandbox
+def test_a_profile_over_the_bounds_is_a_failed_job_that_exports_nothing(
+    tmp_path: Path, out: Path
+) -> None:
+    """D20, A03: the sandboxed recipe's refusal fails the job; the trail has it, the folder not."""
     result = _run("profile", _csv(tmp_path, "n\n" + "1\n" * 100_001), "--out", out)
     assert (result.exit_code, list(out.iterdir())) == (2, [])
     assert "INPUT_INVALID" in result.output
+    assert "exceed the D20 limits" in result.output
     events = SqliteLedger(Path(os.environ["DSP_HOME"]) / "ledger.sqlite", str).events(CTX)
-    jobs = [event["type"] for event in events if event["aggregate"].startswith("job:")]
-    assert jobs == ["job.started", "job.failed"]
+    jobs = [event["type"] for event in events if event["type"].startswith("job.")]
+    assert jobs == ["job.queued", "job.started", "job.failed"]
+    assert not [event for event in events if event["type"] == "export.committed"]
 
 
 def test_empty_and_unreadable_input_is_refused(tmp_path: Path, out: Path) -> None:
@@ -129,6 +137,7 @@ def test_empty_and_unreadable_input_is_refused(tmp_path: Path, out: Path) -> Non
     assert "INPUT_INVALID" in result.output
 
 
+@pytest.mark.sandbox
 def test_report_escapes_untrusted_text(tmp_path: Path, out: Path) -> None:
     """C17: a column name containing markup is rendered as text, never as active content."""
     _run("profile", _csv(tmp_path, "<script>alert(1)</script>\n1\n"), "--out", out)
@@ -137,6 +146,7 @@ def test_report_escapes_untrusted_text(tmp_path: Path, out: Path) -> None:
     assert "&lt;script&gt;" in report
 
 
+@pytest.mark.sandbox
 def test_verify_detects_a_changed_file_and_a_missing_manifest(tmp_path: Path, out: Path) -> None:
     """A12: a single changed byte, or a folder without a manifest, fails verification."""
     _run("profile", _csv(tmp_path, "a\n1\n"), "--out", out)
@@ -202,27 +212,3 @@ def test_export_refuses_traversal_missing_roots_and_full_disks(
     with pytest.raises(DspError) as full:
         _export(out, tmp_path)
     assert full.value.code is ErrorCode.QUOTA_EXCEEDED
-
-
-def test_a_crash_mid_job_leaves_no_success_and_no_output(tmp_path: Path, out: Path) -> None:
-    """A03: if the recipe crashes, the ledger holds no succeeded job and no version is published."""
-    ledger = SqliteLedger(tmp_path / "ledger.sqlite", lambda: "2026-10-01T00:00:00+00:00")
-
-    def crash(_: Path) -> dict[str, Any]:
-        raise RuntimeError("power cut")
-
-    with pytest.raises(RuntimeError):
-        profile_and_export(
-            CTX,
-            _csv(tmp_path, "a\n1\n"),
-            out,
-            destination="grant-out",
-            ledger=ledger,
-            store=ContentStore(tmp_path / "store"),
-            exporter=export_fs,
-            profiler=crash,
-            clock=lambda: "2026-10-01T00:00:00+00:00",
-            new_id=lambda: "job1",
-        )
-    assert [event["type"] for event in ledger.events(CTX)] == ["job.started"]
-    assert list(out.iterdir()) == []

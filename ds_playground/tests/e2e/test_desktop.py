@@ -168,6 +168,21 @@ def inspect_window(binary: Path, state_dir: Path) -> None:
     assert harness(state_dir).get("/v1/grants").json() == {"grants": []}
 
 
+def sandboxed(client: httpx.Client, text: str) -> dict[str, object]:
+    """Run Python as a sandboxed job through the bundled harness, as `dsp run-task` does."""
+    source = client.post("/v1/sources", json={"text": text}).json()["sha256"]
+    task = {"language": "python", "source_sha256": source, "outputs": ["out.json"]}
+    request = {"operation": "analyse", "idempotency_key": uuid.uuid4().hex, "task": task}
+    job = client.post("/v1/jobs", json=request).json()
+
+    def ended() -> dict[str, object]:
+        found: dict[str, object] = client.get(f"/v1/jobs/{job['id']}").json()
+        assert found["state"] in ("succeeded", "failed", "cancelled")
+        return found
+
+    return eventually(ended)
+
+
 def test_the_built_app_works_and_survives_close_kill_crash_and_a_second_instance(
     binary: Path,
     launch: Callable[[], subprocess.Popen[bytes]],
@@ -179,10 +194,11 @@ def test_the_built_app_works_and_survives_close_kill_crash_and_a_second_instance
     """A44, R26, R20, D24: the built app, with no terminal or uv, on a fresh profile.
 
     Its own window makes the first discovery, which shows the real webview reached the bundled
-    harness. One harness then serves the profile across a second instance, a killed shell, a
-    reopen and a harness crash. On Linux the window is also inspected through WebDriver and the
-    real Quit shortcut and a real window close are pressed with xdotool; on macOS none of those
-    can be scripted, so Quit is exercised only as the request the shell sends.
+    harness. Its harness profiles a CSV as a sandboxed job and the OS refuses a task's read of a
+    host file (B26, A28). One harness then serves the profile across a second instance, a killed
+    shell, a reopen and a harness crash. On Linux the window is also inspected through WebDriver
+    and the real Quit shortcut and a real window close are pressed with xdotool; on macOS none
+    of those can be scripted, so Quit is exercised only as the request the shell sends.
     """
     if LINUX:
         inspect_window(binary, state_dir)
@@ -211,8 +227,14 @@ def test_the_built_app_works_and_survives_close_kill_crash_and_a_second_instance
     }
     assert bundled.post("/v1/profiles", json=request).json() == {"version": "v1", "files": 3}
     assert verify_pack(work / "out" / "v1") == []
+    assert kinds(bundled)[-3:] == ["job.started", "job.succeeded", "export.committed"]
     escape = bundled.post("/v1/profiles", json=request | {"relative_path": "../out"})
     assert (escape.status_code, sorted(p.name for p in (work / "out").iterdir())) == (403, ["v1"])
+    refused = sandboxed(bundled, "open('/etc/passwd').read()\n")
+    assert refused["state"] == "failed"
+    assert refused["reason"].startswith(
+        "undeclared_read: 1 open(s) outside the declaration; the OS"
+    )
     history = kinds(bundled)
 
     second = launch()  # a second instance attaches to the same harness

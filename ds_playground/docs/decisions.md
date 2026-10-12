@@ -739,3 +739,60 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   `--security-opt seccomp=unconfined` (the owner's 2026-10-12 approval). The Linux sandbox tests run
   there and on CI's `ubuntu-24.04` (bubblewrap installed by apt in the verify job), so they are not
   CI-only.
+- **2026-10-12 — S4 — FINDING — CI on the 4.4 push (run 38305340576)** — on `ubuntu-24.04` every
+  sandboxed task ended with status 1 before it ran (bubblewrap could not set up its namespaces; the
+  container run passed); on `macos-latest` the 2 GiB allocation at a 256 MiB limit was not stopped
+  (the jetsam limit held on this Mac, not on GitHub's macOS VM); the Linux desktop job's window showed
+  "Resources not observed" after discovery had finished (it passed at 4.2; cause not established from
+  the log). Each is fixed after 4.5, below.
+- **2026-10-12 — S4 — DECISION — CodeTasks run as fenced jobs (4.5)** — `application/jobs.py` gains
+  `execute` (lease to the harness's worker `runner-local`, run through the `Runner` port with a
+  callback that heartbeats every 15 s and, every quarter second, stops the task on a pause or cancel
+  request or when the lease is no longer this attempt's; report the outcome under the attempt's fence),
+  `reconcile` (the D03 tick: expire every lease that has run out, nobody touching the job) and `tidy`
+  (store a committed result's outputs still in staging; release and delete any other attempt's
+  folder). Outputs stay in the attempt's staging folder until the result that names them is
+  committed, then move into the content store: a refused result leaves nothing, and a crash between
+  commit and storage is finished by `tidy`. A sandboxed task's failure is final (not transient):
+  repairs are new tasks (D17, Sprint 5). The harness runs the tick every second and the dispatcher
+  every quarter second while its server runs; one lock serialises every sandboxed attempt (the
+  binding allows one), so a route running its own job and the dispatcher never race.
+- **2026-10-12 — S4 — DECISION — a RunRecord is a succeeded attempt's outcome (4.5)** — app RunRecord
+  0.1.0 (job, attempt, fence, CodeTask and binding by digest, `assurance: os_sandbox_single_user`, each
+  output by digest and size) is stored in the content store and its digest is the job's result. This
+  replaces the 4.1 plan to add outcome fields to the CodeTask, which stays the declaration; a failed
+  or stopped attempt has no record, and its job says why (`<kind>: <message>`, at most 200
+  characters).
+- **2026-10-12 — S4 — DECISION — profiling runs in the sandbox (4.5)** — Sprint 1's DuckDB profiling
+  moved unchanged into `src/dsp/recipes/profile_csv.py`, run as a Python CodeTask whose one input is
+  the captured file (`data.csv`) and whose one output is `profile.json`, now app Profile 0.1.0 (it gains
+  `schema_version` and `type`). The parser touches the owner's data, so it runs confined (C18); the
+  harness validates the profile and renders the report, escaping every value. `/v1/profiles` captures
+  the file, admits the recipe (observing the hardware first on a fresh profile, since nothing is
+  admitted blind), runs the job inline under the lock, and exports the pack once the job succeeded; a
+  recipe failure is the job's failure and nothing is exported. The trail shows the job and the export.
+  The recipe's source ships with the frozen harness (`--add-data`).
+- **2026-10-12 — S4 — DECISION — `dsp run-task` and task sources (4.5)** — `POST /v1/sources` (native
+  only, at most 1 MiB) stores a task's source and returns its digest; `dsp run-task <task.json>`
+  stores the named source, admits the task, waits for it and prints its end and reason (exit 2 unless
+  it succeeded). The harness finds the runner environment at `DSP_RUNNER_ENV`, else `.runner-env`
+  beside the source; without it, or without the OS's sandbox (bubblewrap and `prlimit` on Linux),
+  Python and SQL tasks and profiles are refused (DEPENDENCY_UNAVAILABLE), never run another way. Its
+  lock digest (each installed distribution's name and version) is recorded on every Python or SQL
+  CodeTask.
+- **2026-10-12 — S4 — DECISION — a quit drains a running task; a dead harness ends it (4.5)** — on a
+  graceful quit the dispatcher starts nothing new and a job already running finishes (D24: the drain
+  test lets a profile in progress export). If the harness dies, its task ends with it: on Linux by the
+  kernel (`--die-with-parent`); on macOS, which has no parent-death signal, by a watcher thread in the
+  task's own process that exits when it is orphaned, a mitigation a hostile task could starve. The
+  harness's wall and CPU limits would otherwise end with it.
+- **2026-10-12 — S4 — FINDING — what a quit costs while a task runs (4.5)** — a drain can last up to the
+  task's wall time (600 s by default), and a stopping harness accepts no new request, so the task
+  cannot be cancelled once Quit is pressed. Cancel first, then quit.
+- **2026-10-12 — S4 — FINDING — the built app needs the runner environment named (4.5)** — no runner
+  environment ships in the bundle; the frozen harness uses `DSP_RUNNER_ENV` (the built-app test sets
+  it through `make e2e`) and otherwise refuses sandboxed work. Shipping one is distribution work.
+- **2026-10-12 — S4 — DECISION — runner jobs in the activity trail (4.5)** — a job line carries the
+  reason the coordinator recorded: a failure's `<kind>: <message>`; a refused late result reads
+  "<outcome> result refused" with that report's own attempt and fence and the refusing code. Tested
+  once in Vitest and once in Playwright against a real harness running real sandboxed jobs.

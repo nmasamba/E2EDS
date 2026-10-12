@@ -199,3 +199,23 @@ test("A27, R20: the activity trail is the committed events with each command's r
     [14, "You: resume", "rejected · PAUSED"],
   ]);
 });
+
+test("B26, A04: a sandboxed job's failure and a refused late result read in one wording", () => {
+  const reason = "undeclared_read: 1 open(s) outside the declaration; the OS answered PermissionError";
+  const log = [
+    job(1, "job.started", "job-123456", "running", 1),
+    job(2, "job.failed", "job-123456", "failed", 1, 0, { input: { attempt: 1, fence: 0, reason } }),
+    job(3, "job.expired", "job-abcdef", "queued", 1, 1),
+    job(4, "job.result_rejected", "job-abcdef", "queued", 1, 1, {
+      input: { attempt: 1, fence: 0, outcome: "succeeded", because: "REVISION_CONFLICT" },
+    }),
+    job(5, "job.succeeded", "job-fedcba", "succeeded", 1),
+  ];
+  expect(activity(log).map((item) => [item.text, item.state])).toEqual([
+    ["Job 123456: running (attempt 1, fence 0)", ""],
+    ["Job 123456: failed (attempt 1, fence 0)", reason],
+    ["Job abcdef: queued (attempt 1, fence 1)", ""],
+    ["Job abcdef: succeeded result refused (attempt 1, fence 0)", "REVISION_CONFLICT"],
+    ["Job fedcba: succeeded (attempt 1, fence 0)", ""],
+  ]);
+});
