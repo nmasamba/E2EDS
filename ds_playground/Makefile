@@ -26,12 +26,15 @@ sat: runner-env        ## sprint acceptance tests, cumulative; writes evidence r
 verify: runner-env     ## the sprint gate on this machine
 	sh tools/verify.sh
 
-verify-linux:   ## the same gate in a Linux container (repo mounted read-only)
-	docker run --rm -v "$(CURDIR)/..":/repo:ro -w /repo/ds_playground \
-		-e UV_PROJECT_ENVIRONMENT=/tmp/venv -e UV_CACHE_DIR=/tmp/uv -e RUFF_CACHE_DIR=/tmp/ruff \
-		-e MYPY_CACHE_DIR=/tmp/mypy -e COVERAGE_FILE=/tmp/coverage -e PYTEST_ADDOPTS="-p no:cacheprovider" \
-		-e DSP_RUNNER_ENV=/tmp/runner-env ghcr.io/astral-sh/uv:python3.12-bookworm-slim sh -c \
-		"uv sync --frozen && UV_PROJECT_ENVIRONMENT=/tmp/runner-env $(RUNNER_SYNC) && sh tools/verify.sh"
+LINUX = docker run --rm --security-opt seccomp=unconfined -v "$(CURDIR)/..":/repo:ro -w /repo/ds_playground \
+	-e UV_PROJECT_ENVIRONMENT=/tmp/venv -e UV_CACHE_DIR=/tmp/uv -e RUFF_CACHE_DIR=/tmp/ruff \
+	-e MYPY_CACHE_DIR=/tmp/mypy -e COVERAGE_FILE=/tmp/coverage -e PYTEST_ADDOPTS="-p no:cacheprovider" \
+	-e DSP_RUNNER_ENV=/tmp/runner-env $(LINUX_MOUNTS) ghcr.io/astral-sh/uv:python3.12-bookworm-slim \
+	sh tools/verify_linux.sh "uv sync --frozen && UV_PROJECT_ENVIRONMENT=/tmp/runner-env $(RUNNER_SYNC) && $(LINUX_RUN)"
+LINUX_RUN = sh tools/verify.sh
+
+verify-linux:   ## the same gate in a Linux container: repo read-only, bubblewrap, an unprivileged user
+	$(LINUX)
 
 harness-bin:    ## freeze the harness into one executable, named for the target triple, for the bundle
 	uv run --frozen --group build pyinstaller --noconfirm --onefile --copy-metadata dsp \

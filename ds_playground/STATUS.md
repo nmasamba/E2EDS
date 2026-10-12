@@ -5,7 +5,7 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 ## Now
 
 - **Sprint:** 4 — M1 sandboxed native runner (B26; A28; R16; C14, C18; D01, D21).
-- **Claimed prompt:** 4.4 (Linux bubblewrap and seccomp adapter).
+- **Claimed prompt:** 4.5 (CodeTasks through jobs).
 - **Branch:** `sprint-4-runner`, from `main` at `0cb7674` (PRs #1 to #7 merged).
 
 ## Done
@@ -292,6 +292,29 @@ Code commit `2c81168`; the evidence and this file were committed after it.
   before the runner, a refused profile ends the process; the runner's CPU rlimit survives on macOS
   (the poll also stops the task) and is checked on Linux in 4.4. Two survivors on the first pass (metadata
   and inherited descriptors) led to sharper probes, then were caught.
+
+## Prompt 4.4 — Linux sandbox adapter (2026-10-12)
+
+- `adapters/bubblewrap.py` (bubblewrap, `prlimit --as`, the seccomp filter for x86-64 and aarch64);
+  `sandbox.local()` chooses it on Linux; `chain()` is shared; `make verify-linux` installs bubblewrap
+  and runs as an unprivileged user (`tools/verify_linux.sh`). **bubblewrap runs inside the
+  verify-linux container** (linux/arm64, `seccomp=unconfined`, by owner approval), so the Linux sandbox
+  tests run locally as well as on CI's `ubuntu-24.04`, where the verify job now installs bubblewrap.
+- Tests: `test_containment.py` now 11, all on both OSes: + Python with a thread and DuckDB SQL run
+  under the sandbox; the network test also tries a Unix listener by path and, on Linux, an abstract
+  name; the process test also calls `clone3` directly on Linux; writes to `/` and `/dev/shm` refused.
+  `make verify-linux`: format, lint, mypy, boundaries clean; **312 passed, 2 deselected**, coverage
+  91.78%, 5 min 24 s. `make verify` on macOS arm64: **312 passed, 2 deselected**, coverage 91.11%,
+  5 min 12 s.
+- Guards mutation-checked on Linux (21): process creation refused but threads, the thread rule,
+  `clone3` refused, the filter installed, the namespace alone (abstract socket), both network layers
+  together, root read-only, `/dev` read-only, the attempt read-only, only the allowlist mounted,
+  scratch tmpfs sized, `RLIMIT_AS`, inherited descriptors closed, environment scrubbed, signals relayed
+  as 128 + n, the runner as first process, the runner's CPU rlimit (the 4.3 survivor, caught here),
+  dies with its supervisor. Not caught: the socket rule alone (the namespace still refuses), logged;
+  `clone3`'s ENOSYS rather than EPERM (threads do not use it on this glibc). Found by the checks: the
+  first pass's survivors led to the thread, abstract-socket and `clone3` probes, and to dropping
+  `--clearenv`, which duplicated the spawn's scrubbed environment.
 
 ## Open defects and gaps
 

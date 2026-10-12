@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from dsp.contracts.canonical import canonical_json, file_digest
-from dsp.contracts.errors import DspError, ErrorCode
+from dsp.contracts.errors import DspError
 from dsp.contracts.schemas import validate
 
 FRAMING = 64 * 1024  # the result file and the tar headers, beyond the outputs' own bytes
@@ -43,6 +43,7 @@ class Confined(ABC):
     """
 
     killed = "killed"
+    relays_signals = False  # True when a supervisor in between reports a signal as 128 + its number
 
     def __init__(self, environment: Path) -> None:
         self.environment = environment
@@ -118,6 +119,8 @@ class Confined(ABC):
         finally:
             self.end(work)
         code, usage = os.waitstatus_to_exitcode(reaped[1]), reaped[2]
+        if self.relays_signals and code > 128:
+            code = 128 - code
         cpu = usage.ru_utime + usage.ru_stime
         if late:
             return failed("timeout", f"stopped at the {limits['wall_seconds']} s wall-clock limit")
@@ -142,7 +145,21 @@ def local(environment: Path) -> Confined:
         from dsp.adapters.seatbelt import Seatbelt  # it loads libSystem as it starts
 
         return Seatbelt(environment)
-    raise DspError(ErrorCode.DEPENDENCY_UNAVAILABLE, f"no sandbox for {sys.platform} yet")
+    from dsp.adapters.bubblewrap import Bubblewrap
+
+    return Bubblewrap(environment)
+
+
+def chain(path: Path) -> list[Path]:
+    """Every symlink met on the way from ``path`` to the file it names, then that file."""
+    found: list[Path] = []
+    for _ in range(40):
+        link = next((p for p in [*reversed(path.parents), path] if p.is_symlink()), None)
+        if link is None:
+            break
+        found.append(link)
+        path = Path(os.path.normpath(link.parent / os.readlink(link))) / path.relative_to(link)
+    return [*found, path]
 
 
 def scrubbed(work: Path) -> dict[str, str]:

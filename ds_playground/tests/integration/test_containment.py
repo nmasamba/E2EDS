@@ -6,9 +6,13 @@ own. Limits are seen as the run's structured failure. Nothing here reads a secre
 reports only whether an open succeeded and its errno.
 """
 
+import contextlib
 import json
 import os
+import shutil
 import socket
+import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -57,6 +61,31 @@ def seen(folder: Path, result: dict[str, Any]) -> Any:
     return json.loads((folder / "attempt" / "out" / "seen.json").read_text())
 
 
+def test_b26_python_and_sql_tasks_run_under_the_sandbox(tmp_path: Path, runner_env: Path) -> None:
+    """B26: the policy lets real work through: Python with a thread, and DuckDB SQL."""
+    python = (
+        "import csv, threading\n"
+        "rows = []\n"
+        "read = lambda: rows.extend(csv.DictReader(open('../inputs/orders.csv')))\n"
+        "worker = threading.Thread(target=read)\n"
+        "worker.start(); worker.join()\n"
+        "report(rows=len(rows))\n"
+    )
+    assert seen(tmp_path / "py", contained(tmp_path / "py", runner_env, python)) == {"rows": 1}
+    folder = tmp_path / "sql"
+    folder.mkdir()
+    source, data = folder / "source", folder / "orders.csv"
+    source.write_text('SELECT count(*) AS orders, sum(amount) AS total FROM "orders.csv"')
+    data.write_bytes(b"order_id,amount\n000001,5\n000002,7\n")
+    spec = {"language": "sql", "source_sha256": file_digest(source), "outputs": ["totals.csv"]}
+    spec["inputs"] = [{"name": "orders.csv", "sha256": file_digest(data)}]
+    task = code_task(spec, base_workload(CTX))
+    result = sandbox.local(runner_env).run(task, source, {"orders.csv": data}, folder / "attempt")
+    assert result["outcome"] == "succeeded", result
+    written = (folder / "attempt" / "out" / "totals.csv").read_bytes()
+    assert written == b"orders,total\r\n2,12\r\n"
+
+
 def test_c14_a_read_outside_the_allowlist_is_refused_and_a_declared_read_allowed(
     tmp_path: Path, runner_env: Path
 ) -> None:
@@ -82,13 +111,14 @@ def test_c14_a_read_outside_the_allowlist_is_refused_and_a_declared_read_allowed
 def test_c14_a_write_outside_scratch_is_refused_and_a_scratch_write_allowed(
     tmp_path: Path, runner_env: Path
 ) -> None:
-    """C14, A28: writes outside scratch fail by path, `..` and symlink; scratch takes writes."""
+    """C14, A28: writes fail outside scratch: path, `..`, symlink, root, shared memory."""
     outside = tmp_path / "outside.txt"
     code = (
         f"os.symlink({str(outside)!r}, 'link')\n"
         f"report(path=opened({str(outside)!r}, True), dotdot=opened('../escaped.txt', True),\n"
         f"       inputs=opened('../inputs/orders.csv', True), link=opened('link', True),\n"
         f"       env=opened({str(runner_env / 'planted.py')!r}, True),\n"
+        "       root=opened('/planted', True), shm=opened('/dev/shm/planted', True),\n"
         "       scratch=opened('mine.txt', True))\n"
     )
     observed = seen(tmp_path / "run", contained(tmp_path / "run", runner_env, code))
@@ -102,18 +132,35 @@ def test_c14_a_write_outside_scratch_is_refused_and_a_scratch_write_allowed(
 def test_c14_no_socket_reaches_even_loopback_and_no_name_resolves(
     tmp_path: Path, runner_env: Path
 ) -> None:
-    """C14, C18, A28: a listener on this host's loopback gets nothing; no name resolves."""
-    listener = socket.socket()
-    listener.bind(("127.0.0.1", 0))
-    listener.listen()
-    listener.settimeout(0.5)
-    port = listener.getsockname()[1]
+    """C14, C18, A28: nothing reaches this host's listeners, internet or Unix; no name resolves.
+
+    The Unix listeners are a path and, where the OS has them, an abstract name, which on Linux
+    is scoped to the network namespace: what a shared namespace would expose.
+    """
+    listeners, targets = [], {}
+    internet = socket.socket()
+    internet.bind(("127.0.0.1", 0))
+    listeners.append(internet)
+    targets["loopback"] = ("AF_INET", ("127.0.0.1", internet.getsockname()[1]))
+    folder = Path(tempfile.mkdtemp(prefix="dsp", dir="/tmp"))  # Unix socket paths are short
+    named = socket.socket(socket.AF_UNIX)
+    named.bind(str(folder / "s"))
+    listeners.append(named)
+    targets["unix_path"] = ("AF_UNIX", str(folder / "s"))
+    abstract = socket.socket(socket.AF_UNIX)
+    with contextlib.suppress(OSError):  # only Linux has the abstract namespace
+        abstract.bind(f"\0dsp-{folder.name}")
+        listeners.append(abstract)
+        targets["unix_abstract"] = ("AF_UNIX", f"\0dsp-{folder.name}")
+    for listener in listeners:
+        listener.listen()
+        listener.settimeout(0.5)
     code = (
         "import socket\n"
-        "def connect():\n"
+        "def connect(family, address):\n"
         "    try:\n"
-        "        s = socket.socket(); s.settimeout(2)\n"
-        f"        s.connect(('127.0.0.1', {port})); return 0\n"
+        "        s = socket.socket(getattr(socket, family)); s.settimeout(2)\n"
+        "        s.connect(tuple(address) if family == 'AF_INET' else address); return 0\n"
         "    except OSError as error:\n"
         "        return error.errno or -1\n"
         "def resolve():\n"
@@ -121,14 +168,18 @@ def test_c14_no_socket_reaches_even_loopback_and_no_name_resolves(
         "        socket.getaddrinfo('localhost', 80); return 0\n"
         "    except OSError as error:\n"
         "        return error.errno or -1\n"
-        "report(connect=connect(), resolve=resolve())\n"
+        f"targets = {targets!r}\n"
+        "report(resolve=resolve(), **{k: connect(*v) for k, v in targets.items()})\n"
     )
     observed = seen(tmp_path / "run", contained(tmp_path / "run", runner_env, code))
-    assert observed["connect"] != 0
-    assert observed["resolve"] != 0
-    with pytest.raises(TimeoutError):
-        listener.accept()
-    listener.close()
+    assert all(observed.values()), observed
+    assert set(observed) == {"resolve", *targets}
+    for listener in listeners:
+        with pytest.raises(TimeoutError):
+            listener.accept()
+        listener.close()
+    abstract.close()
+    shutil.rmtree(folder)
 
 
 def test_c14_the_task_sees_only_its_scrubbed_environment_and_standard_descriptors(
@@ -153,7 +204,8 @@ def test_c14_the_task_sees_only_its_scrubbed_environment_and_standard_descriptor
     scratch = str((tmp_path / "run" / "attempt" / "scratch").resolve())
     assert (observed["env"]["HOME"], observed["env"]["TMPDIR"]) == (scratch, scratch)
     assert "DSP_PLANTED_SECRET" not in observed["env"]
-    added_by_the_runtime = {"LC_CTYPE", "__CF_USER_TEXT_ENCODING"}
+    assert observed["env"].get("PWD", scratch) == scratch  # bubblewrap sets it
+    added_by_the_runtime = {"LC_CTYPE", "__CF_USER_TEXT_ENCODING", "PWD"}
     assert set(observed["env"]) <= {"HOME", "TMPDIR"} | added_by_the_runtime
     assert leaked not in observed["fds"]
     assert observed["fds"] == [0, 1, 2, 3, 4]  # standard three, the runner's channel, /dev/null
@@ -169,9 +221,17 @@ def test_c14_no_process_can_be_started_a_shell_or_otherwise(
         "        attempt(); return 0\n"
         "    except OSError as error:\n"
         "        return error.errno or -1\n"
+        "def clone3():  # Linux's clone3 takes its flags in memory, where no filter can look\n"
+        "    arguments = (ctypes.c_uint64 * 8)(0, 0, 0, 0, 17, 0, 0, 0)  # exit signal SIGCHLD\n"
+        "    child = libc.syscall(435, ctypes.byref(arguments), 64)\n"
+        "    if child == 0:\n"
+        "        os._exit(0)\n"
+        "    if child < 0:\n"
+        "        raise OSError(ctypes.get_errno(), 'clone3')\n"
+        "linux = {'clone3': tried(clone3)} if os.uname().sysname == 'Linux' else {}\n"
         "report(fork=tried(os.fork),\n"
         "       spawn=tried(lambda: os.posix_spawn('/bin/sh', ['sh', '-c', 'true'], {})),\n"
-        "       exec=tried(lambda: os.execv('/bin/sh', ['sh', '-c', 'true'])))\n"
+        "       exec=tried(lambda: os.execv('/bin/sh', ['sh', '-c', 'true'])), **linux)\n"
     )
     observed = seen(tmp_path / "run", contained(tmp_path / "run", runner_env, code))
     assert all(observed.values()), observed
@@ -232,8 +292,10 @@ def test_d21_time_and_output_past_their_limits_stop_the_task(
     tmp_path: Path, runner_env: Path
 ) -> None:
     """D21, A28: the wall-clock limit and the output cap hold under the sandbox too."""
+    began = time.monotonic()
     slow = contained(tmp_path / "slow", runner_env, "import time\ntime.sleep(60)\n", wall_seconds=3)
     assert (slow["outcome"], slow["failure"]["kind"]) == ("failed", "timeout")
+    assert time.monotonic() - began < 15  # nothing confined outlived the kill to hold the channel
     flood = "open('seen.json', 'wb').write(os.urandom(2**20))\n"
     big = contained(tmp_path / "big", runner_env, flood, output_bytes=4096)
     assert (big["outcome"], big["failure"]["kind"]) == ("failed", "output_limit")
@@ -244,7 +306,16 @@ def test_c14_confinement_that_cannot_be_applied_runs_nothing(
 ) -> None:
     """C14: when the OS refuses the confinement, the process ends before any task code runs."""
     confined = sandbox.local(runner_env)
-    monkeypatch.setattr(confined, "profile", lambda work: "(version 1)(not a rule")
+    if hasattr(confined, "profile"):  # Seatbelt: a profile that does not compile
+        monkeypatch.setattr(confined, "profile", lambda work: "(version 1)(not a rule")
+    else:  # bubblewrap: an option it refuses
+        arguments = confined.arguments
+
+        def refused(task: dict[str, Any], work: Path) -> list[str]:
+            argv = arguments(task, work)
+            return [*argv[:4], "--no-such-option", *argv[4:]]
+
+        monkeypatch.setattr(confined, "arguments", refused)
     planted = tmp_path / "planted.txt"
     folder = tmp_path / "run"
     folder.mkdir()

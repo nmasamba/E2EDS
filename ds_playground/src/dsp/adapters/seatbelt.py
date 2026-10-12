@@ -20,7 +20,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from dsp.adapters.sandbox import FLAGS, Confined, scrubbed
+from dsp.adapters.sandbox import FLAGS, Confined, chain, scrubbed
 
 SETSID, CLOEXEC_DEFAULT = 0x0400, 0x4000  # spawn.h
 JETSAM_SET, MEMLIMIT_FATAL, JETSAM_PRIORITY = 0x8000, 0x04 | 0x08, 180  # spawn_private.h
@@ -41,18 +41,6 @@ class _Timebase(ctypes.Structure):
     _fields_ = [("numer", ctypes.c_uint32), ("denom", ctypes.c_uint32)]
 
 
-def _chain(path: Path) -> list[Path]:
-    """Every symlink met on the way from ``path`` to the file it names, then that file."""
-    found: list[Path] = []
-    for _ in range(40):
-        link = next((p for p in [*reversed(path.parents), path] if p.is_symlink()), None)
-        if link is None:
-            break
-        found.append(link)
-        path = Path(os.path.normpath(link.parent / os.readlink(link))) / path.relative_to(link)
-    return [*found, path]
-
-
 class Seatbelt(Confined):
     """Runs the runner under Seatbelt on macOS with its memory, scratch and CPU limits."""
 
@@ -67,7 +55,7 @@ class Seatbelt(Confined):
 
     def profile(self, work: Path) -> str:
         """The attempt's Seatbelt profile: what is not allowed here is denied."""
-        python = _chain(self.environment / "bin" / "python")
+        python = chain(self.environment / "bin" / "python")
         reads = [self.environment.resolve(), python[-1].parents[1], Path("/usr/lib")]
         reads += [Path("/System/Library"), work]
         ancestors = {path for read in [*reads, *python] for path in [read, *read.parents]}

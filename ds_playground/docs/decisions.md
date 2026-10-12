@@ -700,3 +700,42 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   detached in the run's `finally`; a harness killed mid-run leaves it mounted until something detaches
   it (found when a mutation check skipped the detach: pytest then renamed the folder under the mounted
   volume and only `umount -f` on the new path released it). Reconciling stale attempts is 4.5's.
+- **2026-10-12 — S4 — DECISION — the Linux adapter (4.4)** — `adapters/bubblewrap.py`: `prlimit
+  --as=<memory> -- bwrap --unshare-all --as-pid-1 --die-with-parent --new-session`, read-only binds of
+  `/usr/lib`, `/usr/lib64`, `/lib*` (symlinks recreated as symlinks), `/etc/ld.so.cache` alone of `/etc`
+  (without it the loader cannot find `libpython`), the interpreter binary, its `lib`, the runner
+  environment and the attempt; a `--size`d tmpfs on scratch; `--dev` with `/dev` and `/` remounted
+  read-only; `--chdir` scratch; the seccomp filter on descriptor 3. The spawn's environment is the
+  scrubbed one (so no `--clearenv`), and inheritable descriptors other than 0–3 are closed by the
+  spawn's file actions. The filter (classic BPF built in Python, x86-64 and aarch64 tables) kills a
+  foreign architecture and the x32 ABI, answers `clone3` with ENOSYS (its flags are in memory, out of
+  reach, so glibc falls back to `clone`), allows `clone` only with `CLONE_THREAD`, allows only Unix
+  sockets, and refuses fork, vfork, ptrace, mount, namespaces, BPF, keys, io_uring, modules and
+  `process_vm_*`. It is a deny list in front of a default allow: an allowlist for Python with DuckDB
+  would be long and brittle, and the namespaces and mounts are the main boundary.
+- **2026-10-12 — S4 — DEVIATION — no `/tmp` and no `/proc` in the Linux sandbox (4.4)** — the skill
+  named `--tmpfs /tmp`; a second tmpfs would double the scratch cap, and `TMPDIR` is scratch, so there
+  is none. `/proc` is not mounted: bubblewrap cannot mount a fresh one inside Docker (its masked paths
+  forbid it), and neither the runner nor a task needs it; the same policy holds on every Linux host.
+- **2026-10-12 — S4 — DECISION — the runner is the namespace's first process (4.4)** — with bubblewrap's
+  own reaper as PID 1, a task killed at the hard CPU limit came back as an unexplained SIGKILL: the
+  outer bubblewrap never accounted for the inner runner's CPU time. With `--as-pid-1` the runner is
+  bubblewrap's own child, its CPU time returns with the exit status, and the core names the kill
+  `cpu_limit`. As PID 1 it ignores SIGXCPU by default, so the kernel's SIGKILL at the hard limit is
+  what stops a busy task on Linux. bubblewrap reports a signal as 128 plus its number, which the core
+  turns back into the signal (`relays_signals`).
+- **2026-10-12 — S4 — FINDING — `/dev` took writes (4.4)** — the first probe found `/dev` and
+  `/dev/shm` writable inside the sandbox: a memory-backed place outside scratch and its cap. `/dev` is
+  now remounted read-only (its device nodes are separate binds and still work); the write test covers
+  `/dev/shm` and `/`.
+- **2026-10-12 — S4 — FINDING — the network is refused twice on Linux (4.4)** — by the empty network
+  namespace and by the filter's socket rule. Removing the namespace alone is caught (an abstract Unix
+  socket, scoped to the namespace, becomes reachable); removing the socket rule alone is not
+  observable from inside, since the empty namespace still refuses every connection (ENETUNREACH
+  instead of EACCES). It stays as defence in depth.
+- **2026-10-12 — S4 — DECISION — bubblewrap in the local Linux gate (4.4)** — `make verify-linux` runs
+  `tools/verify_linux.sh` in the throwaway container: it installs Debian's `bubblewrap` (0.8.0) and
+  runs the gate as an unprivileged user (`setpriv`), with the container under
+  `--security-opt seccomp=unconfined` (the owner's 2026-10-12 approval). The Linux sandbox tests run
+  there and on CI's `ubuntu-24.04` (bubblewrap installed by apt in the verify job), so they are not
+  CI-only.
