@@ -16,12 +16,25 @@ class Ledger(Protocol):
         event_id: str,
         event_type: str,
         body: dict[str, Any],
-        objects: Sequence[dict[str, Any]] = (),
+        objects: Sequence[dict[str, Any] | tuple[str, dict[str, Any]]] = (),
     ) -> None:
-        """Append one event and its immutable objects atomically, or raise."""
+        """Append one event and its immutable objects atomically, or raise.
+
+        An object is stored under its ``type``; a suite object that has none is given as
+        ``(kind, object)``.
+        """
+
+    def get(self, ctx: TrustedContext, kind: str, object_id: str, revision: str) -> dict[str, Any]:
+        """Return one immutable object revision, or raise NOT_FOUND."""
 
     def current(self, ctx: TrustedContext, kind: str) -> list[dict[str, Any]]:
         """Return the latest revision of every object of one kind in this tenant."""
+
+    def latest(self, ctx: TrustedContext, kind: str, object_id: str) -> dict[str, Any] | None:
+        """Return the newest revision of one object, or None when the tenant has none."""
+
+    def seq(self, ctx: TrustedContext, aggregate: str) -> int:
+        """Return an aggregate's current sequence: what ``commit`` must be told to expect."""
 
 
 class Store(Protocol):

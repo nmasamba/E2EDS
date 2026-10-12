@@ -1,0 +1,13 @@
+{
+  "id": "A07",
+  "sprint": 3,
+  "os": "linux-aarch64",
+  "fixture": "the deterministic test worker (fixtures/worker.py) on a harness with a movable clock",
+  "commit": "581284c",
+  "expected": "cancel queued, running and checkpointed jobs; record acknowledge and stop timestamps, checkpoint validity and incurred cost; simulate provider that continues charging; no false guarantee of cancellation",
+  "actual": "queued cancelled at once with equal acknowledge and stop times; the running job with a checkpoint was acknowledged, fenced and stopped by its worker, keeping the checkpoint and charged_minor 0, and cannot resume; a finished job stayed succeeded and the command was superseded; a silent worker's cancel was reconciled only when its lease expired, never claimed earlier",
+  "outcome": "INSUFFICIENT_EVIDENCE",
+  "limits": [
+    "no provider exists to keep charging, so that part was not exercised; cost is what the test worker reports"
+  ]
+}

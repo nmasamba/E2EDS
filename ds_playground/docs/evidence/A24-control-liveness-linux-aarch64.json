@@ -1,0 +1,13 @@
+{
+  "id": "A24",
+  "sprint": 3,
+  "os": "linux-aarch64",
+  "fixture": "hung test worker, 10 busy processes, 20 pause and 20 cancel trials",
+  "commit": "581284c",
+  "expected": "receipt persists within 2 s at p95 independent of model and task load; no new tool dispatch; actual stopping and cost shown; untrusted document instructions have no control authority",
+  "actual": "10 processors saturated, each trial's hung worker heartbeating; over 20 trials each, 'pause now' was durable in p95 0.300 s (max 0.307 s) and 'cancel this run' in p95 0.249 s (max 0.259 s); no lease was granted while paused; each job showed paused or cancelled only after its worker stopped; incurred charge 0 shown; the quoted phrases in document text were rejected",
+  "outcome": "PASS",
+  "limits": [
+    "the fake generation is the hung test worker: no assistant model is bound until Sprint 5"
+  ]
+}

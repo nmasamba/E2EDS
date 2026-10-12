@@ -59,7 +59,7 @@ def test_preflight_from_the_shell_origin_is_answered_without_a_credential() -> N
     response = api().options("/v1/status", headers={"Origin": SHELL_ORIGIN} | PREFLIGHT)
     assert (response.status_code, response.content) == (204, b"")
     assert response.headers[ALLOW] == SHELL_ORIGIN
-    assert response.headers["access-control-allow-headers"] == "authorization"
+    assert response.headers["access-control-allow-headers"] == "authorization, content-type"
 
 
 @pytest.mark.parametrize(
@@ -71,6 +71,30 @@ def test_the_shell_origin_is_not_a_credential(method: str, headers: dict[str, st
     response = api().request(method, "/v1/status", headers={"Origin": SHELL_ORIGIN} | headers)
     assert (response.status_code, response.json()["code"]) == (401, ErrorCode.UNAUTHENTICATED)
     assert response.headers[ALLOW] == SHELL_ORIGIN  # the shell may read why it was refused
+
+
+@pytest.mark.parametrize(
+    ("asked", "status"),
+    [
+        ("authorization, content-type", 204),
+        ("content-type", 204),
+        ("Content-Type, Authorization", 204),
+        ("authorization, x-requested-with", 403),
+        ("cookie", 403),
+        ("content-type, x-dsp-role", 403),
+    ],
+)
+def test_the_preflight_grants_content_type_and_refuses_any_other_header(
+    asked: str, status: int
+) -> None:
+    """C23: the window may send a JSON body; a preflight naming any other header is refused."""
+    headers = {"Origin": SHELL_ORIGIN} | PREFLIGHT | {"Access-Control-Request-Headers": asked}
+    response = api().options("/v1/jobs", headers=headers)
+    assert response.status_code == status, asked
+    if status == 204:
+        assert response.headers["access-control-allow-headers"] == "authorization, content-type"
+    else:
+        assert (response.json()["code"], ALLOW in response.headers) == (ErrorCode.FORBIDDEN, False)
 
 
 def test_the_dev_origin_is_accepted_when_the_app_is_built_with_the_dev_flag() -> None:

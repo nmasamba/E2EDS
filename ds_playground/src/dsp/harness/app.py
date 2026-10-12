@@ -11,6 +11,7 @@ from dsp.contracts.errors import ErrorCode
 
 SHELL_ORIGIN = "tauri://localhost"  # Tauri's custom-protocol origin on macOS and Linux
 DEV_ORIGIN = "http://localhost:1420"  # the renderer's dev server under `tauri dev`
+ALLOWED_HEADERS = ("authorization", "content-type")  # all a page may send; nothing else
 
 
 def _refuse(code: ErrorCode, status: int, message: str) -> JSONResponse:
@@ -22,7 +23,8 @@ def create_app(token: str, port: int, dev: bool = False) -> FastAPI:
 
     A request with no ``Origin`` (the CLI) or with the shell's origin passes the origin rule;
     ``dev`` also admits the `tauri dev` origin. Every other origin is refused. A preflight from an
-    allowed origin is answered before the token check: a browser sends it without the token.
+    allowed origin is answered before the token check (a browser sends it without the token) and
+    grants exactly the authorization and content-type headers.
     """
     app = FastAPI(title="DS Playground harness", docs_url=None, redoc_url=None, openapi_url=None)
     hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
@@ -41,9 +43,11 @@ def create_app(token: str, port: int, dev: bool = False) -> FastAPI:
             and request.method == "OPTIONS"
             and "access-control-request-method" in request.headers
         ):
-            return Response(
-                status_code=204, headers=cors | {"Access-Control-Allow-Headers": "authorization"}
-            )
+            asked = request.headers.get("access-control-request-headers", "").lower().split(",")
+            if not {name.strip() for name in asked if name.strip()} <= set(ALLOWED_HEADERS):
+                return _refuse(ErrorCode.FORBIDDEN, 403, "request header not allowed")
+            allowed = {"Access-Control-Allow-Headers": ", ".join(ALLOWED_HEADERS)}
+            return Response(status_code=204, headers=cors | allowed)
         supplied = request.headers.get("authorization", "")
         if secrets.compare_digest(supplied.encode(), f"Bearer {token}".encode()):
             try:

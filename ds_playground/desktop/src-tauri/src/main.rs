@@ -1,14 +1,14 @@
-//! The desktop shell does four things: spawn the bundled harness, hand the renderer the harness
-//! address and credential, run the native folder picker, and provide a Quit menu that stops the
-//! harness it started. Closing the window only detaches: the harness keeps running. Everything
-//! else is in the harness.
+//! The desktop shell does five things: spawn the bundled harness, hand the renderer the harness
+//! address and credential, run the native folder picker, send the owner's Pause and Cancel from
+//! the menu straight to the harness, and provide a Quit menu that stops the harness it started.
+//! Closing the window only detaches: the harness keeps running. Everything else is in the harness.
 
 use std::{
     env, fs,
     path::{Path, PathBuf},
     process::Command,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc, Arc,
     },
     thread,
@@ -67,6 +67,15 @@ fn post(route: &str, body: Value) -> Result<Value, String> {
     }
 }
 
+/// Send the owner's Pause or Cancel to the harness as a command on whichever job is live. It is
+/// the same path the window's buttons and the phrase take; the answer is the job's actual state,
+/// and the command is in the ledger for the window to show, so the shell keeps nothing.
+fn control(action: &str) -> Result<Value, String> {
+    static SENT: AtomicU64 = AtomicU64::new(0);
+    let id = format!("shell-{}-{}", std::process::id(), SENT.fetch_add(1, Ordering::SeqCst));
+    post("/v1/control", json!({ "command_id": id, "action": action }))
+}
+
 /// Tell the harness which folder the owner picked; the answer names it by handle and label only.
 fn register(purpose: &str, folder: &Path) -> Result<Value, String> {
     post("/v1/grants", json!({ "purpose": purpose, "path": folder }))
@@ -122,14 +131,19 @@ fn main() {
 
     tauri::Builder::default()
         .menu(|app| {
+            let pause = MenuItem::with_id(app, "pause", "Pause", true, Some("CmdOrCtrl+P"))?;
+            let cancel =
+                MenuItem::with_id(app, "cancel", "Cancel run", true, Some("CmdOrCtrl+."))?;
             let quit =
                 MenuItem::with_id(app, "quit", "Quit DS Playground", true, Some("CmdOrCtrl+Q"))?;
-            Menu::with_items(
-                app,
-                &[&Submenu::with_items(app, "DS Playground", true, &[&quit])?],
-            )
+            let menu = Submenu::with_items(app, "DS Playground", true, &[&pause, &cancel, &quit])?;
+            Menu::with_items(app, &[&menu])
         })
         .on_menu_event(move |app, event| {
+            if event.id() == "pause" || event.id() == "cancel" {
+                // The owner's Pause or Cancel: one command to the harness, answered by the ledger.
+                let _ = control(event.id().as_ref());
+            }
             if event.id() == "quit" {
                 // Explicit Quit: the harness this shell started finishes work in progress, then
                 // stops. A harness started elsewhere is left running.
@@ -149,8 +163,9 @@ mod tests {
     use super::*;
     use std::time::Duration;
 
-    /// R26, C23, A44: the shell's own requests turn a picked folder into a grant in a real
-    /// harness, with no path in the answer the renderer receives, and stop that harness on Quit.
+    /// R26, C23, A24, A44: the shell's own requests turn a picked folder into a grant in a real
+    /// harness, with no path in the answer the renderer receives; send Pause and Cancel as
+    /// commands with IDs of their own; and stop that harness on Quit.
     #[test]
     fn a_picked_folder_becomes_a_grant_in_a_real_harness() {
         let home = env::temp_dir().join(format!("dsp-shell-test-{}", std::process::id()));
@@ -168,6 +183,8 @@ mod tests {
         let granted = register("source_root", &folder);
         let missing = register("output_root", &home.join("absent"));
         let unknown = register("everything", &folder);
+        let paused = control("pause");
+        let cancelled = control("cancel");
         let stopping = post("/v1/shutdown", json!({}));
         let exited = (0..100).any(|_| {
             thread::sleep(Duration::from_millis(100));
@@ -188,6 +205,14 @@ mod tests {
             unknown,
             Err("a grant needs an absolute path and a known purpose".into())
         );
+        let paused = paused.unwrap();
+        assert_eq!(paused["operation"], "pause");
+        assert_eq!(paused["state"], "rejected");
+        assert_eq!(paused["because"], "no job is live");
+        let cancelled = cancelled.unwrap();
+        assert_eq!(cancelled["operation"], "cancel");
+        assert_eq!(cancelled["state"], "rejected");
+        assert_ne!(paused["command"], cancelled["command"]);
         assert_eq!(stopping, Ok(json!({ "status": "stopping" })));
         assert!(exited, "the harness did not stop when the shell asked");
         assert_eq!(stopped, Err("the harness did not answer".into()));

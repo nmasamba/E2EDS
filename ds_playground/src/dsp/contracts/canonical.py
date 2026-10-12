@@ -19,3 +19,8 @@ def file_digest(path: Path) -> str:
     """Return the ``sha256:<hex>`` digest of a file without loading it whole."""
     with path.open("rb") as handle:
         return "sha256:" + hashlib.file_digest(handle, "sha256").hexdigest()
+
+
+def pin(obj: dict[str, object]) -> dict[str, object]:
+    """Return the typed reference that pins one object revision by its canonical digest."""
+    return {"id": obj["id"], "revision": obj["revision"], "sha256": digest(canonical_json(obj))}

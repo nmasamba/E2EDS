@@ -1,0 +1,13 @@
+{
+  "id": "A33",
+  "sprint": 3,
+  "os": "darwin-arm64",
+  "fixture": "fixed probes recording 16 GiB, then 2.5 GiB, then 16 GiB of memory on a four-processor host",
+  "commit": "581284c",
+  "expected": "change available RAM/disk/binding after plan creation; race two admissions; resume after inventory expiry; fresh reservations prevent admitted overcommit; stale plan is rechecked; external memory pressure produces truthful failure/checkpoint state, never an unapproved model/provider switch",
+  "actual": "after the plan, memory fell and admission re-proposed the plan from the new observation and refused QUOTA_EXCEEDED; when memory was back the next admission was admitted with a plan made from the latest observation; the race is A08 and resume rechecks are the A25 tests",
+  "outcome": "INSUFFICIENT_EVIDENCE",
+  "limits": [
+    "no model or provider exists to switch and no external memory pressure was applied; the truthful failure under pressure is not shown"
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "id": "A25",
+  "sprint": 3,
+  "os": "darwin-arm64",
+  "fixture": "the deterministic test worker (fixtures/worker.py) on a harness with a movable clock",
+  "commit": "581284c",
+  "expected": "exercise queued, mid-fit, checkpoint drain and already-completed work; fences reject stale success; authorised checkpoint receipts cannot promote; explicit resume uses compatible current revision/grant; cancelled jobs cannot resume",
+  "actual": "a queued job paused and resumed; a checkpoint and a pause raced and both were recorded; the fenced attempt's success was refused after the pause; the checkpoint was kept across resume, which readmitted under the current revision with a new reservation and the advanced fence; the cancelled job could not resume; a finished job refused a pause",
+  "outcome": "INSUFFICIENT_EVIDENCE",
+  "limits": [
+    "nothing promotes until Sprint 8, so a checkpoint receipt had nothing to promote; the test worker is not a fit"
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "id": "A27",
+  "sprint": 3,
+  "os": "linux-aarch64",
+  "fixture": "the deterministic test worker (fixtures/worker.py) on a harness with a movable clock",
+  "commit": "581284c",
+  "expected": "drop message acknowledgement/SSE, retry same ID, reconnect with cursor; exactly one logical command, ordered replay and correct snapshot; same ID/different payload conflicts; lost GUI connection does not cancel job; expired history is explicit",
+  "actual": "the first message went over a raw socket that closed before any answer; the retry with the same ID returned that command's receipt and one command exists; other text under it was IDEMPOTENCY_CONFLICT; an event stream opened and dropped left the job running; events after the cursor replayed in sequence order (['message.received', 'job.pause_requested', 'command.applied']); a cursor beyond the history was answered with an explicit reset and the full history",
+  "outcome": "PASS",
+  "limits": [
+    "no retention window exists yet, so nothing expires; an unknown cursor gets the whole history with the reset flag, which is the explicit answer"
+  ]
+}

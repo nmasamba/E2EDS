@@ -303,3 +303,225 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   `ps`, so tests wait for the harness's instance lock to be free instead; a window close under Xvfb is asked
   of the window manager with `wmctrl`, because an Alt+F4 chord sent with xdotool did not close it. The gate
   now takes about 50 s on macOS: the CLI and lifecycle tests start real harness processes.
+
+## Sprint 3
+
+- **2026-10-08 — S3 — DECISION — job record and fence (3.1)** — a job is an app-owned `Job` 0.1.0 object whose
+  every transition is a new immutable revision committed with one `job.*` event in one ledger transaction
+  under the job aggregate's compare-and-swap; the event body carries the action and its input, so the
+  pure state machine (`domain/jobs.py`) replays a job's events to the stored job. One integer `fence`
+  serves as the dispatch epoch: lease expiry, pause and cancel each advance it. A result commit needs the
+  live attempt (its attempt number and the fence it was leased under) and a state that accepts results;
+  pause and cancel leave those states as they advance the fence, so a fenced attempt can still report that
+  it stopped (drain evidence) but never commit a result. Alternative: event-sourced jobs with no object
+  row, which would make every list and capacity check a scan of the event log.
+- **2026-10-08 — S3 — FINDING — a redundant fence clause (3.1)** — the explicit check that the lease's fence
+  still equals the job's fence survived no mutation test: every fence advance either clears the lease or
+  leaves the result-accepting states, so the attempt-and-state check already enforces it. Removed, as
+  Sprint 2 removed its redundant guard; the state check was then mutated and is caught by the A07 tests.
+- **2026-10-08 — S3 — DECISION — lease expiry is reconciled on touch (3.1)** — a lease that has run out is
+  expired, and the fence advanced, by the next coordinator operation on that job (a lease request, a
+  heartbeat, a report, a control or a read); the expiry counts as one transient failure, so three silent
+  attempts end in `failed`. Consequence until the Sprint 4 runner brings a reconciler: a job whose worker
+  died is shown as running until something touches it. Alternative: a timer thread in the harness; not
+  needed by any test or flow this sprint.
+- **2026-10-08 — S3 — ASSUMPTION — the worker runs outside the harness (3.1)** — the only workload is the
+  deterministic test worker in `fixtures/worker.py`, a separate process started by the tests, by
+  `make e2e`, or by the owner with the pasted command; the harness never spawns it, and the frozen
+  sidecar does not carry test fixtures. A queued job therefore waits for a worker. The sandboxed runner of
+  Sprint 4 is the first worker the harness dispatches itself.
+- **2026-10-08 — S3 — ASSUMPTION — worker routes are native only (3.1)** — `lease`, `heartbeat` and `report`
+  refuse a request with an `Origin` header, like `POST /v1/grants`: the window may queue and control jobs
+  but is never a worker. A stale or refused report is recorded on the job as `job.result_rejected` with its
+  attempt, fence and the refusing code, so a fenced worker's return is visible (A04), then refused.
+- **2026-10-08 — S3 — ASSUMPTION — test harness on a movable clock (3.1)** — leases are 60 s and tests must
+  not wait: the `harness` fixture serves the real app from the test process on a loopback socket with a
+  clock the test moves forward (the clock is now a parameter of `workspace.mount`), and worker processes
+  find it through `harness.json` like any harness. Heartbeats are the worker's real time (`--heartbeat-
+  seconds`, default 15; 0 makes a silent worker). No production code knows it is under test.
+- **2026-10-08 — S3 — ASSUMPTION — `inconclusive` is not produced yet (3.1)** — nothing in this sprint can
+  leave a job's evidence unresolved (no external execution), so the schema's state list omits it; the
+  Sprint 4 runner adds it with the first path that needs it. `Job` 0.1.0 is finalised at the end of this
+  sprint; prompts 3.2 and 3.5 add fields to the same file before anything is released.
+- **2026-10-08 — S3 — DECISION — admission records (3.2)** — `POST /v1/jobs` is admission: the caller
+  supplies the operation, a logical idempotency key and the task; everything else is derived. One ledger
+  transaction on a single `admission:host-local` aggregate commits the suite `ExecutionRequest` 0.5.0
+  (`planning_only: false`, `state: admitted`, workload, binding and plan pinned by digest, authorisation
+  context the trusted principal), an app-owned `Reservation` 0.1.0 (cpu, memory, scratch, external charge
+  zero) and the queued `Job`. Two requests racing for the last reservation both read the same aggregate
+  sequence, so one commit conflicts, reloads what is held and is refused (A08). A refusal other than
+  missing authority is recorded as a rejected request with its reason; a missing scope is refused before
+  anything is read or written. The reservation is released in the same commit as the job's terminal
+  transition.
+- **2026-10-08 — S3 — DECISION — the test job's WorkloadSpec arrives with admission, not 3.5 (3.2)** — an
+  admitted ExecutionRequest must pin a workload revision by digest, and a conversation command must
+  reference one, so `application/workloads.py` defines revision 1.0.0 now (`workload-test-job`, the
+  smallest schema-valid WorkloadSpec: `data_analysis`, `exploratory_analysis`, `headless`, the orders
+  fixture's three field roles, 1 CPU, 1 GiB, 1 GiB scratch, 600 s, zero charge). It is a planning record
+  with null evidence references; it is stored with the first admission and read back as the current
+  revision; prompt 3.5 adds revisions. The plan now plans for it, so Sprint 2's `profile_draft` is gone;
+  the plan's text is unchanged because the resources are the same. The suite schema forces
+  `conversational` workloads to name an assistant binding, which does not exist until Sprint 5, hence
+  `headless`; the conversation references the workload, not the other way round.
+- **2026-10-08 — S3 — ASSUMPTION — the code task behind the test job (3.2)** — a non-planning
+  ExecutionRequest must reference a `source_code_task_ref` with a digest. No CodeTask object exists before
+  Sprint 4, so the reference is `code-task-test-worker` 1.0.0 with the digest of the task itself (its
+  cues and seconds): the declared work, content-addressed. Sprint 4 replaces it with the hashed CodeTask.
+- **2026-10-08 — S3 — DEVIATION — an unqualified local option may run the test job (3.2)** — the suite
+  admits only a qualified, authorised binding. The local draft binding has no qualification report and
+  its isolation is unknown until Sprint 4, so a strict reading would admit nothing this sprint. Admission
+  therefore refuses `blocked` (no family, paid at zero, no capacity) and `unknown` (nothing observed)
+  dispositions and admits `eligible` or `unqualified` ones for the local test worker; the plan it pins
+  records the disposition and the plan outcome stays INSUFFICIENT_EVIDENCE. The gate for real
+  workloads returns to "qualified only" with the runner's qualification evidence.
+- **2026-10-08 — S3 — DECISION — a stale plan is rechecked by proposing a fresh one (3.2)** — admission
+  pins the latest WorkflowPlan only when it names the current workload revision and the latest
+  HardwareSnapshot; otherwise it proposes a fresh plan from the current inputs (which supersedes the
+  stale one) and pins that, then applies the rule table and the reservation sum to the latest snapshot
+  (A33). A plan is advice; capacity is always rechecked at admission.
+- **2026-10-08 — S3 — DECISION — typeless suite objects are stored under an explicit kind (3.2)** — the
+  ledger keyed objects by their `type` field; `WorkloadSpec` (like `ComputeBinding`, `ReleaseManifest`
+  and `ServiceSpec`) has none and forbids unknown fields. `Ledger.commit` now also accepts
+  `(kind, object)` pairs. Alternative: an app envelope around suite objects, which would hash and store
+  something other than the suite object.
+- **2026-10-08 — S3 — FINDING — a redundant admission guard (3.2)** — an explicit "no snapshot" refusal
+  survived no mutation: the planner's rule table already judges a missing observation as `unknown`,
+  which admission refuses. Removed; the remaining eleven admission guards each fail a test when broken.
+- **2026-10-08 — S3 — DECISION — messages and receipts (3.3)** — `POST /v1/conversations/{id}/messages`
+  reads the raw body, refuses more than 16 KiB before parsing it (declared length first, then the bytes
+  that arrive, so a chunked body is measured too), accepts exactly `client_message_id`, `text` and
+  `expected_revision` as strings, and commits a suite `ConversationCommand` 0.3.0 (`received`) with its
+  `message.received` event on the `conversation:<id>` aggregate before answering. The receipt names the
+  command and its receipt event; the command's `receipt_event_ref` carries the event body's digest. The
+  same ID again returns the same receipt and writes nothing; the same ID with other text is an
+  IDEMPOTENCY_CONFLICT. Replay is the existing `/v1/events` cursor. The first message of a conversation
+  creates an app-owned `Conversation` 0.1.0 in the same commit; the command pins it and the current
+  workload by digest.
+- **2026-10-08 — S3 — ASSUMPTION — operation classification without an assistant (3.3)** — the operation
+  is derived on the server by exact match on the six control phrases (case, surrounding whitespace and a
+  trailing full stop or exclamation mark ignored); anything else is an `instruction`. With no assistant
+  bound until Sprint 5, an instruction is recorded as received and then `rejected` with
+  ASSISTANT_UNAVAILABLE, which is the truthful answer; quoted or embedded phrases are instructions, so
+  text from a document never becomes a control. Prompt 3.5 adds the deterministic requirement-change
+  grammar in front of the assistant.
+- **2026-10-08 — S3 — ASSUMPTION — command state changes are revisions (3.3)** — a command's state moves
+  by a successor revision (`2.0.0`, `3.0.0`) with a `command.<state>` event, never in place, so the
+  activity trail can show the receipt and each later state from events alone.
+- **2026-10-08 — S3 — DECISION — the fast path (3.4)** — `application/controls.py` is the one path for
+  the exact phrases, the window's buttons (`POST /v1/jobs/{id}/control`) and the native menu
+  (`POST /v1/control`, which acts on the live job): each becomes a ConversationCommand whose receipt is
+  committed first, then the coordinator transition, then the command's end state (`applied`,
+  `superseded` when the job had already settled it, `rejected` with the code when the state refuses it).
+  The path reads and writes the ledger only; no model and no worker is on it, which is what D18 asks and
+  what A24 measures. Pause advances the fence (the dispatch epoch) at once and the lease route refuses a
+  paused or pausing job; the worker learns of the pause at its next heartbeat, reports that it stopped,
+  and only then is the job `paused`. The command ID is the client's idempotency key: a repeated ID is
+  answered with the same receipt and the job as it is now, never applied twice.
+- **2026-10-08 — S3 — DECISION — resume is a readmission on the admission aggregate (3.4)** — resume
+  rechecks capacity against the latest observation less what is held, holds a new reservation (pause
+  released the old one) and sets the job's workload reference to the current revision, in one commit on
+  the admission aggregate so a race for capacity is serialised. A job transition that raced it loses on
+  the Job revision's immutability (the same successor revision cannot be written twice), which acts as a
+  per-object compare-and-swap; the loser reloads and reapplies. A refused resume is recorded as
+  `admission.rejected` naming the job, which stays paused. A cancelled job cannot resume (`CANCELLED`);
+  resuming a running job is refused.
+- **2026-10-08 — S3 — ASSUMPTION — one local conversation, and what a phrase names (3.4)** — the local
+  build has one conversation, `conversation-local`, which the buttons and the menu use. A phrase names no
+  job: with exactly one live job (queued, running, pausing, paused, cancelling) it acts on that job; with
+  none it is rejected ("no job is live"); with several it ends `needs_clarification`, as the suite asks
+  for ambiguity, and the job's own controls remain available. Found by the A24 measurement, whose first
+  version kept a second hung job alive as load and watched the phrase pause the wrong one.
+- **2026-10-08 — S3 — DECISION — the preflight grants two headers (3.4)** — the shell origin's preflight
+  now allows exactly `authorization` and `content-type`, so the window can send a JSON body; a preflight
+  naming any other header is refused with 403 and no CORS grant.
+- **2026-10-08 — S3 — FINDING — a checkpoint is only recorded, never resumed from (3.4)** — the worker
+  may post a durable checkpoint digest, which is kept across pause and resume and shown with the job;
+  the test worker never writes one and nothing restores from one until the Sprint 4 runner. During a
+  cancel no checkpoint is taken.
+- **2026-10-08 — S3 — DEFECT — a type error reached CI (3.2)** — the 3.2 push failed `mypy` on both
+  runners (the desktop jobs passed): the guard removed after the mutation check left `needs` with a
+  possibly-missing snapshot, and the type check was not rerun before the commit. Fixed in the 3.3 commit;
+  from here every commit chain ends with lint, types and boundaries.
+- **2026-10-08 — S3 — FINDING — the A24 measurement is slow (3.4)** — twenty pause and twenty cancel
+  trials, each with its own hung worker process under every processor saturated, take about 150 s on
+  this Mac; the test is `slow`, so it is in the gate and out of the inner loop.
+- **2026-10-08 — S3 — DECISION — requirement revisions (3.5)** — a change instruction becomes a typed
+  JSON-Patch-style list on the WorkloadSpec (`proposed_patch` on the command record), an impact preview
+  (changed paths, the evidence kinds that depend on them through a small dependency graph, the stale
+  items of jobs on this revision, the live jobs to hold), and a new immutable revision committed on the
+  `workload:<id>` aggregate with a `workload.revised` event. The expected revision the message named must
+  be the current one (REVISION_CONFLICT otherwise), and two edits that read the same revision are
+  serialised by the aggregate so the second conflicts. Old revisions and the Job records that point at
+  them are untouched; the stale marks live in the revision event. Live jobs on the old revision are paused
+  after the revision commits, so the owner's explicit resume readmits them under the new one (a crash
+  between the two leaves a job on the old revision until its next resume, which readmits anyway).
+- **2026-10-08 — S3 — ASSUMPTION — the change grammar stands in for the assistant (3.5)** — with no
+  assistant until Sprint 5, three deterministic instructions are understood: `exclude [the] field <name>`
+  (keywords in any case, the field as typed; only a currently allowed predictor), `set [the] budget to
+  <n>` and `change|set|replace [the] evaluation …`. The last two are typed on the owner's paths and
+  refused with REQUIRES_CONFIRMATION, since budget and evaluation changes need the owner's own action
+  (which does not exist yet as a UI). Anything else is an instruction. The assistant will propose patches
+  into the same validation and application path.
+- **2026-10-08 — S3 — ASSUMPTION — the dependency graph (3.5)** — three edges are enough for the sprint's
+  workload: a feature change invalidates results and checkpoints; a resource change, reservations; an
+  evaluation change, evaluations. The revision also makes the latest plan stale, so the next admission
+  re-proposes it (A33) and pins the new `requirement_revision`.
+- **2026-10-08 — S3 — DECISION — `GET /v1/workload` (3.5)** — the window reads the current revision to
+  send as `expected_revision` and to show the fields; it is the current WorkloadSpec as stored.
+- **2026-10-08 — S3 — DECISION — composer, activity and controls in the window (3.6)** — the renderer
+  grew four pieces and no store: `Controls` (Pause or Resume, and Cancel run, in the header, each press one
+  command with a fresh ID on `POST /v1/jobs/{id}/control`, answered with the job's actual state), the
+  `Composer` (fixed above the resource bar; it keeps its draft and its message ID until the harness has the
+  message, so a retry after a lost answer is the same message; `expected_revision` is derived from the
+  events), `Run` (the one workload: "Start the hung test job", which admits the job and shows the worker
+  command to run) and the `Activity` trail, a pure projection of committed events: what the owner said with
+  the state each command reached, every job transition but heartbeats, revisions, refused admissions and
+  the workspace's own events. `trail.ts` reads a job's state only from the coordinator's fourteen event
+  types, so a spoofed type with a `state` field changes nothing. Plain CSS; axe clean on every page state
+  the tests reach; Pause, Resume and Cancel are pressed with the keyboard alone in the renderer tests.
+- **2026-10-08 — S3 — DECISION — the native menu's Pause and Cancel (3.6)** — two menu items, `Pause`
+  (CmdOrCtrl+P) and `Cancel run` (CmdOrCtrl+.), send `POST /v1/control` from the Rust side the way Quit sends
+  the shutdown: no renderer in the loop, so they work while the window is busy, and the command is in the
+  ledger for the window to show. The command ID is the shell's process ID and a counter. There is no
+  Resume item: resume is the header button or the phrase, an explicit act on a visible paused job.
+- **2026-10-08 — S3 — FINDING — what the built-app test reads on each OS (3.6)** — on Linux the window
+  starts the hung job, the real shortcuts pause and cancel it, and the trail is read through WebDriver,
+  again from a second launch. On macOS, with no WebDriver for WKWebView, the same requests the window and
+  the menu send are made against the bundled harness while the app is open, and the states are read back
+  after a relaunch; the menu items themselves are exercised by the Rust test's `control` calls against a
+  real harness. The owner's manual run on macOS remains the check of the real menu.
+- **2026-10-08 — S3 — DEFECT — two tests assumed room for a second job (3.6)** — the Linux runner's CPU
+  quota admits one test job at a time, so a controls test and the A26 test, which admit two, failed in CI
+  after the 3.4 push (every other job passed). They now fix the machine with the same probes the A08 test
+  uses. Tests that need capacity must say so rather than inherit the host's.
+- **2026-10-08 — S3 — FINDING — no retention exists, so D06 holds by keeping everything (3.7)** — the
+  ledger deletes nothing: idempotency records, commands, result keys and events are kept for ever, which
+  meets D06's seven-day retry window trivially and is why an unknown cursor never means expired history.
+  A retention policy (and the explicit expired-cursor snapshot it would need) is later work.
+- **2026-10-08 — S3 — DECISION — evidence outcomes for Sprint 3 (3.7)** — by the Sprint 2 rule (PASS only
+  when the run showed the whole scenario as the suite words it): A03, A24 and A27 are PASS at local scope;
+  A04, A07, A08, A25, A26 and A33 are INSUFFICIENT_EVIDENCE because each names a part whose objects do not
+  exist yet (release pointers, a provider that keeps charging, paid calls and late receipts, promotion,
+  the evaluation owner and production, a model or provider to switch). Every part that could be exercised
+  passed; the records say which parts could not be.
+- **2026-10-08 — S3 — DECISION — the integrity review and what was done with it (3.7)** — the one
+  `integrity-reviewer` run (as a general-purpose agent carrying the reviewer's own instructions, because
+  the project's agent file is not in this session's registry; about 240k tokens) returned REVIEW: PASS with
+  two should-fix findings and six notes. Landed: (1) the hold after a requirement revision could refuse
+  (the held job had ended) and leave the revision's command `received` and the retry rejected; the hold is
+  now best effort and the command settles applied, with a test that forces the refusal. (2) The A27 SAT
+  claimed a dropped acknowledgement it did not perform; it now sends the first message over a raw socket
+  that closes before any answer. (3) A retry racing its own commit was recorded as a rejection; the
+  refusal is re-checked against the committed key. (5) A task longer than the workload's wall time
+  (`seconds` up to 3600 against 600) was admitted; admission now refuses it. (6) A chunked message body
+  was buffered whole before the size check; it is now bounded as it streams. (7) `readmit` and the
+  command path trusted their caller; both now check the context's scopes (`job:submit`;
+  `workload:interact` and `job:<action>`). (8) The admission compare-and-swap was proven only by thread
+  timing; a ledger that interposes a second admission between the read and the commit now proves it
+  deterministically. Logged, not fixed: (4) a worker's reported `charge_minor` is added to the job's
+  incurred charge without comparison to the reservation's approved cap of zero; the test worker reports
+  zero and cost settlement is out of this sprint's scope, so the record stays truthful but unflagged until
+  Sprint 4 brings the first real cost. Each new guard was mutation-checked.
+- **2026-10-08 — S3 — FINDING — no wall-time limit runs yet (3.7)** — admission refuses a task longer than
+  the workload's 600 s, but nothing stops a heartbeating attempt that overruns it; the limit is enforced
+  by the Sprint 4 runner.

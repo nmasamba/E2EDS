@@ -3,7 +3,7 @@
   "sprint": 2,
   "os": "darwin-arm64",
   "fixture": "built desktop bundle on a temporary profile",
-  "commit": "2c81168",
+  "commit": "581284c",
   "expected": "launch without model or terminal, select scoped folders, inspect the graph by keyboard, pause during busy work, close, quit, crash, sleep and reopen; one authenticated harness, history preserved, workers reconciled, renderer confined",
   "actual": "the window's own first discovery reached the bundled harness; a second instance attached to the same harness; the harness outlived a killed shell; reopen replayed the same history without repeating discovery; a crashed harness was replaced with the history intact; the stop request ended the harness",
   "outcome": "INSUFFICIENT_EVIDENCE",

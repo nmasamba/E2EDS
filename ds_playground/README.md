@@ -55,6 +55,18 @@ uv run dsp plan
 uv run dsp stop
 ```
 
+## Jobs, messages and controls (Sprint 3, in progress)
+
+The window and the harness now run durable jobs. The only workload is the deterministic test worker: queue
+it with "Start the hung test job" in the window (or `POST /v1/jobs` through the harness), then run the
+worker against your profile; pause, resume and cancel from the header, the native menu (Pause: Cmd/Ctrl+P,
+Cancel run: Cmd/Ctrl+.) or by typing `pause now`, `resume`, `cancel this run` or `status` in the composer;
+change a requirement with `exclude field region`. Every receipt and state appears in the activity trail.
+
+```bash
+uv run python -m fixtures.worker --job <job id from the window>
+```
+
 ## Desktop shell (Sprint 2, in progress)
 
 A native window on macOS and Linux that starts or reconnects to the local harness and shows the workspace as
