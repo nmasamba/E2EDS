@@ -796,3 +796,9 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   reason the coordinator recorded: a failure's `<kind>: <message>`; a refused late result reads
   "<outcome> result refused" with that report's own attempt and fence and the refusing code. Tested
   once in Vitest and once in Playwright against a real harness running real sandboxed jobs.
+- **2026-10-12 — S4 — DEFECT — a stopped server left its background work running (4.5, fixed)** — the
+  reconcile tick and dispatcher threads are not daemons (a quit drains), and they run while the server
+  has not been asked to exit. A server that stopped any other way (in a test, `run` replaced by a stub
+  that returns at once) left them running, and the test process never exited after reporting its
+  results (seen twice as a gate that did not end). `serve` now marks the server as exiting whenever
+  `run` returns, so the background work ends with it however it ended.
