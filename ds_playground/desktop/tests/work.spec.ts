@@ -69,7 +69,7 @@ test("A27, R15: the composer's receipts, and a message the harness never had, ar
   ]);
 });
 
-test("A24, A25, A26, R15: pause, change, resume and cancel the hung job by keyboard; the trail survives a reload", async ({
+test("A24, A25, A26, R15: pause and cancel by shortcut, change, resume by keyboard; the trail survives a reload", async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -85,8 +85,7 @@ test("A24, A25, A26, R15: pause, change, resume and cancel the hung job by keybo
   await expect(develop(page)).toContainText("◐ Running", { timeout: 30_000 });
   await expect(page.getByText(`job ${job!.slice(-6)} running`)).toBeVisible();
 
-  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-  await pressByKeyboard(page, "Pause");
+  await page.keyboard.press("ControlOrMeta+p");
   await expect(activity(page)).toContainText("You: pause · applied");
   await expect(develop(page)).toContainText("◆ Waiting for you · paused", { timeout: 30_000 });
   await expect.poll(() => first.exitCode, { timeout: 30_000 }).toBe(0);
@@ -108,8 +107,8 @@ test("A24, A25, A26, R15: pause, change, resume and cancel the hung job by keybo
   await expect(develop(page)).toContainText("◐ Running", { timeout: 30_000 });
   await expect(activity(page)).toContainText(`Job ${job!.slice(-6)}: running (attempt 2, fence 1)`);
 
-  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-  await pressByKeyboard(page, "Cancel run");
+  await page.getByRole("textbox", { name: "Message" }).focus();
+  await page.keyboard.press("ControlOrMeta+.");
   await expect(activity(page)).toContainText("You: cancel this run · applied");
   await expect(develop(page)).toContainText("◇ Inconclusive · cancelled", { timeout: 30_000 });
   await expect.poll(() => second.exitCode, { timeout: 30_000 }).toBe(0);

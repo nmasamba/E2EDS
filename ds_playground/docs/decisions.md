@@ -558,3 +558,12 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   line only when the harness did not answer, since every admission refusal is itself an event. The
   folder list keeps its own alert: a refused grant is not an event. Tested once in Vitest (`activity`)
   and once in Playwright (composer, buttons, a dropped request, Run and a refused admission).
+- **2026-10-12 — S4 — DECISION — the Pause and Cancel chords are handled in the renderer too
+  (housekeeping)** — for the open macOS Cancel run defect. A document `keydown` handler in the window
+  sends the same command as the header buttons for CmdOrCtrl+P (pause) and CmdOrCtrl+. (cancel) on the
+  live job, and calls `preventDefault`, so one press sends one command whichever of the webview and the
+  native menu sees it first. Cmd is the modifier on macOS, Ctrl elsewhere; Shift or Alt with it is not a
+  shortcut. The native menu items stay, unchanged (`CmdOrCtrl+.` for Cancel run), for the mouse and for
+  when no job is live (the menu's command is then refused, "no job is live", which the trail shows).
+  Playwright presses both chords on macOS (Meta) and Linux (Ctrl) against a real harness. Whether the
+  built app on macOS delivers Cmd+. to the webview is not known until the owner presses it at the gate.
