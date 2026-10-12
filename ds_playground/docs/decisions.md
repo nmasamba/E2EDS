@@ -812,3 +812,12 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   that wraps the OS's refusal (urllib's `URLError` has no errno) lost the code in the runner's message;
   the runner now reports the innermost `OSError` with an errno ("URLError: [Errno 61] Connection
   refused"), still without its path.
+- **2026-10-12 — S4 — DECISION — bubblewrap's user namespaces on CI's Ubuntu 24.04 (after CI run
+  38305340576)** — Ubuntu 24.04 restricts unprivileged user namespaces through AppArmor unless a profile
+  allows them, which would stop bubblewrap on that runner (every sandboxed task ended with status 1
+  there; the inferred cause is this restriction, to be confirmed by the next CI read). `tools/
+  bwrap_apparmor.sh` adds a profile that allows them to `/usr/bin/bwrap` alone, as Ubuntu's own
+  profiles do for the programs that need them, rather than lifting the restriction for every program,
+  and then builds the smallest sandbox bubblewrap can make, so a failure names its cause. It changes
+  only the throwaway CI runner. A user on Ubuntu 24.04 needs the same profile for the Linux sandbox to
+  work: a distribution matter, logged.
