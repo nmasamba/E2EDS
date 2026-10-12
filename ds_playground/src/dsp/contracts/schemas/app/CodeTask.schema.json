@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://dsplayground.dev/schemas/app/0.1.0/CodeTask.schema.json",
   "title": "CodeTask — app-owned contract",
-  "description": "Declared work for one job (../contracts.md, CodeTask): the source by digest, the parent revision, the requirement revision, the scoped read-only inputs and the outputs it may write, the runner environment's lock, the resource caps and the permissions it asks for. Python and SQL run only in the sandboxed runner; test_worker is the deterministic test worker's cues, never executed by the runner. The source is untrusted; the sandbox enforces the policy.",
+  "description": "Declared work for one job (../contracts.md, CodeTask): the source by digest, the parent revision, the requirement revision, the scoped read-only inputs and the outputs it may write, the runner environment's lock, the resource caps and the permissions it asks for. Python and SQL run only in the sandboxed runner, and a SQL task's last statement is its one output; test_worker is the deterministic test worker's cues, never executed by the runner. The source is untrusted; the sandbox enforces the policy.",
   "type": "object",
   "additionalProperties": false,
   "$defs": {
@@ -68,6 +68,10 @@
     {
       "if": { "properties": { "language": { "enum": ["python", "sql"] } } },
       "then": { "properties": { "outputs": { "minItems": 1 } } }
+    },
+    {
+      "if": { "properties": { "language": { "const": "sql" } } },
+      "then": { "properties": { "outputs": { "maxItems": 1 } } }
     }
   ]
 }

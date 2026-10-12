@@ -618,3 +618,47 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   may not share a name; the source must already be in the content store; a Python or SQL task that declares
   no output is malformed and refused before anything is written. Reads and writes beyond the declaration
   at run time are the runner's and the sandbox's to stop (4.2 to 4.4).
+- **2026-10-12 — S4 — DECISION — the runner and its one channel (4.2)** — the sandbox adapter lays out
+  an attempt directory (`task.json`, the CodeTask; `source`; the declared inputs under `inputs/`; an empty
+  `scratch/`) and starts `<runner env>/bin/python -I -B -X utf8 -m dsp_runner <attempt>/task.json` by
+  `posix_spawn` in a new session, with a fixed argument vector and an environment of `HOME` and `TMPDIR`
+  set to scratch, nothing else. The runner checks the source and inputs against their digests, lowers its
+  own CPU-time (hard limit one second above the soft) and open-file limits, which an unprivileged process
+  cannot raise again, then runs the code in its own interpreter in scratch (a separate process would need
+  the process permission the binding withholds). It writes `result.json` (app RunnerResult 0.1.0: null or
+  a failure kind and a message of at most 500 characters) and, on success, the declared outputs to its
+  standard output as one tar stream; the task's own output goes to `/dev/null`. The adapter reads that
+  channel bounded by the output cap plus 64 KiB of framing (more kills the run), accepts only regular
+  entries with declared names, refuses outputs whose sum exceeds the cap, validates the result, hashes
+  each output itself, kills the process group at the wall-clock limit and again after the runner ends,
+  and names what it saw (`timeout`, `cpu_limit`, `output_limit`, `killed`, `crash`, `result_invalid`).
+  Memory and scratch limits, reads and network are the OS adapters' (4.3, 4.4). Alternatives: outputs
+  read from a host-visible scratch folder, which on Linux would leave scratch without a kernel-enforced
+  size; a JSON channel with encoded outputs, a third bigger.
+- **2026-10-12 — S4 — DECISION — an audit hook detects, the sandbox refuses (4.2)** — the runner adds a
+  Python audit hook that records every open outside the declaration (reads outside the runner
+  environment, the base Python and the attempt; writes outside scratch, symlinks and `..` resolved), so
+  the task fails as `undeclared_read` or `undeclared_write` even when its code swallows the error; a
+  recorded refusal outranks the crash it caused. SQL runs on a DuckDB connection that loads the inputs as
+  tables named as declared, then disables external access and extension loading and locks its
+  configuration; DuckDB's refusals are `undeclared_access`. Neither is the boundary: code can bypass
+  both, and the containment tests (4.6) show the OS refusing what they miss.
+- **2026-10-12 — S4 — DECISION — the runner environment (4.2)** — `make runner-env` runs `uv sync --frozen
+  --no-dev --no-editable --compile-bytecode --reinstall-package dsp` into `DSP_RUNNER_ENV` (default
+  `.runner-env`; `/tmp/runner-env` in the read-only Linux container): the lock's runtime set and the
+  project as a built wheel, byte-compiled so imports write nothing, in 0.4 s. `test-fast`, `sat` and
+  `verify` rebuild it, CI's verify job now runs `make verify`, and the `runner_env` fixture refuses an
+  environment whose runner or contracts differ from the source. Its lock digest goes on the CodeTask when
+  the harness dispatches (4.5).
+- **2026-10-12 — S4 — FINDING — the runner environment carries the whole runtime set (4.2)** — it holds
+  every runtime dependency of the project (FastAPI, uvicorn and httpx included), not only what the runner
+  imports (DuckDB, and the standard library). A narrower set needs its own lock group; nothing needs it
+  yet, and the sandbox, not the package list, is the boundary.
+- **2026-10-12 — S4 — FINDING — the runner validates nothing itself (4.2)** — importing jsonschema's format
+  checker costs 0.5 s (`rfc3987_syntax` alone), on every task. Validation inside the runner would prove
+  nothing, since that process also runs the untrusted code, so the trusted side validates: the CodeTask
+  at admission and the RunnerResult when the adapter reads the channel. Runner start-up fell from 0.65 s
+  to 0.07 s.
+- **2026-10-12 — S4 — DECISION — a SQL task has exactly one output (4.1 schema, amended in 4.2)** — its
+  last statement's rows are written as CSV to the one declared output; CodeTask 0.1.0 says so before
+  anything was released.

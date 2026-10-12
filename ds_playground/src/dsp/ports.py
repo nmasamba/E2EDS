@@ -50,6 +50,19 @@ class Store(Protocol):
         """Return the stored file for a digest."""
 
 
+class Runner(Protocol):
+    """Runs one CodeTask confined by the OS sandbox and reports what happened (B26)."""
+
+    def run(
+        self, task: dict[str, Any], source: Path, inputs: Mapping[str, Path], work: Path
+    ) -> dict[str, Any]:
+        """Run the task on its source and declared inputs in the fresh attempt directory ``work``.
+
+        Return the outcome, the failure's kind and message, and the declared outputs, each staged
+        under ``work/out`` with the digest and size taken here: nothing the task wrote is trusted.
+        """
+
+
 class Exporter(Protocol):
     """Staged, verified export into a new version directory (D23)."""
 

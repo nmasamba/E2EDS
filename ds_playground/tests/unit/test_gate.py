@@ -22,6 +22,25 @@ def test_boundary_check_flags_forbidden_imports(tmp_path: Path) -> None:
     assert "application may not import subprocess" in found[0]
 
 
+def test_b26_the_runner_may_import_only_the_contracts(tmp_path: Path) -> None:
+    """B26, AGENTS.md §4: dsp_runner imports dsp.contracts and nothing else of the project.
+
+    Every spelling is caught: a module, a name from the package, and a process start.
+    """
+    (tmp_path / "dsp").mkdir()
+    (tmp_path / "dsp_runner").mkdir()
+    (tmp_path / "dsp_runner" / "__main__.py").write_text(
+        "import subprocess\nimport dsp.domain.jobs\nfrom dsp import harness\n"
+        "from dsp.contracts import schemas\nfrom dsp.contracts.canonical import digest\n"
+    )
+    found = check_boundaries.violations(tmp_path)
+    assert [line.split(": ", 1)[1] for line in found] == [
+        "dsp_runner may not import subprocess",
+        "dsp_runner may not import dsp.domain.jobs",
+        "dsp_runner may not import dsp.harness",
+    ]
+
+
 def test_the_real_tree_respects_boundaries() -> None:
     """AGENTS.md §4: the shipped source has no forbidden import."""
     assert check_boundaries.violations(ROOT / "src") == []

@@ -98,10 +98,11 @@ def test_b26_prior_versions_still_read_under_their_own_schema() -> None:
 
 
 def test_b26_code_tasks_conform_and_declare_their_outputs() -> None:
-    """B26: Python and test-worker CodeTasks conform; Python must declare an output, plain names."""
+    """B26: Python, SQL and test-worker CodeTasks conform; plain names; SQL has one output."""
     workload = base_workload(CTX)
     python = code_task(PYTHON, workload)
     schemas.validate("CodeTask", python)
+    schemas.validate("CodeTask", code_task(PYTHON | {"language": "sql"}, workload))
     assert python == code_task(PYTHON, workload)  # the same declaration is the same CodeTask
     assert (python["requirement_revision"], python["limits"]) == ("1.0.0", envelope(workload))
     worker = code_task({"cues": ["sleep"], "seconds": 1}, workload)
@@ -113,6 +114,8 @@ def test_b26_code_tasks_conform_and_declare_their_outputs() -> None:
         PYTHON | {"inputs": [{"name": "a/b.csv", "sha256": SHA}]},
         PYTHON | {"limits": {"memory_mib": 0}},
         PYTHON | {"permissions": ["shell"]},
+        PYTHON | {"language": "sql", "outputs": []},
+        PYTHON | {"language": "sql", "outputs": ["a.csv", "b.csv"]},
     ):
         refused("CodeTask", code_task(bad, workload))
     for caller_set in (

@@ -5,7 +5,7 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 ## Now
 
 - **Sprint:** 4 — M1 sandboxed native runner (B26; A28; R16; C14, C18; D01, D21).
-- **Claimed prompt:** 4.2 (runner entry point and environment).
+- **Claimed prompt:** 4.3 (macOS Seatbelt adapter).
 - **Branch:** `sprint-4-runner`, from `main` at `0cb7674` (PRs #1 to #7 merged).
 
 ## Done
@@ -249,6 +249,26 @@ Code commit `2c81168`; the evidence and this file were committed after it.
   (11): input captured, input names unique, source stored, limits within the envelope, no permission,
   caller sets only supplied fields, language Python or SQL, policy ties assurance and trust, Python
   declares an output, version dispatch, idempotency compares the payload.
+
+## Prompt 4.2 — runner entry point and environment (2026-10-12)
+
+- `src/dsp_runner` (`python -m dsp_runner <attempt>/task.json`), the shared process core
+  `adapters/sandbox.py` (layout, fixed argv, scrubbed environment, wall clock, bounded tar channel),
+  `Runner` in `ports.py`, app `RunnerResult` 0.1.0, `make runner-env` (0.4 s, rebuilt by `test-fast`,
+  `sat`, `verify`; CI's verify job runs `make verify`). The boundary checker scans `src/dsp_runner`
+  (contracts only, no `subprocess`) and now reads `from dsp import x` as `dsp.x`. Not reachable from the
+  application; no sandbox yet.
+- Tests: `tests/integration/test_runner.py` (8, real processes from the runner environment): Python and
+  SQL outputs; undeclared reads (plain, swallowed, failing, SQL) and writes (path, `..`, symlink);
+  output at, over and far over the cap; an exception, an exit status, a missing output, no result, three
+  forged channels, a source that differs from its digest; the wall-clock limit kills the task and a
+  process it started. `test_gate.py` +1 (the runner's imports), contract test +2 SQL cases. `make
+  test-fast` 297 passed on macOS. Guards mutation-checked (19): the runner's allowed imports, `from dsp
+  import`, the runner tree scanned, digests before running, undeclared read and write recorded, symlinks
+  resolved, a refusal outranks its crash, DuckDB external access off, missing output, channel closed
+  before exit, channel bounded while read, outputs summed against the cap, declared regular entries only,
+  result validated, every output present, wall-clock deadline, group killed after the leader, SQL's one
+  output (one found by the check: the refusal-over-crash case had no test; added).
 
 ## Open defects and gaps
 

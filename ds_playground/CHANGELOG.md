@@ -14,6 +14,10 @@
   inputs, outputs, limits and permissions. A task whose input was not captured through a grant, whose
   source is missing, that declares no output, asks for more than the workload allows or asks for a
   permission is refused.
+- The runner: `python -m dsp_runner <attempt>/task.json` runs one CodeTask's Python, or its DuckDB SQL
+  against the inputs loaded as tables, in the task's scratch folder, and sends a result and the declared
+  outputs on one bounded channel. `make runner-env` builds its locked environment. Not yet reachable from
+  the app: the OS sandbox comes first.
 
 ## Sprint 3 — jobs, admission, conversation and control (2026-10-08)
 
