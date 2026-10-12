@@ -567,3 +567,17 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   when no job is live (the menu's command is then refused, "no job is live", which the trail shows).
   Playwright presses both chords on macOS (Meta) and Linux (Ctrl) against a real harness. Whether the
   built app on macOS delivers Cmd+. to the webview is not known until the owner presses it at the gate.
+- **2026-10-12 — S4 — DECISION — bubblewrap in the local Linux container (owner)** — the owner approved
+  installing Debian's `bubblewrap` package inside the throwaway `make verify-linux` container and running
+  that container with `--security-opt seccomp=unconfined`, because Docker's default seccomp profile
+  refuses user namespaces (measured: `unshare -Urn` fails with EPERM by default and succeeds unconfined
+  on Docker Desktop 29.8.1, kernel 7.0.14-linuxkit). The sandbox tests then run in the container as a
+  non-root user, so the Linux sandbox is built and checked locally, not only in CI.
+- **2026-10-12 — S4 — FINDING — what macOS 26 can enforce for the runner's limits** — measured on this
+  Mac (macOS 26.3.1, arm64): a bare Python process maps about 415 GiB of virtual address space, so
+  `RLIMIT_AS` and `RLIMIT_DATA` cannot be set below about 512 GiB and do not cap memory; `RLIMIT_RSS` is
+  not enforced by Darwin; `memorystatus_control` limits need privileges (EPERM). A fatal jetsam limit set
+  on the spawn attributes (`posix_spawnattr_setjetsam_ext`) is kernel-enforced without privileges: a child
+  with a 256 MiB limit was killed by SIGKILL after about 192 MiB. A size-capped disk image gives a
+  kernel-enforced scratch cap (ENOSPC at 62 MiB of a 64 MiB image; about 2.4 s to create, attach and
+  detach). The macOS adapter uses both; no limit the skill requires is left unenforced.
