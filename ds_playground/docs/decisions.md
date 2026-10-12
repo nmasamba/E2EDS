@@ -539,3 +539,12 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   with no single place to read them, and the wording differs between places and from what the activity
   trail shows. Sprint 4's housekeeping makes the activity trail the one place every outcome appears,
   removes the inline notes, and tests the wording once.
+
+## Sprint 4
+
+- **2026-10-12 — S4 — DEFECT — the harness published its port before listening (housekeeping)** — `serve`
+  wrote `harness.json` after `bind()` and before uvicorn's `listen()`. On this Mac (macOS 26.3.1) a client
+  that read the file in that window had its connection left unanswered, not refused: Node's `fetch`
+  waited out its 10 s connect timeout, which pushed the renderer's "lost harness, restarted one rejoined"
+  test past its 30 s limit on every run (it passed at the Sprint 3 gate). The listener now listens before
+  the port is published; a test connects to the published port before the server loop runs.
