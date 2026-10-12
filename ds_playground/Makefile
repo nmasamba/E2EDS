@@ -38,7 +38,7 @@ verify-linux:   ## the same gate in a Linux container: repo read-only, bubblewra
 
 harness-bin:    ## freeze the harness into one executable, named for the target triple, for the bundle
 	uv run --frozen --group build pyinstaller --noconfirm --onefile --copy-metadata dsp \
-		--collect-data dsp --collect-data rfc3987_syntax --add-data src/dsp/recipes/profile_csv.py:dsp/recipes \
+		--collect-data dsp --collect-data rfc3987_syntax --add-data $(CURDIR)/src/dsp/recipes/profile_csv.py:dsp/recipes \
 		--name dsp-harness-$$(rustc --print host-tuple) --distpath desktop/src-tauri/binaries \
 		--workpath build/pyinstaller --specpath build/pyinstaller src/dsp/harness/__main__.py
 
