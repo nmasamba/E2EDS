@@ -4,9 +4,9 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 
 ## Now
 
-- **Sprint:** 3 — M1 jobs, admission, conversation and control: complete, gate below. Sprint 4 is next.
-- **Claimed prompt:** none. 3.1 to 3.7 are done and waiting in the pull request.
-- **Branch:** `sprint-3-control`, from `main` at `cbde3fd`, with a pull request open against `main`
+- **Sprint:** 4 — M1 sandboxed native runner (B26; A28; R16; C14, C18; D01, D21).
+- **Claimed prompt:** 4.1 (contracts for the runner), after the two Sprint 3 housekeeping defects.
+- **Branch:** `sprint-4-runner`, from `main` at `0cb7674` (PRs #1 to #7 merged).
 
 ## Done
 
@@ -21,8 +21,9 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 | 0 | Setup | done | G0: PASS for synthetic scope |
 | 1 | M0 foundations and thin slice | merged to `main` (PR #1) | PASS, see below |
 | 2 | M1 desktop, discovery, plan | merged to `main` (PR #5) | PASS for Sprint 2 scope, see below |
-| 3 | M1 jobs, admission, conversation, control | done; in the pull request | PASS for Sprint 3 scope, see below |
-| 4–11 | M1 | not started | — |
+| 3 | M1 jobs, admission, conversation, control | merged to `main` (PRs #6, #7) | PASS for Sprint 3 scope, see below |
+| 4 | M1 sandboxed native runner | in progress on `sprint-4-runner` | — |
+| 5–11 | M1 | not started | — |
 | 12–20 | M1B, M1C, M1R, M2, M3, M3Z, M4 | not started | — |
 
 ## Environment observed (2026-10-01, this Mac)
