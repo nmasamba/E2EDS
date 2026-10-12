@@ -480,7 +480,7 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   types, so a spoofed type with a `state` field changes nothing. Plain CSS; axe clean on every page state
   the tests reach; Pause, Resume and Cancel are pressed with the keyboard alone in the renderer tests.
 - **2026-10-08 — S3 — DECISION — the native menu's Pause and Cancel (3.6)** — two menu items, `Pause`
-  (CmdOrCtrl+P) and `Cancel run` (CmdOrCtrl+.), send `POST /v1/control` from the Rust side the way Quit sends
+  (CmdOrCtrl+P) and `Cancel run` (CmdOrCtrl+Shift+C, see the 2026-10-12 defect), send `POST /v1/control` from the Rust side the way Quit sends
   the shutdown: no renderer in the loop, so they work while the window is busy, and the command is in the
   ledger for the window to show. The command ID is the shell's process ID and a counter. There is no
   Resume item: resume is the header button or the phrase, an explicit act on a visible paused job.
@@ -525,3 +525,10 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
 - **2026-10-08 — S3 — FINDING — no wall-time limit runs yet (3.7)** — admission refuses a task longer than
   the workload's 600 s, but nothing stops a heartbeating attempt that overruns it; the limit is enforced
   by the Sprint 4 runner.
+- **2026-10-12 — S3 — DEFECT — Cmd+. never reached the Cancel run menu item on macOS (fixed)** — the
+  owner's hands-on check of the built app: Cmd+P paused the job through the real menu (the ledger holds
+  the shell's own command IDs), but Cmd+. did nothing. muda registers "." as a real key equivalent, so the
+  item was there; AppKit treats Cmd+. as the cancel key and the webview, as first responder, consumes it
+  before the menu sees it. The shortcut is now CmdOrCtrl+Shift+C on both OSes; the Linux end-to-end test
+  presses the new chord. Lesson recorded in STATUS: macOS menu shortcuts are proven only by a press in the
+  real window, which this session cannot make.

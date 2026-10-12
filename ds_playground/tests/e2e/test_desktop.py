@@ -354,7 +354,7 @@ def drive_controls(binary: Path, state_dir: Path) -> None:
                 eventually(lambda: shown(first, "queued, waiting for a worker"))
                 workers.append(worker(state_dir, job))
                 eventually(lambda: shown(first, "running (attempt 2, fence 1)"))
-                press("ctrl+period")  # the real Cancel shortcut
+                press("ctrl+shift+c")  # the real Cancel shortcut
                 eventually(lambda: shown(first, "◇ Inconclusive · cancelled"))
                 assert workers[-1].wait(30) == 0
                 shown(first, f"Job {job[-6:]}: cancelled (attempt 2, fence 2)")

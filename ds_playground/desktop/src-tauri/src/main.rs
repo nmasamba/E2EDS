@@ -132,8 +132,10 @@ fn main() {
     tauri::Builder::default()
         .menu(|app| {
             let pause = MenuItem::with_id(app, "pause", "Pause", true, Some("CmdOrCtrl+P"))?;
+            // Not CmdOrCtrl+.: on macOS the webview consumes Cmd+. as the cancel key before the
+            // menu sees it, so the item never fired (found by the owner's hands-on check).
             let cancel =
-                MenuItem::with_id(app, "cancel", "Cancel run", true, Some("CmdOrCtrl+."))?;
+                MenuItem::with_id(app, "cancel", "Cancel run", true, Some("CmdOrCtrl+Shift+C"))?;
             let quit =
                 MenuItem::with_id(app, "quit", "Quit DS Playground", true, Some("CmdOrCtrl+Q"))?;
             let menu = Submenu::with_items(app, "DS Playground", true, &[&pause, &cancel, &quit])?;
