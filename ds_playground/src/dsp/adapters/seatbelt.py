@@ -6,10 +6,11 @@ the metadata of their ancestors and the root's listing. Writes: scratch and ``/d
 sysctl reads. Nothing else: no network, no process creation or execution, no IPC, no Mach services.
 
 Limits: memory by the kernel (a fatal jetsam limit on the spawn, which an exec would drop, hence
-``seatbelt_child`` instead of ``sandbox-exec``), scratch by the kernel (a sparse disk image of the
-scratch size mounted on scratch), CPU time by the runner's own limit (SIGXCPU) and, because Darwin
-does not kill at the hard limit, by polling the kernel's account of the process here; wall time
-and output in the shared core. The descriptors the task inherits are its three standard ones.
+``seatbelt_child`` instead of ``sandbox-exec``) and by polling the kernel's footprint account
+here, since a virtual Mac did not apply the jetsam limit; scratch by the kernel (a sparse disk image
+of the scratch size mounted on scratch), CPU time by the runner's own limit (SIGXCPU) and, because
+Darwin does not kill at the hard limit, by polling the kernel's account of the process here; wall
+time and output in the shared core. The descriptors the task inherits are its three standard ones.
 """
 
 import ctypes
@@ -125,14 +126,21 @@ class Seatbelt(Confined):
             raise OSError(refused, os.strerror(refused))
         return pid.value
 
-    def exceeded(self, pid: int, task: dict[str, Any]) -> bool:
-        """True once the kernel has counted the task's CPU time past its limit."""
+    def exceeded(self, pid: int, task: dict[str, Any]) -> str | None:
+        """The limit the kernel's account of the task shows it past: CPU time, or memory.
+
+        Memory is polled as well as set as a jetsam limit, because a virtual Mac (GitHub's macOS
+        runner) did not apply the jetsam limit; the footprint is the figure jetsam uses.
+        """
         usage = _Usage()
         if self.system.proc_pid_rusage(pid, 0, ctypes.byref(usage)):
-            return False  # it has already ended; its exit status says how
+            return None  # it has already ended; its exit status says how
         ticks: int = usage.user + usage.system
+        footprint: int = usage.footprint
+        if footprint > task["limits"]["memory_mib"] * 2**20:
+            return "memory_limit"
         limit: int = task["limits"]["cpu_seconds"]
-        return ticks * self.tick >= limit
+        return "cpu_limit" if ticks * self.tick >= limit else None
 
     def release(self, work: Path) -> None:
         """Detach the scratch volume and delete its image: scratch is never a result."""

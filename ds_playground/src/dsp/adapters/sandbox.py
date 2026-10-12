@@ -57,9 +57,12 @@ class Confined(ABC):
         environment is ``scrubbed(work)``. Return its process ID.
         """
 
-    def exceeded(self, pid: int, task: dict[str, Any]) -> bool:
-        """True when the running process is past a limit its OS does not stop it at."""
-        return False
+    def exceeded(self, pid: int, task: dict[str, Any]) -> str | None:
+        """The limit (``cpu_limit`` or ``memory_limit``) the running process is past, or None.
+
+        Only for a limit the OS may not stop the process at itself.
+        """
+        return None
 
     def release(self, work: Path) -> None:
         """Release whatever ``start`` set up for this attempt."""
@@ -111,16 +114,16 @@ class Confined(ABC):
 
         reader = threading.Thread(target=drain)
         reader.start()
-        deadline, late, spent, halted = (
+        deadline, late, passed, halted = (
             time.monotonic() + limits["wall_seconds"],
             False,
-            False,
+            None,
             False,
         )
         try:
             while not (reaped := os.wait4(pid, os.WNOHANG))[0]:
                 late = time.monotonic() >= deadline
-                if late or (spent := self.exceeded(pid, task)) or (halted := not proceed()):
+                if late or (passed := self.exceeded(pid, task)) or (halted := not proceed()):
                     stop()
                     reaped = os.wait4(pid, 0)
                     break
@@ -139,8 +142,10 @@ class Confined(ABC):
             return failed("timeout", f"stopped at the {limits['wall_seconds']} s wall-clock limit")
         if over.is_set():
             return failed("output_limit", f"the result exceeded {limits['output_bytes']} bytes")
+        if passed == "memory_limit":
+            return failed(passed, f"stopped at the {limits['memory_mib']} MiB memory limit")
         if (
-            spent
+            passed
             or code == -signal.SIGXCPU
             or (code == -signal.SIGKILL and cpu >= limits["cpu_seconds"])
         ):

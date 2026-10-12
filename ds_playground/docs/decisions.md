@@ -802,3 +802,13 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   that returns at once) left them running, and the test process never exited after reporting its
   results (seen twice as a gate that did not end). `serve` now marks the server as exiting whenever
   `run` returns, so the background work ends with it however it ended.
+- **2026-10-12 — S4 — DECISION — macOS memory is also polled (after CI run 38305340576)** — the jetsam
+  limit did not stop a 2 GiB allocation at 256 MiB on GitHub's macOS VM. The adapter now also polls the
+  kernel's footprint account of the task (the figure jetsam uses) every 50 ms and kills it past its
+  limit (`memory_limit`); on this Mac jetsam usually stops it first. Checked here with jetsam set far
+  above the limit: the poll alone stopped the task; with neither, the test fails. Polling is not
+  kernel-enforced: a task can overshoot by what it allocates in 50 ms.
+- **2026-10-12 — S4 — DECISION — the OS's answer under a wrapper (after CI run 38305340576)** — a library
+  that wraps the OS's refusal (urllib's `URLError` has no errno) lost the code in the runner's message;
+  the runner now reports the innermost `OSError` with an errno ("URLError: [Errno 61] Connection
+  refused"), still without its path.

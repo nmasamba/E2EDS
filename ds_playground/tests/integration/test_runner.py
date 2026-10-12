@@ -7,6 +7,7 @@ adapters' confinement is tested in ``test_containment.py``. Unconfined lives her
 
 import json
 import os
+import socket
 import time
 from pathlib import Path
 from typing import Any
@@ -182,6 +183,13 @@ def test_b26_a_crash_a_missing_output_and_a_forged_channel_each_fail_with_their_
     }
     crashed = ran(tmp_path / "raise", runner_env, "raise ValueError('boom')\n")
     assert (kind(crashed), crashed["failure"]["message"]) == ("crash", "ValueError: boom")
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]  # then nothing holds it: a connection is refused at once
+    url = f"import urllib.request\nurllib.request.urlopen('http://127.0.0.1:{port}', timeout=5)\n"
+    wrapped = ran(tmp_path / "wrapped", runner_env, url)
+    assert kind(wrapped) == "crash"
+    assert wrapped["failure"]["message"].startswith("URLError: [Errno ")  # the OS's own code
     assert kind(ran(tmp_path / "exit", runner_env, "import sys\nsys.exit(3)\n")) == "crash"
     assert kind(ran(tmp_path / "missing", runner_env, "x = 1\n")) == "missing_output"
     silent = ran(tmp_path / "silent", runner_env, "import os\nos._exit(0)\n")

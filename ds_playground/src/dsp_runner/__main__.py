@@ -79,18 +79,21 @@ def run(task: dict[str, Any], work: Path) -> dict[str, str] | None:
         return {"kind": "undeclared_access", "message": str(error)[:MESSAGE]}
     except BaseException as error:  # the task's own failure, whatever it raised
         raised = error
+    answer = raised
+    while isinstance(answer, OSError) and answer.errno is None and answer.__context__:
+        answer = answer.__context__  # a wrapper (a URL error, say) around the OS's own answer
     said = f"{type(raised).__name__}: {raised}".replace(str(work), "<attempt>")
-    if isinstance(raised, OSError):  # its text names the path; the code and its meaning are kept
-        said = f"{type(raised).__name__}: [Errno {raised.errno}] {raised.strerror}"
+    if isinstance(answer, OSError) and answer.errno is not None:  # keep the code, not the path
+        said = f"{type(raised).__name__}: [Errno {answer.errno}] {answer.strerror}"
     if refused:
-        answered = f"; the OS answered {said}" if isinstance(raised, OSError) else ""
+        answered = f"; the OS answered {said}" if isinstance(answer, OSError) else ""
         message = f"{len(refused)} open(s) outside the declaration{answered}"
         return {"kind": refused[0], "message": message[:MESSAGE]}
     if raised is not None:
         kind = "crash"
         if isinstance(raised, MemoryError):
             kind = "memory_limit"
-        elif isinstance(raised, OSError) and raised.errno in (errno.ENOSPC, errno.EDQUOT):
+        elif isinstance(answer, OSError) and answer.errno in (errno.ENOSPC, errno.EDQUOT):
             kind = "scratch_limit"
         return {"kind": kind, "message": said[:MESSAGE]}
     for name in task["outputs"]:
