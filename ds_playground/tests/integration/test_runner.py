@@ -1,10 +1,12 @@
 """The runner and its result channel, run for real: Python and SQL tasks and every failure kind.
 
-No sandbox here (prompts 4.3 and 4.4 add it): these tests start ``python -m dsp_runner`` from the
-locked runner environment through the shared process core and read the channel as the adapters do.
+These tests start ``python -m dsp_runner`` from the locked runner environment through the shared
+core with no confinement, so the runner's own behaviour is tested the same way on any OS; the OS
+adapters' confinement is tested in ``test_containment.py``. Unconfined lives here, never in src.
 """
 
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -29,6 +31,26 @@ print("printed, and never on the channel")
 """
 
 
+class Unconfined(sandbox.Confined):
+    """The shared core with no confinement: a plain process from the runner environment."""
+
+    def start(self, task: dict[str, Any], work: Path, channel: int) -> int:
+        """Spawn the runner as a plain process, as the OS adapters do before confining it."""
+        python = str(self.environment / "bin" / "python")
+        argv = [python, *sandbox.FLAGS, "-m", "dsp_runner", str(work / "task.json")]
+        return os.posix_spawn(
+            python,
+            argv,
+            sandbox.scrubbed(work),
+            file_actions=[
+                (os.POSIX_SPAWN_OPEN, 0, os.devnull, os.O_RDONLY, 0),
+                (os.POSIX_SPAWN_DUP2, channel, 1),
+                (os.POSIX_SPAWN_OPEN, 2, os.devnull, os.O_WRONLY, 0),
+            ],
+            setsid=True,
+        )
+
+
 def ran(
     folder: Path,
     env: Path,
@@ -46,7 +68,7 @@ def ran(
     spec |= {"inputs": [{"name": "orders.csv", "sha256": file_digest(data)}]}
     spec |= {"outputs": list(outputs)} | ({"limits": limits} if limits else {})
     task = code_task(spec, base_workload(CTX))
-    return sandbox.run(task, source, {"orders.csv": data}, folder / "attempt", env)
+    return Unconfined(env).run(task, source, {"orders.csv": data}, folder / "attempt")
 
 
 def kind(result: dict[str, Any]) -> str:
@@ -183,7 +205,7 @@ def test_b26_a_source_that_differs_from_its_digest_is_never_run(
     spec["inputs"] = [{"name": "orders.csv", "sha256": file_digest(data)}]
     task = code_task(spec, base_workload(CTX))
     source.write_text("open('../../planted', 'w').write('ran')\n")
-    result = sandbox.run(task, source, {"orders.csv": data}, folder / "attempt", runner_env)
+    result = Unconfined(runner_env).run(task, source, {"orders.csv": data}, folder / "attempt")
     assert kind(result) == "digest_mismatch"
     assert not (folder / "planted").exists()
 

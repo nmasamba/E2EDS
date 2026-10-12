@@ -662,3 +662,41 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
 - **2026-10-12 — S4 — DECISION — a SQL task has exactly one output (4.1 schema, amended in 4.2)** — its
   last statement's rows are written as CSV to the one declared output; CodeTask 0.1.0 says so before
   anything was released.
+- **2026-10-12 — S4 — DECISION — the macOS adapter (4.3)** — `adapters/seatbelt.py`. Profile, deny by
+  default: `file-read*` on the runner environment, the base Python, `/usr/lib`, `/System/Library` and the
+  attempt directory; `file-read-metadata` on those paths' ancestors and on every symlink from
+  `bin/python` to the interpreter; the root's listing (Python does not start without it); `file-write*`
+  on scratch; `/dev/null`; `sysctl-read` (without it `os.cpu_count()` is None). No network, process,
+  IPC or Mach-service rule, so all are denied. Paths are written as JSON strings. The spawn carries
+  `POSIX_SPAWN_CLOEXEC_DEFAULT`, so the task inherits only its standard descriptors, and a fatal jetsam
+  limit of the task's memory. Scratch is a sparse HFS+ disk image of the scratch size mounted on
+  `scratch/` (`-nobrowse`), detached and deleted after the run. CPU time: the runner's own limit sends
+  SIGXCPU, and the adapter polls the kernel's account of the process (`proc_pid_rusage`, Mach time
+  units) and kills it at the limit. A SIGKILL the adapter did not send is reported as `memory_limit`,
+  since jetsam is the only other sender.
+- **2026-10-12 — S4 — DECISION — Seatbelt applied in the process, not by `sandbox-exec` (4.3)** —
+  measured on this Mac: a jetsam limit set on the spawn kills a directly spawned Python at about 240 MiB
+  of 256 MiB, but `sandbox-exec`'s `execvp` drops it (1 GiB allocated, exit 0). So the adapter spawns
+  `python -m dsp.adapters.seatbelt_child <profile> <task.json>`, which calls `sandbox_init` on itself (the
+  call `sandbox-exec` makes) and then runs `dsp_runner` in the same process. Only that module and the
+  interpreter run unconfined; a profile that does not compile ends the process before any task code
+  exists, and, with no exec afterwards, the profile can deny `process-exec` outright. The skill's
+  `sandbox-exec -f <profile>` line is updated to say so. Alternative: polling memory from outside,
+  which is not kernel-enforced.
+- **2026-10-12 — S4 — FINDING — Darwin does not kill at the hard CPU limit (4.3)** — measured: with
+  `RLIMIT_CPU` at (1, 2) a busy Python ends by SIGXCPU after 1 s, but one that ignores SIGXCPU ran its
+  full 10 s. Hence the adapter's own poll on macOS; on Linux the kernel kills at the hard limit (4.4).
+  The mutation that removes the runner's limit survives on macOS for that reason and is checked on Linux.
+- **2026-10-12 — S4 — ASSUMPTION — private and deprecated macOS calls (4.3)** — `sandbox_init` is
+  deprecated and `posix_spawnattr_setjetsam_ext` is private (`spawn_private.h`); both work on macOS
+  26.3.1 without privileges, and they are the only unprivileged kernel controls for the profile and the
+  memory limit. A macOS that drops either fails closed: the profile is refused or the limit cannot be
+  set, the spawn raises, and the containment tests fail.
+- **2026-10-12 — S4 — FINDING — the cost of a capped scratch volume on macOS (4.3)** — creating,
+  attaching and detaching the sparse image takes about 1.7 s per task on this Mac (create 1.1 s, attach
+  0.25 s, detach 0.4 s); a 16 MiB image refuses writes with ENOSPC at 15,936 KiB. Accepted for now; a
+  cloned template image would cut it to about 0.7 s if tasks become short and many.
+- **2026-10-12 — S4 — FINDING — a scratch volume can outlive a crashed harness (4.3)** — the volume is
+  detached in the run's `finally`; a harness killed mid-run leaves it mounted until something detaches
+  it (found when a mutation check skipped the detach: pytest then renamed the folder under the mounted
+  volume and only `umount -f` on the new path released it). Reconciling stale attempts is 4.5's.

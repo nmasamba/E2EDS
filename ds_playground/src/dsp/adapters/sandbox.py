@@ -1,10 +1,10 @@
 """Starting the runner and reading what it returns: the part of the sandbox both OSes share.
 
-The OS adapters confine the process; this module lays out the attempt directory, starts the
-runner from the locked runner environment with a fixed argument vector and a scrubbed
-environment, stops it at the wall-clock limit and reads its one result channel, bounded, because
-everything the runner sends is untrusted: only regular files with declared names are taken,
-within the output cap, and hashed here.
+An OS adapter confines the process it starts; ``Confined.run`` does the rest the same way on both:
+it lays out the attempt directory, gives the adapter a fixed argument vector and a scrubbed
+environment, stops the process at the wall-clock limit, and reads its one result channel, bounded,
+because everything the runner sends is untrusted: only regular files with declared names are
+taken, within the output cap, and hashed here.
 """
 
 import contextlib
@@ -12,18 +12,21 @@ import json
 import os
 import shutil
 import signal
+import sys
 import tarfile
 import threading
 import time
+from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 from dsp.contracts.canonical import canonical_json, file_digest
-from dsp.contracts.errors import DspError
+from dsp.contracts.errors import DspError, ErrorCode
 from dsp.contracts.schemas import validate
 
 FRAMING = 64 * 1024  # the result file and the tar headers, beyond the outputs' own bytes
+FLAGS = ["-I", "-B", "-X", "utf8"]  # isolated, no bytecode written, UTF-8 whatever the locale
 
 
 def failed(kind: str, message: str) -> dict[str, Any]:
@@ -31,74 +34,120 @@ def failed(kind: str, message: str) -> dict[str, Any]:
     return {"outcome": "failed", "failure": {"kind": kind, "message": message}, "outputs": []}
 
 
-def run(
-    task: dict[str, Any],
-    source: Path,
-    inputs: Mapping[str, Path],
-    work: Path,
-    environment: Path,
-) -> dict[str, Any]:
-    """Run the task with ``python -m dsp_runner`` from ``environment`` and read its result."""
-    scratch, limits = work / "scratch", task["limits"]
-    (work / "inputs").mkdir(parents=True)
-    scratch.mkdir()
-    shutil.copyfile(source, work / "source")
-    for name, path in inputs.items():
-        shutil.copyfile(path, work / "inputs" / name)
-    (work / "task.json").write_bytes(canonical_json(task))
-    python = str(environment / "bin" / "python")
-    argv = [python, "-I", "-B", "-X", "utf8", "-m", "dsp_runner", str(work / "task.json")]
-    read, write = os.pipe()
-    pid = os.posix_spawn(
-        python,
-        argv,
-        {"HOME": str(scratch), "TMPDIR": str(scratch)},
-        file_actions=[
-            (os.POSIX_SPAWN_OPEN, 0, os.devnull, os.O_RDONLY, 0),
-            (os.POSIX_SPAWN_DUP2, write, 1),
-            (os.POSIX_SPAWN_OPEN, 2, os.devnull, os.O_WRONLY, 0),
-        ],
-        setsid=True,
-    )
-    os.close(write)
-    cap, channel, over = limits["output_bytes"] + FRAMING, work / "channel.tar", threading.Event()
+class Confined(ABC):
+    """The runner confined by one OS: the steps both OSes share, around the ones they do not.
 
-    def stop() -> None:
-        with contextlib.suppress(ProcessLookupError):
-            os.killpg(pid, signal.SIGKILL)
+    A subclass starts the confined process, may stop it on a limit its OS measures but does not
+    enforce (``exceeded``), names a kill it cannot otherwise explain (``killed``) and releases what
+    it set up (``end``).
+    """
 
-    def drain() -> None:
-        with os.fdopen(read, "rb") as pipe, channel.open("wb") as sink:
-            while chunk := pipe.read(65536):
-                if sink.tell() + len(chunk) > cap:
-                    over.set()
+    killed = "killed"
+
+    def __init__(self, environment: Path) -> None:
+        self.environment = environment
+
+    @abstractmethod
+    def start(self, task: dict[str, Any], work: Path, channel: int) -> int:
+        """Start ``python -m dsp_runner work/task.json`` confined, writing to ``channel``.
+
+        Standard input and error are ``/dev/null``; the process leads a new session; its
+        environment is ``scrubbed(work)``. Return its process ID.
+        """
+
+    def exceeded(self, pid: int, task: dict[str, Any]) -> bool:
+        """True when the running process is past a limit its OS does not stop it at."""
+        return False
+
+    def end(self, work: Path) -> None:
+        """Release whatever ``start`` set up for this attempt."""
+        return None
+
+    def run(
+        self, task: dict[str, Any], source: Path, inputs: Mapping[str, Path], work: Path
+    ) -> dict[str, Any]:
+        """Run the task on its source and declared inputs; see ``ports.Runner``."""
+        work, limits = work.resolve(), task["limits"]
+        (work / "inputs").mkdir(parents=True)
+        (work / "scratch").mkdir()
+        shutil.copyfile(source, work / "source")
+        for name, path in inputs.items():
+            shutil.copyfile(path, work / "inputs" / name)
+        (work / "task.json").write_bytes(canonical_json(task))
+        read, write = os.pipe()
+        try:
+            pid = self.start(task, work, write)
+        except BaseException:
+            os.close(read)
+            self.end(work)
+            raise
+        finally:
+            os.close(write)
+        cap, channel, over = (
+            limits["output_bytes"] + FRAMING,
+            work / "channel.tar",
+            threading.Event(),
+        )
+
+        def stop() -> None:
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(pid, signal.SIGKILL)
+
+        def drain() -> None:
+            with os.fdopen(read, "rb") as pipe, channel.open("wb") as sink:
+                while chunk := pipe.read(65536):
+                    if sink.tell() + len(chunk) > cap:
+                        over.set()
+                        stop()
+                        return
+                    sink.write(chunk)
+
+        reader = threading.Thread(target=drain)
+        reader.start()
+        deadline, late, spent = time.monotonic() + limits["wall_seconds"], False, False
+        try:
+            while not (reaped := os.wait4(pid, os.WNOHANG))[0]:
+                late = time.monotonic() >= deadline
+                if late or (spent := self.exceeded(pid, task)):
                     stop()
-                    return
-                sink.write(chunk)
+                    reaped = os.wait4(pid, 0)
+                    break
+                time.sleep(0.05)
+            stop()  # a group outlives its reaped leader under the same ID: nothing it began stays
+            reader.join()
+        finally:
+            self.end(work)
+        code, usage = os.waitstatus_to_exitcode(reaped[1]), reaped[2]
+        cpu = usage.ru_utime + usage.ru_stime
+        if late:
+            return failed("timeout", f"stopped at the {limits['wall_seconds']} s wall-clock limit")
+        if over.is_set():
+            return failed("output_limit", f"the result exceeded {limits['output_bytes']} bytes")
+        if (
+            spent
+            or code == -signal.SIGXCPU
+            or (code == -signal.SIGKILL and cpu >= limits["cpu_seconds"])
+        ):
+            return failed("cpu_limit", f"stopped at the {limits['cpu_seconds']} s CPU-time limit")
+        if code == -signal.SIGKILL:
+            return failed(self.killed, "stopped by SIGKILL")
+        if code:
+            return failed("crash", f"the runner ended with status {code}")
+        return _received(task, channel, work / "out")
 
-    reader = threading.Thread(target=drain)
-    reader.start()
-    deadline, late = time.monotonic() + limits["wall_seconds"], False
-    while not (reaped := os.waitpid(pid, os.WNOHANG))[0]:
-        if late := time.monotonic() >= deadline:
-            stop()
-            reaped = os.waitpid(pid, 0)
-            break
-        time.sleep(0.05)
-    stop()  # a group outlives its reaped leader under the same ID: nothing the task started stays
-    code = os.waitstatus_to_exitcode(reaped[1])
-    reader.join()
-    if late:
-        return failed("timeout", f"stopped at the {limits['wall_seconds']} s wall-clock limit")
-    if over.is_set():
-        return failed("output_limit", f"the result exceeded {limits['output_bytes']} bytes")
-    if code == -signal.SIGXCPU:
-        return failed("cpu_limit", f"stopped at the {limits['cpu_seconds']} s CPU-time limit")
-    if code == -signal.SIGKILL:
-        return failed("killed", "stopped by SIGKILL")
-    if code:
-        return failed("crash", f"the runner ended with status {code}")
-    return _received(task, channel, work / "out")
+
+def local(environment: Path) -> Confined:
+    """The runner confined by this host's OS; the one place the OS chooses the adapter."""
+    if sys.platform == "darwin":
+        from dsp.adapters.seatbelt import Seatbelt  # it loads libSystem as it starts
+
+        return Seatbelt(environment)
+    raise DspError(ErrorCode.DEPENDENCY_UNAVAILABLE, f"no sandbox for {sys.platform} yet")
+
+
+def scrubbed(work: Path) -> dict[str, str]:
+    """The task's whole environment: its home and temporary folder are its scratch, nothing else."""
+    return {"HOME": str(work / "scratch"), "TMPDIR": str(work / "scratch")}
 
 
 def _received(task: dict[str, Any], channel: Path, out: Path) -> dict[str, Any]:

@@ -79,15 +79,19 @@ def run(task: dict[str, Any], work: Path) -> dict[str, str] | None:
         return {"kind": "undeclared_access", "message": str(error)[:MESSAGE]}
     except BaseException as error:  # the task's own failure, whatever it raised
         raised = error
+    said = f"{type(raised).__name__}: {raised}".replace(str(work), "<attempt>")
+    if isinstance(raised, OSError):  # its text names the path; the code and its meaning are kept
+        said = f"{type(raised).__name__}: [Errno {raised.errno}] {raised.strerror}"
     if refused:
-        return {"kind": refused[0], "message": f"{len(refused)} open(s) outside the declaration"}
+        answered = f"; the OS answered {said}" if isinstance(raised, OSError) else ""
+        message = f"{len(refused)} open(s) outside the declaration{answered}"
+        return {"kind": refused[0], "message": message[:MESSAGE]}
     if raised is not None:
         kind = "crash"
         if isinstance(raised, MemoryError):
             kind = "memory_limit"
         elif isinstance(raised, OSError) and raised.errno in (errno.ENOSPC, errno.EDQUOT):
             kind = "scratch_limit"
-        said = f"{type(raised).__name__}: {raised}".replace(str(work), "<attempt>")
         return {"kind": kind, "message": said[:MESSAGE]}
     for name in task["outputs"]:
         if not (scratch / name).is_file() or (scratch / name).is_symlink():

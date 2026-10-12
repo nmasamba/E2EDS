@@ -27,8 +27,10 @@ Write: the task scratch directory only. Environment variables scrubbed to an all
 memory, wall clock, open files, output bytes, scratch bytes (D01, D21). Kill on limit; partial output is not a
 result.
 
-- **macOS:** `sandbox-exec -f <profile>` with `(deny default)`, explicit `file-read*` for the allowlist,
-  `file-write*` for scratch, no `network*`.
+- **macOS:** a Seatbelt profile with `(deny default)`, explicit `file-read*` for the allowlist,
+  `file-write*` for scratch, no `network*`, applied by `sandbox_init` inside the spawned process
+  (`dsp.adapters.seatbelt_child`), not by `sandbox-exec`, whose exec drops the jetsam memory limit;
+  scratch is a size-capped disk image; CPU time is also polled, as Darwin does not kill at the hard limit.
 - **Linux:** `bwrap --unshare-all --die-with-parent --new-session --clearenv --ro-bind` for the allowlist,
   `--bind` for scratch, `--tmpfs /tmp`, plus a seccomp filter; `prlimit` or cgroups for resources.
 - DuckDB inside the task: `enable_external_access=false`, no extension loading, `lock_configuration=true`.

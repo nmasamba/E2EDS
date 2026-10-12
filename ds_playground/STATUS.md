@@ -5,7 +5,7 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 ## Now
 
 - **Sprint:** 4 — M1 sandboxed native runner (B26; A28; R16; C14, C18; D01, D21).
-- **Claimed prompt:** 4.3 (macOS Seatbelt adapter).
+- **Claimed prompt:** 4.4 (Linux bubblewrap and seccomp adapter).
 - **Branch:** `sprint-4-runner`, from `main` at `0cb7674` (PRs #1 to #7 merged).
 
 ## Done
@@ -269,6 +269,29 @@ Code commit `2c81168`; the evidence and this file were committed after it.
   before exit, channel bounded while read, outputs summed against the cap, declared regular entries only,
   result validated, every output present, wall-clock deadline, group killed after the leader, SQL's one
   output (one found by the check: the refusal-over-crash case had no test; added).
+
+## Prompt 4.3 — macOS sandbox adapter (2026-10-12)
+
+- `adapters/seatbelt.py` (profile, sparse scratch image, jetsam limit and `CLOEXEC_DEFAULT` on the
+  spawn, CPU poll), `adapters/seatbelt_child.py` (`sandbox_init`, then the runner in-process), the shared
+  core as the `Confined` base with `sandbox.local()` choosing the OS's adapter. The runner's messages
+  carry an OSError's errno and meaning, not its path. CI on `b8be28a` (the 4.2 push, run 38298066312):
+  verify and desktop green on `ubuntu-24.04` and macOS.
+- Tests: `tests/integration/test_containment.py` (10, `sandbox`, real tasks through libc past the audit
+  hook): reads (planted secret, `~/.ssh`, the ledger, even `stat`) refused and the declared input read;
+  writes by path, `..`, the inputs, a symlink and into the runner environment refused and scratch
+  written; no connect to a loopback listener and no name resolved; only `HOME`/`TMPDIR` (and two the
+  runtime adds) and only descriptors 0–4, an inheritable harness file left behind; fork, spawn and exec
+  refused; memory over 256 MiB killed and 64 MiB allowed; CPU stopped with and without SIGXCPU
+  ignored; scratch refuses at its size and is detached and deleted; wall time and output; a profile that
+  does not compile runs nothing. `test_runner.py` now runs the core through a test-only `Unconfined`.
+  macOS: 18 runner and containment tests pass; `make test-fast` 297 passed. Guards mutation-checked (16):
+  deny by default, reads limited, metadata only on ancestors, writes only to scratch, no network, no
+  process creation, environment scrubbed, only standard descriptors, memory limit on the spawn, an
+  unexplained kill is memory, CPU poll, scratch volume capped, scratch volume detached, profile applied
+  before the runner, a refused profile ends the process; the runner's CPU rlimit survives on macOS
+  (the poll also stops the task) and is checked on Linux in 4.4. Two survivors on the first pass (metadata
+  and inherited descriptors) led to sharper probes, then were caught.
 
 ## Open defects and gaps
 
