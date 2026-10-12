@@ -5,7 +5,7 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 ## Now
 
 - **Sprint:** 4 — M1 sandboxed native runner (B26; A28; R16; C14, C18; D01, D21).
-- **Claimed prompt:** 4.1 (contracts for the runner), after the two Sprint 3 housekeeping defects.
+- **Claimed prompt:** 4.2 (runner entry point and environment).
 - **Branch:** `sprint-4-runner`, from `main` at `0cb7674` (PRs #1 to #7 merged).
 
 ## Done
@@ -225,6 +225,30 @@ Code commit `2c81168`; the evidence and this file were committed after it.
 - `integrity-reviewer`: REVIEW: PASS; two should-fix findings and five notes landed, one note logged
   (`docs/decisions.md`, 2026-10-08, "the integrity review").
 - Gate outcome: **PASS** for Sprint 3 scope. Scenario outcomes are as listed; none is rounded up.
+
+## Sprint 4 housekeeping (2026-10-12)
+
+- Activity trail is the one place outcomes appear; `command.*` events carry the readable `reason`.
+  Vitest 9 passed; Playwright work spec 3 passed (composer, buttons, a dropped request, Run and a refused
+  admission). Guards mutation-checked: the not-received line only for an unanswered Run, the reason shown.
+- Renderer shortcuts CmdOrCtrl+P and CmdOrCtrl+. on the live job; Playwright presses them on macOS (Meta).
+  Guard mutation-checked: the platform's modifier. The built app's press is asked of the owner at the gate.
+- Found and fixed: the harness published `harness.json` before listening (a client waited 10 s); a test
+  connects to the published port before the server loop runs. Renderer suite on macOS: 20 passed.
+
+## Prompt 4.1 — contracts for the runner (2026-10-12)
+
+- App ComputeBinding 0.6.0 (OS-sandbox policy, `assurance`, darwin), CodeTask 0.1.0, Job 0.2.0; the loader
+  dispatches on `schema_version`. The stored local binding `compute-local-native` 1.0.0 replaces
+  `LOCAL_DRAFT`; admission stores and pins it and a stored CodeTask for every job, test-worker jobs included.
+- Tests: `tests/contract/test_app_contracts.py` (9: app schemas meta-validate, the binding at OS-sandbox
+  assurance on darwin and linux, a policy cannot claim another assurance, prior versions read, CodeTasks
+  conform), `test_admission.py` (+2: binding and CodeTask stored and pinned, idempotent retry; undeclared
+  input, duplicate name, missing source, over-envelope limit and a permission refused and recorded, no
+  output refused before anything is written). `make test-fast` 288 passed on macOS. Guards mutation-checked
+  (11): input captured, input names unique, source stored, limits within the envelope, no permission,
+  caller sets only supplied fields, language Python or SQL, policy ties assurance and trust, Python
+  declares an output, version dispatch, idempotency compares the payload.
 
 ## Open defects and gaps
 

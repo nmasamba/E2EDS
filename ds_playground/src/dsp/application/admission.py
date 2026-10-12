@@ -11,12 +11,12 @@ from collections.abc import Callable
 from typing import Any
 
 from dsp.application.planning import propose_plan
-from dsp.contracts.canonical import pin
+from dsp.contracts.canonical import canonical_json, digest, pin
 from dsp.contracts.errors import DspError, ErrorCode, TrustedContext
 from dsp.contracts.schemas import validate
 from dsp.domain import admission as rules
 from dsp.domain import jobs as machine
-from dsp.ports import Ledger
+from dsp.ports import Ledger, Store
 
 AGGREGATE = "admission:host-local"
 DOMAIN = "host-local"
@@ -33,15 +33,19 @@ def _held(ledger: Ledger, ctx: TrustedContext) -> dict[str, float]:
 
 
 def _same_request(
-    ctx: TrustedContext, key: str, operation: str, task: dict[str, Any], ledger: Ledger
+    ctx: TrustedContext, key: str, operation: str, payload: str, ledger: Ledger
 ) -> dict[str, Any] | None:
-    """The job already admitted for this idempotency key, if its payload is the same (D05)."""
+    """The job already admitted for this idempotency key, if its payload is the same (D05).
+
+    A Sprint 3 job carries no payload digest; its payload was its test-worker task.
+    """
     for job in ledger.current(ctx, "Job"):
         if job["idempotency_key"] != key:
             continue
         ref = job["request_ref"]
         request = ledger.get(ctx, "ExecutionRequest", ref["id"], ref["revision"])
-        if (request["operation"], job["task"]) == (operation, task):
+        earlier = job.get("payload_sha256") or digest(canonical_json(job["task"]))
+        if (request["operation"], earlier) == (operation, payload):
             return job
         raise DspError(ErrorCode.IDEMPOTENCY_CONFLICT, f"key {key} was used for another request")
     return None
@@ -56,19 +60,39 @@ def admit(
     workload: dict[str, Any],
     binding: dict[str, Any],
     ledger: Ledger,
+    store: Store,
     clock: Callable[[], str],
     new_id: Callable[[], str],
 ) -> dict[str, Any]:
     """Admit the request and return the queued job, or record the rejection and raise.
 
-    A caller without the submit scope is refused before anything is read or written. Any other
-    refusal is recorded as a rejected ExecutionRequest with its reason; no job and no reservation
-    exist for it.
+    A caller without the submit scope, or a task that is not a well-formed declaration, is refused
+    before anything is read or written. Any other refusal is recorded as a rejected
+    ExecutionRequest, pinning the CodeTask it declared, with its reason; no job and no reservation
+    exist for it. Every input must be data captured through a grant, and the source must be in
+    the content store.
     """
     if not SUBMIT & ctx.scopes:
         raise DspError(ErrorCode.FORBIDDEN, "this context may not submit work")
-    if existing := _same_request(ctx, idempotency_key, operation, task, ledger):
+    payload = digest(canonical_json(task))
+    if existing := _same_request(ctx, idempotency_key, operation, payload, ledger):
         return existing
+    code = rules.code_task(task, workload)
+    validate("CodeTask", code)
+    cues = None if "language" in task else task
+    captured = {manifest["sha256"] for manifest in ledger.current(ctx, "DataManifest")}
+    names = [item["name"] for item in code["inputs"]]
+    unknown = [item["name"] for item in code["inputs"] if item["sha256"] not in captured]
+    unresolved: tuple[ErrorCode, str] | None = None
+    if len(set(names)) < len(names):
+        unresolved = ErrorCode.INPUT_INVALID, "two inputs share a name"
+    elif unknown:
+        unresolved = ErrorCode.INPUT_INVALID, f"input {unknown[0]} was not captured through a grant"
+    elif cues is None:
+        try:
+            store.path(ctx, code["source_sha256"])
+        except DspError:
+            unresolved = ErrorCode.INPUT_INVALID, "the task's source is not in the store"
     for _ in range(3):
         seq, at = ledger.seq(ctx, AGGREGATE), clock()
         snapshots = ledger.current(ctx, "HardwareSnapshot")
@@ -79,7 +103,7 @@ def admit(
         if snapshot is not None and plan is not None:
             stale = stale or plan["hardware_snapshot_refs"][-1]["id"] != snapshot["id"]
         if stale and snapshot is not None:
-            plan = propose_plan(ctx, ledger=ledger, new_id=new_id)
+            plan = propose_plan(ctx, binding=binding, ledger=ledger, new_id=new_id)
         request: dict[str, Any] = {
             "schema_version": "0.5.0",
             "planning_only": False,
@@ -97,18 +121,18 @@ def admit(
             "state": "admitted",
             "conversation_ref": None,
             "assistant_model_binding_ref": None,
-            "source_code_task_ref": pin(
-                {"id": "code-task-test-worker", "revision": "1.0.0", **task}
-            ),
+            "source_code_task_ref": pin(code),
             "requirement_revision": workload["revision"],
             "workflow_plan_ref": pin(plan) if plan else None,
         }
-        refused = rules.refusal(operation, task, workload, binding, snapshot, _held(ledger, ctx))
+        refused = unresolved or rules.refusal(
+            operation, cues, code, workload, binding, snapshot, _held(ledger, ctx)
+        )
         if refused:
-            code, reason = refused
+            refusing, reason = refused
             request["state"] = "rejected"
             validate("ExecutionRequest", request)
-            rejected = {"request": request["id"], "operation": operation, "code": code}
+            rejected = {"request": request["id"], "operation": operation, "code": refusing}
             rejected |= {"reason": reason, "plan_rechecked": stale}
             aggregate = f"request:{request['id']}"
             ledger.commit(
@@ -118,9 +142,9 @@ def admit(
                 f"{request['id']}:rejected",
                 "admission.rejected",
                 rejected,
-                [request],
+                [request, code],
             )
-            raise DspError(code, reason, {"request": request["id"]})
+            raise DspError(refusing, reason, {"request": request["id"]})
         validate("ExecutionRequest", request)
         reservation = {
             "schema_version": "0.1.0",
@@ -138,7 +162,8 @@ def admit(
         job, kind, body = machine.new(
             f"job-{new_id()}",
             at,
-            task=task,
+            task=cues,
+            payload_sha256=payload,
             request_ref=pin(request),
             reservation=reservation["id"],
             workload_ref=pin(workload),
@@ -153,7 +178,7 @@ def admit(
             "plan_rechecked": stale,
         }
         objects: list[dict[str, Any] | tuple[str, dict[str, Any]]] = [request, reservation, job]
-        objects.append(("WorkloadSpec", workload))
+        objects += [code, ("WorkloadSpec", workload), ("ComputeBinding", binding)]
         try:
             ledger.commit(ctx, AGGREGATE, seq, f"{job['id']}:admitted", kind or "", body, objects)
         except DspError as error:
@@ -206,12 +231,24 @@ def readmit(
         request = ledger.get(ctx, "ExecutionRequest", job["request_ref"]["id"], "1.0.0")
         snapshots = ledger.current(ctx, "HardwareSnapshot")
         snapshot = snapshots[-1] if snapshots else None
+        ref = request["source_code_task_ref"]
+        code = (
+            rules.code_task(job["task"], workload)
+            if job["task"] is not None
+            else ledger.get(ctx, "CodeTask", ref["id"], ref["revision"])
+        )
         refused = rules.refusal(
-            request["operation"], job["task"], workload, binding, snapshot, _held(ledger, ctx)
+            request["operation"],
+            job["task"],
+            code,
+            workload,
+            binding,
+            snapshot,
+            _held(ledger, ctx),
         )
         if refused:
-            code, reason = refused
-            rejected = {"job": job_id, "request": request["id"], "code": code, "reason": reason}
+            refusing, reason = refused
+            rejected = {"job": job_id, "request": request["id"], "code": refusing, "reason": reason}
             event_id = f"{job_id}:resume:{new_id()}"
             ledger.commit(
                 ctx,
@@ -222,7 +259,7 @@ def readmit(
                 rejected,
                 [],
             )
-            raise DspError(code, reason, {"job": job_id})
+            raise DspError(refusing, reason, {"job": job_id})
         validate("Reservation", reservation)
         validate("Job", resumed)
         body |= {"reservation": reservation["id"], "requirement_revision": workload["revision"]}

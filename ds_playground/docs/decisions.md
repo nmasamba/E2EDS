@@ -581,3 +581,40 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   with a 256 MiB limit was killed by SIGKILL after about 192 MiB. A size-capped disk image gives a
   kernel-enforced scratch cap (ENOSPC at 62 MiB of a 64 MiB image; about 2.4 s to create, attach and
   detach). The macOS adapter uses both; no limit the skill requires is left unenforced.
+- **2026-10-12 — S4 — DEVIATION — ComputeBinding 0.6.0, the app's successor of suite 0.5.0 (4.1)** — carries
+  the owner's 2026-10-01 runner decision into the contract: `generated_code_policy` gains
+  `restricted_os_sandbox`, `isolation.trust_model` gains `customer_os_sandbox_single_user`,
+  `resource_requirements.os` gains `darwin`, and a required `assurance` (`none`, `dedicated_vm`,
+  `os_sandbox_single_user`) must match the policy (denied → none, VM → dedicated_vm, OS sandbox →
+  os_sandbox_single_user with the single-user trust model and process execution only). The suite file
+  stays vendored and unchanged; its 0.5.0 example still validates. The schema loader now picks the schema
+  by the instance's `schema_version` (an older app version keeps its file as `Name@x.y.z.schema.json`).
+- **2026-10-12 — S4 — DECISION — the stored local binding replaces `LOCAL_DRAFT` (4.1)** — `local_binding`
+  in `application/planning.py` is a full ComputeBinding 0.6.0 (`compute-local-native` 1.0.0) for this host:
+  OS and instruction set from the discovery adapter, data analysis only, one concurrent attempt, D01's two
+  hours, `restricted_os_sandbox` at `os_sandbox_single_user` assurance, limitations saying it is not VM
+  isolation. Admission stores it with the first request that pins it, as it stores the WorkloadSpec. It
+  stays `proposed` and its qualification `planned` until the owner reviews the containment evidence as
+  its qualification (no such owner action exists yet), so the plan still calls it unqualified and the
+  Sprint 3 deviation that admits an unqualified local option continues, now for sandboxed tasks too. The
+  profile ID stays `local-native-draft` because WorkloadSpec 1.0.0, which is immutable, targets it.
+- **2026-10-12 — S4 — ASSUMPTION — the local binding's data policy (4.1)** — it allows synthetic and the
+  owner's own confidential data (`customer_data_allowed: true`) for data analysis, because the data never
+  leaves the owner's machine; sealed data access is false. No rule reads the data policy yet.
+- **2026-10-12 — S4 — DECISION — CodeTask 0.1.0 and Job 0.2.0 (4.1)** — an app-owned CodeTask records the
+  source by digest, the parent revision, the requirement revision, named read-only inputs with digests,
+  output names, the runner environment's lock digest (null until 4.2 builds the locked environment),
+  limits (CPU seconds, memory, wall seconds, output bytes, scratch bytes, open files) and the permissions it
+  asks for (`network`, `process`; the binding grants none, so asking is refused). The caller supplies only
+  language, source digest, inputs, outputs, limits and permissions; every other field, the requirement
+  revision included, is derived, and naming one is refused. Limits default to, and may not exceed, the
+  workload revision's envelope (D01, D21). The ID is derived from the content. Every admitted request now
+  pins a stored CodeTask: a test-worker job's CodeTask has language `test_worker` and its cues' digest as
+  its source, and is never run by the runner. Job 0.2.0 lets a runner job carry no test-worker task and
+  records the submitted payload's digest, which an idempotent retry must repeat (D05); a Sprint 3 job's
+  payload was its task. Execution outcome fields are added to the CodeTask when 4.5 commits them.
+- **2026-10-12 — S4 — ASSUMPTION — what an undeclared input or output is at admission (4.1)** — an input is
+  undeclared unless its digest is data captured through a grant (a DataManifest in this tenant); two inputs
+  may not share a name; the source must already be in the content store; a Python or SQL task that declares
+  no output is malformed and refused before anything is written. Reads and writes beyond the declaration
+  at run time are the runner's and the sandbox's to stop (4.2 to 4.4).

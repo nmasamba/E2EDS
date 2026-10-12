@@ -12,7 +12,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from dsp.adapters import export_fs
-from dsp.adapters.discovery import probes
+from dsp.adapters.discovery import host, probes
 from dsp.adapters.duckdb_profile import profile_csv
 from dsp.adapters.ledger_sqlite import SqliteLedger
 from dsp.adapters.store_fs import ContentStore
@@ -20,7 +20,7 @@ from dsp.application import admission, controls, conversation, jobs
 from dsp.application.discovery import discover
 from dsp.application.grants import grant_folder, revoke, summary
 from dsp.application.packs import profile_granted
-from dsp.application.planning import LOCAL_DRAFT, propose_plan
+from dsp.application.planning import local_binding, propose_plan
 from dsp.application.workloads import current_workload
 from dsp.contracts.errors import DspError, ErrorCode, TrustedContext
 
@@ -74,6 +74,7 @@ def mount(
     job coordinator.
     """
     ctx = TrustedContext.local()
+    binding = local_binding(ctx, *host())
 
     def ledger() -> SqliteLedger:
         return SqliteLedger(state_dir / "ledger.sqlite", clock)
@@ -116,7 +117,7 @@ def mount(
         snapshot = discover(
             ctx, probes(state_dir), ledger=ledger(), clock=_now, new_id=_id, timer=time.monotonic
         )
-        propose_plan(ctx, ledger=ledger(), new_id=_id)
+        propose_plan(ctx, binding=binding, ledger=ledger(), new_id=_id)
         return snapshot
 
     @app.get("/v1/hardware")
@@ -128,7 +129,7 @@ def mount(
 
     @app.post("/v1/plan")
     def create_plan() -> dict[str, Any]:
-        return propose_plan(ctx, ledger=ledger(), new_id=_id)
+        return propose_plan(ctx, binding=binding, ledger=ledger(), new_id=_id)
 
     @app.get("/v1/plan")
     def latest_plan() -> dict[str, Any]:
@@ -220,8 +221,9 @@ def mount(
             idempotency_key,
             task,
             workload=current_workload(ctx, store),
-            binding=LOCAL_DRAFT,
+            binding=binding,
             ledger=store,
+            store=ContentStore(state_dir / "store"),
             clock=clock,
             new_id=_id,
         )
@@ -307,7 +309,7 @@ def mount(
             clock=clock,
             new_id=_id,
             workload=current_workload(ctx, store),
-            binding=LOCAL_DRAFT,
+            binding=binding,
         )
 
     def controlled(job_id: str | None, command_id: str, action: str) -> dict[str, Any]:

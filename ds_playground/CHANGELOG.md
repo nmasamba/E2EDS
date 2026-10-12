@@ -1,5 +1,20 @@
 # Changelog
 
+## Sprint 4 — sandboxed native runner (in progress)
+
+- The activity trail is the one place outcomes appear: command receipts and their states with one wording,
+  job states, refused admissions, the job the Run button queued, and any request the harness never
+  received. The notes beside the buttons, the composer and the Run section are gone.
+- Cmd+P and Cmd+. (Ctrl on Linux) pause and cancel the live job from anywhere in the window, as well as
+  from the native menu.
+- The harness listens before it publishes its port, so a client that starts at the same moment no longer
+  waits for a connect timeout.
+- The local compute option is a stored record at OS-sandbox, single-user assurance (not VM isolation),
+  with macOS as an execution OS; every admitted job pins it and a stored CodeTask declaring its source,
+  inputs, outputs, limits and permissions. A task whose input was not captured through a grant, whose
+  source is missing, that declares no output, asks for more than the workload allows or asks for a
+  permission is refused.
+
 ## Sprint 3 — jobs, admission, conversation and control (2026-10-08)
 
 - Durable jobs: `POST /v1/jobs` queues a job; a worker process leases one attempt at a time (60 s lease,

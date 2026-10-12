@@ -12,6 +12,7 @@ SHA = "sha256:" + "b" * 64
 PINNED = {"id": "x", "revision": "1.0.0", "sha256": SHA}
 FIELDS: dict[str, Any] = {
     "task": {"cues": ["sleep"], "seconds": 1},
+    "payload_sha256": SHA,
     "request_ref": PINNED,
     "workload_ref": PINNED,
     "reservation": "reservation-1",
