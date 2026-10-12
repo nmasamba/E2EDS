@@ -237,7 +237,9 @@ test("R20: work done through the CLI reaches the open window", async ({ page }) 
   ]);
   const wide = Array.from({ length: 201 }, (_, column) => `c${column}`).join(",");
   expect(await profile(`${wide}\n`)).toContain("columns");
-  await expect(stage(page, "Develop and optimise")).toContainText("✕ Failed · INPUT_INVALID");
+  await expect(stage(page, "Develop and optimise")).toContainText(
+    "✕ Failed · crash: ValueError: 0 rows and 201 columns exceed the D20 limits",
+  );
   await expectNoAxeViolations(page);
 });
 

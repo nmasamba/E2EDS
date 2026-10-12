@@ -84,6 +84,26 @@ def launch(binary: Path, state_dir: Path) -> Iterator[Callable[[], subprocess.Po
         app.wait(10)
 
 
+def settled(app: subprocess.Popen[bytes]) -> None:
+    """Wait until the harness a launch spawned has found the profile served and given up.
+
+    Every launch spawns one; a frozen harness takes about 3 s to reach the profile lock, so one
+    still starting could take the lock after the serving harness stops.
+    """
+
+    def children() -> int:
+        return subprocess.run(["pgrep", "-P", str(app.pid), "dsp-harness"], check=False).returncode
+
+    def spawned() -> None:
+        assert children() == 0
+
+    def gone() -> None:
+        assert children() == 1
+
+    eventually(spawned)  # the shell spawns it as it starts, not before launch() returns
+    eventually(gone)
+
+
 def press(keys: str) -> None:
     """Send a key combination to the app's main window through the window manager."""
     window = xdotool("search", "--sync", "--onlyvisible", "--name", "^DS Playground$")
@@ -238,7 +258,7 @@ def test_the_built_app_works_and_survives_close_kill_crash_and_a_second_instance
     history = kinds(bundled)
 
     second = launch()  # a second instance attaches to the same harness
-    time.sleep(3)
+    settled(second)
     assert (first.poll(), second.poll()) == (None, None)
     assert harness(state_dir).get("/v1/status").json()["pid"] == owner["pid"]
 
@@ -249,7 +269,7 @@ def test_the_built_app_works_and_survives_close_kill_crash_and_a_second_instance
     assert bundled.get("/v1/status").json()["pid"] == owner["pid"]
 
     third = launch()  # reopen: same harness, same history, nothing done twice
-    time.sleep(3)
+    settled(third)
     assert third.poll() is None
     assert harness(state_dir).get("/v1/status").json()["pid"] == owner["pid"]
     assert kinds(bundled) == history
@@ -274,6 +294,9 @@ def test_the_built_app_works_and_survives_close_kill_crash_and_a_second_instance
         press("ctrl+q")  # a real Quit from a shell that did not start the harness leaves it too
         assert fifth.wait(20) == 0
         assert replaced.get("/v1/status").json()["pid"] == successor
+    else:
+        fourth.terminate()  # an open window would start another harness once this one stops
+        fourth.wait(10)
     assert replaced.post("/v1/shutdown").json() == {"status": "stopping"}
     assert harness_stopped(state_dir)
     (state_dir / "harness.json").unlink()
@@ -435,8 +458,8 @@ def test_the_built_app_starts_pauses_and_cancels_the_hung_test_job(
         eventually(lambda: shows(bundled, job, "cancelled"))
         app.terminate()
         app.wait(10)
-        launch()
-        time.sleep(3)
+        reopened = launch()
+        settled(reopened)
     expected = [
         "job.queued",
         "job.started",
@@ -449,6 +472,9 @@ def test_the_built_app_starts_pauses_and_cancels_the_hung_test_job(
     ]
     assert [k for k in kinds_without_heartbeats(bundled) if k.startswith("job.")] == expected
     assert bundled.get("/v1/status").json()["status"] == "ok"
+    if not LINUX:
+        reopened.terminate()  # an open window would start another harness once this one stops
+        reopened.wait(10)
     assert bundled.post("/v1/shutdown").json() == {"status": "stopping"}
     assert harness_stopped(state_dir)
     (state_dir / "harness.json").unlink()
