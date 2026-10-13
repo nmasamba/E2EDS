@@ -7,7 +7,6 @@ reports only whether an open succeeded and its errno.
 """
 
 import contextlib
-import ctypes
 import errno
 import json
 import os
@@ -189,8 +188,13 @@ def test_c14_no_socket_reaches_even_loopback_and_no_name_resolves(
 def test_c14_the_task_sees_only_its_scrubbed_environment_and_standard_descriptors(
     tmp_path: Path, runner_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """C14, A28: a secret in the harness's environment and its open files never reach the task."""
+    """C14, A28: a secret in the harness's environment and its open files never reach the task.
+
+    Nor does the environment of any other process of the owner's: a sibling started with the
+    secret stands for one.
+    """
     monkeypatch.setenv("DSP_PLANTED_SECRET", "never to be seen")
+    sibling = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
     held = (tmp_path / "held.txt").open("w")  # an open file of the harness's, made inheritable
     os.set_inheritable(held.fileno(), True)  # as a library's descriptor without CLOEXEC would be
     code = (
@@ -200,24 +204,29 @@ def test_c14_the_task_sees_only_its_scrubbed_environment_and_standard_descriptor
         "        fcntl.fcntl(fd, fcntl.F_GETFD); return True\n"
         "    except OSError:\n"
         "        return False\n"
-        "def parents():  # the harness's own arguments and environment, through the process table\n"
+        "def exposed(pid, marker):  # a process's environment, through the process table\n"
         "    if os.uname().sysname == 'Darwin':\n"
-        "        mib = (ctypes.c_int * 3)(1, 49, os.getppid())  # CTL_KERN, KERN_PROCARGS2\n"
+        "        mib = (ctypes.c_int * 3)(1, 49, pid)  # CTL_KERN, KERN_PROCARGS2\n"
         "        size = ctypes.c_size_t(1 << 20)\n"
         "        found = ctypes.create_string_buffer(size.value)\n"
         "        if libc.sysctl(mib, 3, found, ctypes.byref(size), None, 0):\n"
         "            return False\n"
-        "        return b'PATH=' in found.raw[: size.value]\n"
-        "    fd = libc.open(f'/proc/{os.getppid()}/environ'.encode(), os.O_RDONLY)\n"
+        "        return marker in found.raw[: size.value]\n"
+        "    fd = libc.open(f'/proc/{pid}/environ'.encode(), os.O_RDONLY)\n"
         "    if fd < 0:\n"
         "        return False\n"
         "    found = os.read(fd, 1 << 20)\n"
         "    os.close(fd)\n"
-        "    return b'PATH=' in found\n"
+        "    return marker in found\n"
         "fds = [fd for fd in range(1024) if held(fd)]\n"
-        "report(env=dict(os.environ), fds=fds, parent=parents())\n"
+        "report(env=dict(os.environ), fds=fds, parent=exposed(os.getppid(), b'PATH='),\n"
+        f"    sibling=exposed({sibling.pid}, b'DSP_PLANTED_SECRET='))\n"
     )
-    observed = seen(tmp_path / "run", contained(tmp_path / "run", runner_env, code))
+    try:
+        observed = seen(tmp_path / "run", contained(tmp_path / "run", runner_env, code))
+    finally:
+        sibling.kill()
+        sibling.wait()
     leaked = held.fileno()
     held.close()
     scratch = str((tmp_path / "run" / "attempt" / "scratch").resolve())
@@ -227,6 +236,7 @@ def test_c14_the_task_sees_only_its_scrubbed_environment_and_standard_descriptor
     added_by_the_runtime = {"LC_CTYPE", "__CF_USER_TEXT_ENCODING", "PWD"}
     assert set(observed["env"]) <= {"HOME", "TMPDIR"} | added_by_the_runtime
     assert observed["parent"] is False  # the harness's own environment is out of reach too
+    assert observed["sibling"] is False  # and so is every other process's of the owner's
     assert leaked not in observed["fds"]
     assert observed["fds"] == [0, 1, 2, 3, 4]  # standard three, the runner's channel, /dev/null
 
@@ -279,23 +289,31 @@ def test_d21_memory_past_the_limit_stops_the_task_and_memory_within_it_is_allowe
         "def memfd():\n"
         "    fd = os.memfd_create('held')\n"
         "    os.write(fd, b'x' * 2**20)\n"
-        "def sysv():\n"
-        "    segment = libc.shmget(0, 2**20, 0o1600)  # IPC_PRIVATE, IPC_CREAT\n"
-        "    if segment < 0:\n"
-        "        raise OSError(ctypes.get_errno(), 'shmget')\n"
-        "    seen['segment'] = segment  # macOS refuses IPC_RMID here; the test removes it\n"
+        "left = []\n"
+        "def ipc(flag, made):  # a System V object, kept for the test to remove if one was made\n"
+        "    if made < 0:\n"
+        "        return ctypes.get_errno()\n"
+        "    left.append([flag, made])\n"
+        "    return 0\n"
         "seen = {'shared': tried(lambda: shared_memory.SharedMemory(create=True, size=2**30))}\n"
-        "seen['sysv'] = tried(sysv)\n"
+        "seen['sysv'] = ipc('-m', libc.shmget(0, 2**20, 0o1600))  # IPC_PRIVATE, IPC_CREAT\n"
+        "seen['queue'] = ipc('-q', libc.msgget(0, 0o1600))\n"
+        "seen['semaphore'] = ipc('-s', libc.semget(0, 1, 0o1600))\n"
+        "if os.uname().sysname == 'Darwin':  # shmsys: the multiplexer a shmget rule alone misses\n"
+        "    libc.syscall.argtypes = [ctypes.c_int]  # the rest are variadic\n"
+        "    shmget = map(ctypes.c_long, (3, 0, 4096, 0o1600))  # which, key, size, flags\n"
+        "    seen['shmsys'] = ipc('-m', libc.syscall(253, *shmget))\n"
         "if hasattr(os, 'memfd_create'):\n"
         "    seen['memfd'] = tried(memfd)\n"
-        "report(**seen)\n"
+        "report(left=left, **seen)\n"
     )
     held = seen(tmp_path / "unmapped", contained(tmp_path / "unmapped", runner_env, unmapped))
-    if (segment := held.pop("segment", -1)) >= 0:
-        ctypes.CDLL(None).shmctl(segment, 0, None)  # IPC_RMID, from outside: never left behind
+    for flag, made in held.pop("left"):  # removed from outside: it would outlive the task
+        subprocess.run(["ipcrm", flag, str(made)], check=True)
     assert all(held.values()), held  # memory held without being mapped cannot be made at all
     refusals = {errno.EPERM, errno.EACCES, errno.ENOSYS}
-    assert held["sysv"] in refusals, held  # refused, not merely out of the system's quota
+    ipc = [held[kind] for kind in ("sysv", "queue", "semaphore", "shmsys") if kind in held]
+    assert set(ipc) <= refusals, held  # refused, not merely out of the system's quota
 
 
 def test_d21_cpu_time_past_the_limit_stops_the_task_even_when_it_ignores_sigxcpu(

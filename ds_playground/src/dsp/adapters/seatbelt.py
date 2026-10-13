@@ -3,7 +3,8 @@
 Policy (the sandboxed-runner skill), deny by default. Reads: the runner environment, the Python it
 was made from and every symlink on the way to it, system libraries and the attempt directory, with
 the metadata of their ancestors and the root's listing. Writes: scratch and ``/dev/null``. Also
-sysctl reads. Nothing else: no network, no process creation or execution, no IPC, no Mach services.
+the sysctl reads Python needs, by name. Nothing else: no network, no process creation or
+execution, no other process's information, no IPC (System V included), no Mach services.
 
 Limits: memory by the kernel (a fatal jetsam limit on the spawn, which an exec would drop, hence
 ``seatbelt_child`` instead of ``sandbox-exec``) and by polling the kernel's footprint account
@@ -25,6 +26,25 @@ from dsp.adapters.sandbox import FLAGS, Confined, chain, scrubbed
 
 SETSID, CLOEXEC_DEFAULT = 0x0400, 0x4000  # spawn.h
 JETSAM_SET, MEMLIMIT_FATAL, JETSAM_PRIORITY = 0x8000, 0x04 | 0x08, 180  # spawn_private.h
+SYSV = (  # every System V IPC call, the multiplexers included: creating an object is not mediated
+    "SYS_shmsys SYS_shmget SYS_shmat SYS_shmctl SYS_shmdt SYS_msgsys SYS_msgget SYS_msgsnd "
+    "SYS_msgsnd_nocancel SYS_msgrcv SYS_msgrcv_nocancel SYS_msgctl SYS_semsys SYS_semget SYS_semop "
+    "SYS_semctl"
+)
+SYSCTLS = (  # what libSystem, Python, os.uname() and DuckDB read (measured), and no other: another
+    # process's arguments and environment are reached through sysctl too
+    "hw.machine",
+    "hw.memsize",
+    "hw.ncpu",
+    "hw.pagesize",
+    "hw.pagesize_compat",
+    "kern.hostname",
+    "kern.osrelease",
+    "kern.ostype",
+    "kern.version",
+    "machdep.ptrauth_enabled",
+    "sysctl.proc_translated",
+)
 
 
 class _Usage(ctypes.Structure):
@@ -64,6 +84,7 @@ class Seatbelt(Confined):
         def paths(kind: str, chosen: set[Path] | list[Path]) -> str:
             return " ".join(f"({kind} {json.dumps(str(p), ensure_ascii=False)})" for p in chosen)
 
+        sysctls = " ".join(f"(sysctl-name {json.dumps(name)})" for name in SYSCTLS)
         return "\n".join(
             [
                 "(version 1)",
@@ -73,7 +94,9 @@ class Seatbelt(Confined):
                 f"(allow file-read-metadata {paths('literal', sorted(ancestors))})",
                 f"(allow file-write* {paths('subpath', [work / 'scratch'])})",
                 '(allow file-read* file-write* (literal "/dev/null"))',
-                "(allow sysctl-read)",
+                "(deny process-info*)",
+                f"(allow sysctl-read {sysctls})",
+                f"(deny syscall-unix (syscall-number {SYSV}))",
             ]
         )
 

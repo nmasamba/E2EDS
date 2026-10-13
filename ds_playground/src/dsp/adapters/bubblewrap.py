@@ -12,11 +12,11 @@ not even loopback, and only the task's own processes; the runner is the namespac
 closes) are passed on.
 
 The seccomp filter refuses sockets other than Unix ones, every way of creating a process except a
-thread, memory a task could hold without mapping it (``memfd_create``, System V shared memory),
-which ``RLIMIT_AS`` would not count, and kernel interfaces a task never needs. Limits: memory by
-``RLIMIT_AS`` (``prlimit``), scratch by the tmpfs size, CPU time by the runner's own limit (the
-kernel kills at the hard limit), wall time and output in the shared core. bubblewrap reports a
-signal that ended the task as 128 plus its number.
+thread, memory a task could hold without mapping it (``memfd_create``, System V shared memory,
+message queues and semaphores), which ``RLIMIT_AS`` would not count, and kernel interfaces a task
+never needs. Limits: memory by ``RLIMIT_AS`` (``prlimit``), scratch by the tmpfs size, CPU time
+by the runner's own limit (the kernel kills at the hard limit), wall time and output in the
+shared core. bubblewrap reports a signal that ended the task as 128 plus its number.
 """
 
 import contextlib
@@ -63,6 +63,8 @@ SYSCALLS = {  # unistd.h of each architecture
         "io_uring_register": 427,
         "clone3": 435,
         "shmget": 29,
+        "msgget": 68,
+        "semget": 64,
         "memfd_create": 319,
     },
     "aarch64": {
@@ -93,6 +95,8 @@ SYSCALLS = {  # unistd.h of each architecture
         "io_uring_register": 427,
         "clone3": 435,
         "shmget": 194,
+        "msgget": 186,
+        "semget": 190,
         "memfd_create": 279,
     },
 }
