@@ -860,3 +860,73 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   three passing runs one bundled harness was still running afterwards, on one test's profile, started
   by a process that had exited; where it comes from is not established. The tests pass; the process
   holds only its temporary profile and stops on SIGTERM.
+- **2026-10-13 — S4 — DECISION — the integrity review and what was done with it (4.7)** — the one
+  `integrity-reviewer` run (a general-purpose agent following the reviewer's file, since the project's
+  agent type is not in this session's registry; 249k tokens) returned REVIEW: PASS with six should-fix
+  findings and five notes. Fixed, each with a test and a mutation check: (1) promotion compared a digest
+  after moving the file, so one that stopped part-way blocked the dispatcher for good: it now checks
+  before moving, counts an output already stored under its digest as moved, and `tidy` sets a folder it
+  cannot finish aside once (`.held`); (2) on Linux a memfd or System V segment held memory `RLIMIT_AS`
+  does not count: the filter refuses `memfd_create` and `shmget`, and the memory test probes both (a
+  file-size limit was added too, then removed: every writable file system is the sized scratch, so no
+  test could fail without it); (3) a frozen harness guessed a runner environment under its unpack folder
+  (`/tmp/.runner-env` on Linux, which another user could plant): it now uses only `DSP_RUNNER_ENV`, and
+  an environment whose folders are not the owner's alone is refused; (4) A28 parts asserted only a prefix
+  the audit hook alone produces: each read and write part now requires the OS's answer and errno, and
+  the lookup must fail as `gaierror`; (5) an error while watching a task left it running unwatched: the
+  core now kills and reaps it first; (6) a failure message could carry the runner environment's path:
+  the runner names the attempt, runner and interpreter paths, in DuckDB's messages too. Of the notes,
+  (8) an outside worker could lease a sandboxed job and report a success no sandbox ran: the lease route
+  refuses it; (11) a request with no reply was called "not received" though it may have been: the trail
+  now says "no answer" (a refusal before reading stays "not received"). Note (7) is worse than the
+  review could tell from the code: see the next entry. Logged, not fixed: (9) the Linux filter allows
+  `execve`, so a task can replace itself with the interpreter (still confined, and `/bin/sh` is not
+  mounted); (10) admission accepts any captured DataManifest as an input and nothing reads the binding's
+  `sealed_data_access: false`: Sprint 9 must exclude sealed manifests there.
+- **2026-10-13 — S4 — DEFECT — on macOS a task can read every same-user process's environment (open:
+  HALT)** — measured on macOS 26.3.1: real task code reading `KERN_PROCARGS2` for its parent read the
+  harness's arguments and environment (a variable planted in the harness's environment was found). No
+  Seatbelt rule this sandbox can express stops it: with no `sysctl-read` allowed at all, with
+  `(deny process-info*)`, and with `kern.procargs2` denied by name, the read still succeeded. The same
+  call works for any process of the owner's by its ID, so environment variables of the owner's other
+  programs are readable too. On Linux the task cannot (no `/proc`, its own process IDs). The containment
+  test and the A28 host-secret part state the policy as the skill does and fail on macOS; the macOS A28
+  host-secret record is FAIL.
+- **2026-10-13 — S4 — DEFECT — on macOS Seatbelt does not mediate System V shared memory (open: HALT)**
+  — measured: `shmget` succeeds under the profile, also with an explicit `(deny ipc-sysv*)`. A task can
+  hold memory its limit does not count, up to the kernel's System V quota (`kern.sysv.shmall` 1024 pages,
+  4 MiB, and 32 segments for the whole machine). A task cannot remove its own segment: inside the
+  sandbox `shmctl(IPC_RMID)` fails with EPERM, so every segment outlives its task and takes from that
+  shared quota until something outside removes it. Earlier probe runs had left six such segments
+  (3 MiB), which is why two gate runs saw `shmget` fail with ENOMEM rather than succeed; they were
+  removed with `ipcrm` (only segments the tests' tasks had made: the owner's own were not touched).
+  The memory test now removes its probe's segment from outside the sandbox (mutation-checked: without
+  that, a 1 MiB segment is left). It requires a refusal and fails on macOS.
+- **2026-10-13 — S4 — FINDING — a failure message is text the task chooses (4.7)** — up to 200
+  characters of it go into the `job.failed` event and the trail. Sprint 5 must treat it as customer
+  content before any of it reaches a prompt.
+- **2026-10-13 — S4 — DEFECT — Cmd+. in the built macOS app (still open; the owner's press)** — the
+  owner pressed each shortcut once in the built app (2026-10-13, a fresh profile, a queued job): Cmd+P
+  paused the job, and the ledger shows the window's own handler sent it (a `command-…` ID, the
+  renderer's form); Cmd+. produced nothing: no command reached the harness, from the window's handler
+  or from the native menu. In Playwright (Chromium) and on Linux both chords work. This is the evidence
+  the 2026-10-12 entry asked for before changing the chord: on macOS Cmd+. reaches neither the webview
+  nor the menu. Changing the chord is the owner's call (waiting on the owner).
+- **2026-10-13 — S4 — DECISION — the window says why it could not read the snapshot (after CI run
+  38322576233)** — the Linux built-app test failed again on that run, so the retry was not the cause:
+  the window's read of `/v1/hardware` fails there while Python's read and the window's read of the plan
+  succeed. The resource bar now shows "Resources not read: <reason>" instead of "Resources not
+  observed", which is more honest for the owner and puts the reason into the test's failure text.
+- **2026-10-13 — S4 — DEFECT — a sandbox that could not start stranded a job (fixed; cause open)** — in
+  one macOS gate run the dispatcher logged `dispatch failed: PermissionError` while starting the A28
+  bounds part's task, and the job sat on a lease no one held until it expired, so the part timed out.
+  The log has no traceback, so which call refused (the scratch image or the spawn) is not established;
+  the part passed alone twice afterwards. `execute` now reports any OS error or
+  refusal from the runner as a transient `sandbox_unavailable` failure, so the job is requeued at once
+  and given up after the usual retries (a test with a runner that refuses; mutation-checked twice).
+- **2026-10-13 — S4 — DECISION — the overall A28 record takes FAIL from a failed part** — the overall
+  record was INSUFFICIENT_EVIDENCE whatever its parts showed, which on macOS rounded up the failed
+  host-secret part. It is now FAIL when a part the same run recorded on that OS (same commit) failed,
+  and names the failed parts; otherwise it stays INSUFFICIENT_EVIDENCE for the parts that cannot exist
+  yet. On Linux the acceptance line's answer is ENOENT rather than EPERM: `/etc` is not mounted in the
+  sandbox, so the file does not exist for the task.

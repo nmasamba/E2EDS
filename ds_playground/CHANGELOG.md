@@ -25,6 +25,11 @@
   `fixtures/tasks/read_secret.json` is refused by the OS. `dsp profile` now runs its profiling in the
   sandbox as a job the activity trail follows, and `profile.json` names its schema. A sandboxed job's
   failure appears in the trail with its reason.
+- The resource bar says why the window could not read the observed hardware, instead of showing it as
+  not observed; a request that got no reply is listed as "no answer", since it may have been received.
+- Known limits on macOS (open): task code can read the arguments and environment of the owner's other
+  programs, the harness included, and can hold up to 4 MiB of System V shared memory outside its memory
+  limit; Seatbelt has no rule that stops either. Linux refuses both.
 
 ## Sprint 3 — jobs, admission, conversation and control (2026-10-08)
 

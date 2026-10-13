@@ -1,0 +1,15 @@
+{
+  "id": "A28",
+  "sprint": 4,
+  "os": "darwin-arm64",
+  "fixture": "state-folder-file",
+  "commit": "e6cf725",
+  "expected": "a file in the harness's state folder, standing for a sealed final partition, is refused by the OS to task code",
+  "actual": "failed: undeclared_read: 1 open(s) outside the declaration; the OS answered PermissionError: [Errno 1] Operation not permitted",
+  "outcome": "PASS",
+  "limits": [
+    "OS-sandbox assurance for one local user (Seatbelt on macOS, bubblewrap and seccomp on Linux): not VM isolation, and not a boundary for hostile multi-tenant code",
+    "sealed partitions and their evaluator arrive in Sprint 9: the stand-in is a plain file"
+  ],
+  "assurance": "os_sandbox_single_user"
+}
