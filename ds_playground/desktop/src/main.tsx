@@ -408,8 +408,9 @@ function Workspace(props: { harness: Harness; version: string; pid: number }) {
   const started = useRef(false);
   const [unheard, setUnheard] = useState<string[]>([]);
   const notReceived: NotReceived = (what) => (error) => {
-    const why = error instanceof TypeError ? "the harness did not answer" : String((error as Error).message);
-    setUnheard((lines) => [...lines, `${what} · not received · ${why}`]);
+    // No answer is not proof the harness did not record it; a refusal before reading is.
+    const why = error instanceof TypeError ? "no answer" : `not received · ${(error as Error).message}`;
+    setUnheard((lines) => [...lines, `${what} · ${why}`]);
   };
 
   const observe = () => void call(address.current, "/v1/hardware", "POST").catch(() => undefined);
@@ -440,12 +441,17 @@ function Workspace(props: { harness: Harness; version: string; pid: number }) {
   const [discovered, planned] = [latest("discovery.finished"), latest("plan.proposed")];
   // Read the snapshot and plan the events name, again on every poll until a read succeeds.
   const read = useRef({ snapshot: 0, plan: 0 });
+  const [unread, setUnread] = useState("");
   useEffect(() => {
     if (discovered && read.current.snapshot !== discovered)
-      void call<Snapshot>(harness, "/v1/hardware").then((found) => {
-        read.current.snapshot = discovered;
-        setSnapshot(found);
-      }, () => undefined);
+      void call<Snapshot>(harness, "/v1/hardware").then(
+        (found) => {
+          read.current.snapshot = discovered;
+          setUnread("");
+          setSnapshot(found);
+        },
+        (error: Error) => setUnread(error.message || String(error)),
+      );
     if (planned && read.current.plan !== planned)
       void call<Plan>(harness, "/v1/plan").then((found) => {
         read.current.plan = planned;
@@ -497,7 +503,9 @@ function Workspace(props: { harness: Harness; version: string; pid: number }) {
             `${known(snapshot.memory.available_gib)} of ${known(snapshot.memory.total_gib)} GiB ` +
             `memory available · ${known(snapshot.storage[0]?.available_gib)} GiB free · ` +
             `${age.stale ? "stale, " : ""}observed ${age.seconds} s ago`
-          : "Resources not observed"}
+          : unread
+            ? `Resources not read: ${unread}`
+            : "Resources not observed"}
       </section>
     </>
   );

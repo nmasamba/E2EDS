@@ -55,7 +55,7 @@ test("A27, R15: the composer's receipts, and a message the harness never had, ar
   await expect(page.getByRole("textbox", { name: "Message" })).toHaveValue("");
   await page.route("**/v1/conversations/**", (route) => route.abort());
   await say(page, "hello");
-  await expect(activity(page)).toContainText("You: hello · not received · the harness did not answer");
+  await expect(activity(page)).toContainText("You: hello · no answer");
   await expect(page.getByRole("textbox", { name: "Message" })).toHaveValue("hello");
   await page.unrouteAll();
   await expect(composer(page)).not.toContainText("received");
@@ -172,7 +172,7 @@ test("A08, R20: the Run button's result and a refused admission are shown in the
   }
   await expect(activity(page)).toContainText(/Job [0-9a-f]{6}: queued/);
   await expect(activity(page)).toContainText(/Admission refused: needs .+ free after what live jobs hold/);
-  await expect(activity(page)).not.toContainText("not received");
+  await expect(activity(page)).not.toContainText("no answer");
   await expect(page.getByRole("region", { name: "Run" })).toHaveText("RunStart the hung test job");
   await expectNoAxeViolations(page);
 });
