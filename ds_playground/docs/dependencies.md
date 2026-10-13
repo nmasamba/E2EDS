@@ -19,6 +19,17 @@ Build only (`build` dependency group, not installed by `uv sync`): pyinstaller 6
 the desktop sidecar (GPL-2.0-or-later with an exception that allows distributing the frozen program under any
 licence; alternative: Nuitka, a slower compile for the same single file).
 
+## The sandbox (Sprint 4)
+
+The runner's environment (`make runner-env`) is the same lock's runtime set; it adds no package. The sandbox
+uses operating-system facilities:
+
+| Facility | Why | Licence (upstream) | Alternative |
+|---|---|---|---|
+| bubblewrap (`bwrap`, Linux, system package) | Namespaces, read-only binds, a sized scratch tmpfs and the seccomp filter for each task | LGPL-2.0-or-later | nsjail or minijail; firejail (setuid) |
+| `prlimit` (util-linux, Linux, system package) | The task's address-space limit, set before bubblewrap starts | GPL-2.0-or-later | `preexec_fn` with `setrlimit`, unsafe in a threaded harness |
+| Seatbelt (`sandbox_init`), `posix_spawnattr_setjetsam_ext`, `hdiutil` (macOS, built in) | The profile, the kernel memory limit and the size-capped scratch volume | part of macOS | a VM (the suite's default), declined by the owner |
+
 ## Desktop shell (`desktop/`)
 
 Exact versions are pinned in `desktop/package.json` with `pnpm-lock.yaml`, and in
