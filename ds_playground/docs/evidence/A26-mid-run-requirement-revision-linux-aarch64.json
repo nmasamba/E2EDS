@@ -3,7 +3,7 @@
   "sprint": 3,
   "os": "linux-aarch64",
   "fixture": "the deterministic test worker (fixtures/worker.py) on a harness with a movable clock, the test job's WorkloadSpec at revision 1.0.0",
-  "commit": "e6cf725",
+  "commit": "9be5f61",
   "expected": "exclude a feature/change search while work runs; record diff, impact, new version and invalidation; old results stay under old revision; simultaneous edits conflict predictably; changed final criteria/test exposure return to EO; production stays unchanged",
   "actual": "the exclusion became a typed patch, an impact naming the finished job's result as stale, and revision 2.0.0; the finished job's record and result were unchanged on 1.0.0; the running job was held and resumed under 2.0.0; an edit against the old revision was REVISION_CONFLICT; a budget change was refused for the owner's action",
   "outcome": "INSUFFICIENT_EVIDENCE",

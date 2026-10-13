@@ -3,7 +3,7 @@
   "sprint": 4,
   "os": "linux-aarch64",
   "fixture": "state-folder-file",
-  "commit": "e6cf725",
+  "commit": "9be5f61",
   "expected": "a file in the harness's state folder, standing for a sealed final partition, is refused by the OS to task code",
   "actual": "failed: undeclared_read: 1 open(s) outside the declaration; the OS answered FileNotFoundError: [Errno 2] No such file or directory",
   "outcome": "PASS",

@@ -31,8 +31,11 @@ result.
   `file-write*` for scratch, no `network*`, applied by `sandbox_init` inside the spawned process
   (`dsp.adapters.seatbelt_child`), not by `sandbox-exec`, whose exec drops the jetsam memory limit;
   scratch is a size-capped disk image; CPU time is also polled, as Darwin does not kill at the hard limit.
-  Measured on macOS 26.3 and not refusable by any rule tried: `sysctl(KERN_PROCARGS2)` reads any
-  same-user process's arguments and environment, and `shmget` succeeds (its `IPC_RMID` is refused).
+  No blanket `(allow sysctl-read)`: it lets `sysctl(KERN_PROCARGS2)` read any same-user process's
+  arguments and environment. Deny `process-info*` and allow only the sysctls Python needs, by exact
+  name (the kernel names that read `kern.procargs2.<pid>`, so a `kern.` prefix reopens it). Creating
+  a System V object passes no ipc rule: deny every System V call with `syscall-unix`, the `shmsys`,
+  `msgsys` and `semsys` multiplexers included. `log stream` shows each denial while tests run.
 - **Linux:** `prlimit --as=<memory> -- bwrap --unshare-all --as-pid-1 --die-with-parent --new-session`,
   `--ro-bind` for the allowlist, a `--size`d `--tmpfs` on scratch, `--remount-ro` for `/` and `/dev`, no
   `/tmp`, `/proc` or `/etc` (but `ld.so.cache`), and a seccomp filter; the environment is scrubbed at

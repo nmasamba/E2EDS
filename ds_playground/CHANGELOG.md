@@ -27,9 +27,9 @@
   failure appears in the trail with its reason.
 - The resource bar says why the window could not read the observed hardware, instead of showing it as
   not observed; a request that got no reply is listed as "no answer", since it may have been received.
-- Known limits on macOS (open): task code can read the arguments and environment of the owner's other
-  programs, the harness included, and can hold up to 4 MiB of System V shared memory outside its memory
-  limit; Seatbelt has no rule that stops either. Linux refuses both.
+- On macOS, task code can no longer read the arguments and environment of the owner's other programs
+  (the harness included) or create System V shared memory, message queues or semaphores, which
+  outlived the task; Linux refuses both as well.
 
 ## Sprint 3 — jobs, admission, conversation and control (2026-10-08)
 

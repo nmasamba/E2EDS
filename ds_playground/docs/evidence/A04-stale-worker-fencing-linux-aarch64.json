@@ -3,7 +3,7 @@
   "sprint": 3,
   "os": "linux-aarch64",
   "fixture": "the deterministic test worker (fixtures/worker.py) on a harness with a movable clock",
-  "commit": "e6cf725",
+  "commit": "9be5f61",
   "expected": "expire lease, admit permitted replacement, let old worker return: old commit rejected; no corrupted release pointer; orphan cost reconciled",
   "actual": "the silent worker's lease expired, the fence advanced to 1, the replacement leased attempt 2 and committed; the old worker's result was recorded as rejected and refused (['job.queued', 'job.started', 'job.expired', 'job.started', 'job.result_rejected', 'job.succeeded']); one result stands",
   "outcome": "INSUFFICIENT_EVIDENCE",

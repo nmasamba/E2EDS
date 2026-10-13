@@ -3,7 +3,7 @@
   "sprint": 4,
   "os": "linux-aarch64",
   "fixture": "fork-and-shell",
-  "commit": "e6cf725",
+  "commit": "9be5f61",
   "expected": "fork and spawning a shell are refused, so no process the task starts can outlive it",
   "actual": "fork: failed: crash: PermissionError: [Errno 1] Operation not permitted; shell: failed: crash: PermissionError: [Errno 1] Operation not permitted",
   "outcome": "PASS",

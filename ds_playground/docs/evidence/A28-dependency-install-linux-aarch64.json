@@ -3,7 +3,7 @@
   "sprint": 4,
   "os": "linux-aarch64",
   "fixture": "pip-process-and-site-packages-write",
-  "commit": "e6cf725",
+  "commit": "9be5f61",
   "expected": "starting pip is refused (no process may be created) and a module written into the runner environment is refused by the OS",
   "actual": "pip: failed: crash: PermissionError: [Errno 1] Operation not permitted; write into site-packages: failed: undeclared_write: 1 open(s) outside the declaration; the OS answered OSError: [Errno 30] Read-only file system",
   "outcome": "PASS",

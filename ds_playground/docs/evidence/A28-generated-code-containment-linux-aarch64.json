@@ -3,7 +3,7 @@
   "sprint": 4,
   "os": "linux-aarch64",
   "fixture": "containment-v1: the A28 parts on this OS",
-  "commit": "e6cf725",
+  "commit": "9be5f61",
   "expected": "real generated Python attempting a host-secret read, a network fetch, a dependency install, final-set access and metadata mutation is denied at the enforced boundary; CPU, disk and output are bounded; code and attempts are preserved; at most two repairs",
   "actual": "each part ran through the job path and the OS sandbox and records its own outcome on this OS: host-secret, network-fetch, dependency-install, final-set (a stand-in file), metadata-mutation, process, bounds (CPU, memory, wall time, output, scratch), preserved; the acceptance line: failed: undeclared_read: 1 open(s) outside the declaration; the OS answered FileNotFoundError: [Errno 2] No such file or directory; failed on this OS: none",
   "outcome": "INSUFFICIENT_EVIDENCE",

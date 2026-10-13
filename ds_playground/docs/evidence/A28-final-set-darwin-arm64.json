@@ -3,7 +3,7 @@
   "sprint": 4,
   "os": "darwin-arm64",
   "fixture": "state-folder-file",
-  "commit": "e6cf725",
+  "commit": "9be5f61",
   "expected": "a file in the harness's state folder, standing for a sealed final partition, is refused by the OS to task code",
   "actual": "failed: undeclared_read: 1 open(s) outside the declaration; the OS answered PermissionError: [Errno 1] Operation not permitted",
   "outcome": "PASS",

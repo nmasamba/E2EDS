@@ -3,7 +3,7 @@
   "sprint": 4,
   "os": "darwin-arm64",
   "fixture": "cpu-1s-memory-256MiB-wall-3s-output-4KiB-scratch-16MiB",
-  "commit": "e6cf725",
+  "commit": "9be5f61",
   "expected": "a task past its CPU, memory, wall-clock, output or scratch limit is stopped and fails with that limit named; nothing it wrote is a result",
   "actual": "cpu: failed: cpu_limit: stopped at the 1 s CPU-time limit; memory: failed: memory_limit: stopped by SIGKILL; time: failed: timeout: stopped at the 3 s wall-clock limit; output: failed: output_limit: the result exceeded 4096 bytes; scratch: failed: scratch_limit: OSError: [Errno 28] No space left on device",
   "outcome": "PASS",

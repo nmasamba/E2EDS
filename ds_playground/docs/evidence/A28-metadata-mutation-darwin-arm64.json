@@ -3,7 +3,7 @@
   "sprint": 4,
   "os": "darwin-arm64",
   "fixture": "ledger-and-task-file",
-  "commit": "e6cf725",
+  "commit": "9be5f61",
   "expected": "real code writing the ledger or its own task declaration is refused by the OS; the ledger stays a readable database holding the job",
   "actual": "ledger: failed: undeclared_write: 1 open(s) outside the declaration; the OS answered PermissionError: [Errno 1] Operation not permitted; task file: failed: undeclared_write: 1 open(s) outside the declaration; the OS answered PermissionError: [Errno 1] Operation not permitted",
   "outcome": "PASS",

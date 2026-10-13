@@ -79,10 +79,8 @@ Python and SQL run only in the operating system's sandbox: Seatbelt on macOS (no
 with a seccomp filter on Linux (`sudo apt-get install bubblewrap`; on Ubuntu 24.04 bubblewrap also needs the
 AppArmor profile `tools/bwrap_apparmor.sh` installs). A task reads only its declared inputs and the runner,
 writes only its scratch folder, has no network, cannot start a process, and is stopped at its CPU, memory,
-time, output and scratch limits. This is OS-sandbox assurance for one local user, not VM isolation.
-Two gaps are open on macOS, where Seatbelt has no rule for either: task code can read the arguments
-and environment variables of the owner's other programs, and can hold up to 4 MiB of System V shared
-memory outside its memory limit (`STATUS.md`, open defects).
+time, output and scratch limits. It cannot read another program's arguments or environment, or create
+System V IPC objects. This is OS-sandbox assurance for one local user, not VM isolation.
 
 ```bash
 make runner-env

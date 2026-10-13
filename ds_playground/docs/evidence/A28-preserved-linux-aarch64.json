@@ -3,7 +3,7 @@
   "sprint": 4,
   "os": "linux-aarch64",
   "fixture": "failed-attempt",
-  "commit": "e6cf725",
+  "commit": "9be5f61",
   "expected": "a task's source is kept in the content store under the digest its CodeTask records, and each attempt's start and end are events",
   "actual": "failed: crash: ValueError: a failed attempt is kept too; source stored by digest; 1 attempt started and ended",
   "outcome": "PASS",

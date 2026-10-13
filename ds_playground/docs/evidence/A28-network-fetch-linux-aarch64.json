@@ -3,7 +3,7 @@
   "sprint": 4,
   "os": "linux-aarch64",
   "fixture": "loopback-listener-and-lookup",
-  "commit": "e6cf725",
+  "commit": "9be5f61",
   "expected": "an HTTP fetch from a listener on this host's loopback and a name lookup both fail inside the sandbox; the listener receives nothing",
   "actual": "fetch: failed: crash: URLError: [Errno 13] Permission denied; lookup: failed: crash: gaierror: [Errno -3] Temporary failure in name resolution; the listener accepted nothing",
   "outcome": "PASS",

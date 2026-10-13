@@ -883,8 +883,8 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   `execve`, so a task can replace itself with the interpreter (still confined, and `/bin/sh` is not
   mounted); (10) admission accepts any captured DataManifest as an input and nothing reads the binding's
   `sealed_data_access: false`: Sprint 9 must exclude sealed manifests there.
-- **2026-10-13 — S4 — DEFECT — on macOS a task can read every same-user process's environment (open:
-  HALT)** — measured on macOS 26.3.1: real task code reading `KERN_PROCARGS2` for its parent read the
+- **2026-10-13 — S4 — DEFECT — on macOS a task can read every same-user process's environment (closed
+  the same day: see "both macOS containment gaps closed")** — measured on macOS 26.3.1: real task code reading `KERN_PROCARGS2` for its parent read the
   harness's arguments and environment (a variable planted in the harness's environment was found). No
   Seatbelt rule this sandbox can express stops it: with no `sysctl-read` allowed at all, with
   `(deny process-info*)`, and with `kern.procargs2` denied by name, the read still succeeded. The same
@@ -892,7 +892,8 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   programs are readable too. On Linux the task cannot (no `/proc`, its own process IDs). The containment
   test and the A28 host-secret part state the policy as the skill does and fail on macOS; the macOS A28
   host-secret record is FAIL.
-- **2026-10-13 — S4 — DEFECT — on macOS Seatbelt does not mediate System V shared memory (open: HALT)**
+- **2026-10-13 — S4 — DEFECT — on macOS Seatbelt does not mediate System V shared memory (closed the same
+  day: see "both macOS containment gaps closed")**
   — measured: `shmget` succeeds under the profile, also with an explicit `(deny ipc-sysv*)`. A task can
   hold memory its limit does not count, up to the kernel's System V quota (`kern.sysv.shmall` 1024 pages,
   4 MiB, and 32 segments for the whole machine). A task cannot remove its own segment: inside the
@@ -930,3 +931,35 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   and names the failed parts; otherwise it stays INSUFFICIENT_EVIDENCE for the parts that cannot exist
   yet. On Linux the acceptance line's answer is ENOENT rather than EPERM: `/etc` is not mounted in the
   sandbox, so the file does not exist for the task.
+- **2026-10-13 — S4 — DECISION — both macOS containment gaps closed (the HALT withdrawn)** — at the
+  owner's request ("run workflows or extra agents to get CI green") one workflow ran five investigators
+  on this Mac (every Seatbelt rule, the XNU source, the App Sandbox and built-in profiles, System V, and
+  separate-user or VM execution) and an adversarial verifier on each claimed closure (9 agents, 1.05M
+  tokens). Two closures held against every bypass tried, and were then reproduced here, mutation-checked
+  and gated. (1) **Other processes:** the profile's blanket `(allow sysctl-read)` granted the procargs
+  read before the process-info check; with it removed *and* `(deny process-info*)` stated, every route
+  (KERN_PROCARGS2, KERN_PROCARGS, kinfo_proc, listing, libproc) is refused with EPERM, for the parent,
+  an ancestor and an unrelated sibling (Mach task ports were refused already). The earlier measurement had tried each of the two
+  changes alone, never together, and denying `kern.procargs2` by name could never match: the kernel names
+  that read `kern.procargs2.<pid>`. Sysctl reads are now allowed by exact name only: the eleven that
+  libSystem, Python, `os.uname()` and DuckDB read, taken from the sandbox's denial log while every sandbox
+  test ran (`log stream`); afterwards only the probes' procargs reads and the network test's routing
+  table are denied. A library reading another sysctl gets EPERM; add it by name after checking it reveals
+  nothing of another process. (2) **System V:** creating an object passes no ipc rule in XNU (only reading
+  an existing key is hooked), so the profile denies every System V call by number with `syscall-unix`,
+  the `shmsys`, `msgsys` and `semsys` multiplexers included (a `shmget` rule alone is bypassed through
+  `shmsys`). The rule relies on a private SBPL feature and on the profile denying by default; the D21 test
+  is its regression test. Corrections to the defect entries above: under the old profile a task could not
+  attach a segment (`shmat` was refused), so it could hold no memory in one; the harm was exhausting the
+  machine-wide System V quota, and message queues and semaphores escaped as well. Linux now also refuses
+  `msgget` and `semget` (they would have died with the IPC namespace, but the policy is the same on both
+  OSes). Tests: C14 also reads an unrelated sibling's environment; D21 tries shared memory, queues,
+  semaphores and the multiplexer, and removes with `ipcrm` anything a task made. Mutation-checked (macOS
+  6, Linux 2, all caught): the blanket sysctl allowance back, no `(deny process-info*)`, no System V
+  rule, no multiplexers, no `msgget`, no `semget`; on Linux no `msgget`, no `semget`; and the sibling probe
+  alone catches the old profile. Left by the investigation: `~/Library/Containers/dsp.probe.appsandbox`
+  (28 KB, from the App Sandbox probe; the system refused its deletion), which the owner may remove; two
+  System V objects of the owner's that predate it (shared memory 131073, semaphore 4915207) were not
+  touched. Not adopted: running tasks as another user (needs admin setup and moves supervision into a
+  root helper), the App Sandbox (closes neither gap), and marking the harness `CS_RESTRICT` (hides only
+  the marking process's environment; arguments and every other process stay readable).
