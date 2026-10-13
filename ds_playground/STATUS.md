@@ -428,6 +428,11 @@ Code commit `2c81168`; the evidence and this file were committed after it.
 - `make desktop-build` then `make e2e` on macOS (at `b897ec6`; no Python or renderer change since):
   Vitest 10 passed, Playwright 21 passed, the shell's Rust test 1 passed, the built app 2 passed. No
   harness was left running afterwards this time.
+- CI at the gate (run 38367812467, `509add9`): `verify (ubuntu-24.04)` pass (6 min 14 s), `desktop
+  (ubuntu-24.04)` pass (10 min 13 s), `desktop (macos-latest)` pass (5 min 40 s), **`verify
+  (macos-latest)` fail**: `3 failed, 334 passed, 2 deselected, 1 warning in 412.94s (0:06:52)`,
+  coverage 90.92%, the same three tests. GitHub's runner image is `macos-26-arm64`, so both gaps hold
+  on a second macOS 26 machine.
 - ID trace (`tools/trace_ids.py 4`): A28, C14, C18, D01, D21, R16 covered; B26 is in test docstrings.
 - `integrity-reviewer` (once, 249k tokens): REVIEW: PASS, six should-fix findings and five notes; all
   six fixed, notes 8 and 11 fixed, note 7 measured as worse (the process-table gap), notes 9 and 10
@@ -449,8 +454,9 @@ Code commit `2c81168`; the evidence and this file were committed after it.
   outside the task's memory limit. Test `test_d21_memory_past_the_limit_…` fails on macOS (it now
   removes its own segment from outside). Linux refuses `shmget` and `memfd_create`.
 - Linux desktop job on CI: the built app's window showed "Resources not observed" on run 38322576233
-  while Python's read of the same harness succeeded; the window now shows "Resources not read: <reason>"
-  so the next run names the cause. Not yet established; read again at the gate's CI run.
+  while Python's read of the same harness succeeded. The gate's run (38367812467) passed, with the
+  window now showing "Resources not read: <reason>" on failure; the earlier failure did not recur and
+  its cause is not established.
 - macOS: one gate run's dispatcher logged `PermissionError` starting a task (no traceback): which call
   refused is not established. It is now a retried transient failure, not a stranded job.
 - macOS: after some `make e2e` runs a bundled harness was left running on one test's temporary profile,
