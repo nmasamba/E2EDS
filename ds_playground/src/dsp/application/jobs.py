@@ -240,8 +240,8 @@ def execute(
     the fence moved), stops the task within a quarter of a second. The outputs stay in the
     attempt's staging folder until the result that names them (a RunRecord, by digest) is
     committed as the job's result; only then do they move into the content store. A task that
-    fails has failed for good (a repair is a new task); a result the fence refuses leaves
-    nothing behind.
+    fails has failed for good (a repair is a new task); a sandbox that could not run it is a
+    fault, retried as D03 allows; a result the fence refuses leaves nothing behind.
     """
     granted = lease(ctx, job_id, WORKER, ledger=ledger, clock=clock)
     attempt, fence = granted["attempt"], granted["fence"]
@@ -269,7 +269,11 @@ def execute(
         return not asked["stop"] and (lease.get("attempt"), lease.get("fence")) == (attempt, fence)
 
     inputs = {item["name"]: store.path(ctx, item["sha256"]) for item in code["inputs"]}
-    result = runner.run(code, store.path(ctx, code["source_sha256"]), inputs, work, proceed)
+    try:
+        result = runner.run(code, store.path(ctx, code["source_sha256"]), inputs, work, proceed)
+    except (OSError, DspError) as error:  # the sandbox could not run it: a fault, retried (D03)
+        result = {"outcome": "failed", "outputs": []}
+        result["failure"] = {"kind": "sandbox_unavailable", "message": type(error).__name__}
     outcome: dict[str, Any] = {}
     if result["outcome"] == "succeeded":
         record = {
@@ -289,7 +293,8 @@ def execute(
         outcome["sha256"] = digest(canonical_json(record))
     elif result["failure"]["kind"] != "stopped":
         reason = f"{result['failure']['kind']}: {result['failure']['message']}"
-        outcome = {"outcome": "failed", "transient": False, "reason": reason[:200]}
+        transient = result["failure"]["kind"] == "sandbox_unavailable"
+        outcome = {"outcome": "failed", "transient": transient, "reason": reason[:200]}
     elif asked["stop"]:
         outcome = {"outcome": "stopped"}
     committed = False

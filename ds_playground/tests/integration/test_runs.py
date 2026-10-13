@@ -393,3 +393,39 @@ def test_a04_no_outside_worker_can_lease_a_sandboxed_job(tmp_path: Path, runner_
     leased = api.post(f"/v1/jobs/{job}/lease", headers=headers, json={"worker": "outsider"})
     assert (leased.status_code, leased.json()["code"]) == (403, "FORBIDDEN")
     assert api.get(f"/v1/jobs/{job}", headers=headers).json()["state"] == "queued"
+
+
+def test_d03_a_sandbox_that_cannot_start_the_task_is_a_fault_retried_not_a_stranded_job(
+    tmp_path: Path, runner_env: Path
+) -> None:
+    """D03: if the sandbox cannot start a task, the attempt fails as a fault and is retried.
+
+    The job is never left running on a lease nobody holds; the staging is cleared.
+    """
+    clock = Clock()
+    store, content = (
+        SqliteLedger(tmp_path / "ledger.sqlite", clock),
+        ContentStore(tmp_path / "store"),
+    )
+    observed(store)
+    job_id = admitted(store, content, clock, WRITE)
+
+    class Refusing(type(sandbox.local(runner_env))):
+        """The real adapter, whose spawn the OS refuses."""
+
+        def start(self, task: dict[str, Any], work: Path, channel: int) -> int:
+            """Refuse, as a failed spawn would."""
+            raise PermissionError(1, "Operation not permitted")
+
+    after = jobs.execute(
+        CTX,
+        job_id,
+        ledger=store,
+        store=content,
+        runner=Refusing(runner_env),
+        clock=clock,
+        timer=time.monotonic,
+    )
+    assert (after["state"], after["failures"], after["lease"]) == ("queued", 1, None)
+    assert after["reason"] == "sandbox_unavailable: PermissionError"
+    assert staged(tmp_path) == []
