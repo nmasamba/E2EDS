@@ -432,7 +432,11 @@ Code commit `2c81168`; the evidence and this file were committed after it.
   passed, the shell's Rust test 1 passed, the built app 2 passed. No harness was left running.
 - CI at the first gate push (run 38367812467, `509add9`): `verify (ubuntu-24.04)`, `desktop
   (ubuntu-24.04)` and `desktop (macos-latest)` pass; `verify (macos-latest)` failed on the same three
-  tests on GitHub's `macos-26-arm64` image. CI on the fix is read after its push (pull request #8).
+  tests on GitHub's `macos-26-arm64` image. On the fix (run 38379462014, `a58ad3b`) both
+  verify jobs and macOS desktop passed and the Linux desktop job failed on the test's race (open
+  defects); on its fix (run 38380964046, `c367957`) **all four pass**: `verify (ubuntu-24.04)` 6 min
+  29 s, `verify (macos-latest)` 6 min 47 s, `desktop (ubuntu-24.04)` 10 min 31 s, `desktop
+  (macos-latest)` 7 min 43 s.
 - ID trace (`tools/trace_ids.py 4`): A28, C14, C18, D01, D21, R16 covered; B26 is in test docstrings.
 - `integrity-reviewer` (once, 249k tokens): REVIEW: PASS, six should-fix findings and five notes; all
   six fixed, notes 8 and 11 fixed, note 7 measured as worse (the process-table gap), notes 9 and 10
@@ -451,8 +455,8 @@ Code commit `2c81168`; the evidence and this file were committed after it.
 - Linux desktop job on CI (runs 38322576233 and 38379462014): the built-app test read the window's
   text once the plan showed and required the snapshot in that same text, but the window reads the
   snapshot with a separate request that can land later (the failing text had the plan and "Resources
-  not observed", no read error). The test now waits for the snapshot's line. Checked only by CI: the
-  Linux built-app test does not run locally.
+  not observed", no read error). The test now waits for the snapshot's line; it passed on run
+  38380964046. One pass does not prove a race gone; the Linux built-app test runs only on CI.
 - macOS: one gate run's dispatcher logged `PermissionError` starting a task (no traceback): which call
   refused is not established. It is now a retried transient failure, not a stranded job.
 - macOS: after some `make e2e` runs a bundled harness was left running on one test's temporary profile,
