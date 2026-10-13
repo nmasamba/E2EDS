@@ -7,6 +7,7 @@ reports only whether an open succeeded and its errno.
 """
 
 import contextlib
+import ctypes
 import errno
 import json
 import os
@@ -282,7 +283,7 @@ def test_d21_memory_past_the_limit_stops_the_task_and_memory_within_it_is_allowe
         "    segment = libc.shmget(0, 2**20, 0o1600)  # IPC_PRIVATE, IPC_CREAT\n"
         "    if segment < 0:\n"
         "        raise OSError(ctypes.get_errno(), 'shmget')\n"
-        "    libc.shmctl(segment, 0, None)  # IPC_RMID: never left behind\n"
+        "    seen['segment'] = segment  # macOS refuses IPC_RMID here; the test removes it\n"
         "seen = {'shared': tried(lambda: shared_memory.SharedMemory(create=True, size=2**30))}\n"
         "seen['sysv'] = tried(sysv)\n"
         "if hasattr(os, 'memfd_create'):\n"
@@ -290,6 +291,8 @@ def test_d21_memory_past_the_limit_stops_the_task_and_memory_within_it_is_allowe
         "report(**seen)\n"
     )
     held = seen(tmp_path / "unmapped", contained(tmp_path / "unmapped", runner_env, unmapped))
+    if (segment := held.pop("segment", -1)) >= 0:
+        ctypes.CDLL(None).shmctl(segment, 0, None)  # IPC_RMID, from outside: never left behind
     assert all(held.values()), held  # memory held without being mapped cannot be made at all
     refusals = {errno.EPERM, errno.EACCES, errno.ENOSYS}
     assert held["sysv"] in refusals, held  # refused, not merely out of the system's quota

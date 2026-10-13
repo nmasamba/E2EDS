@@ -7,7 +7,9 @@ is at OS-sandbox, single-user assurance, the owner's 2026-10-01 deviation from t
 
 import hashlib
 import json
+import os
 import socket
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -335,9 +337,10 @@ def test_a28_the_acceptance_line_read_secret_is_denied_by_the_os(
 ) -> None:
     """A28, B26: `dsp run-task fixtures/tasks/read_secret.json` is refused by the OS (acceptance).
 
-    The overall A28 record stays INSUFFICIENT_EVIDENCE: the scenario names model-generated code
-    and at most two repairs, which need the assistant of Sprint 5, real sealed partitions (Sprint
-    9), and VM isolation, which this build replaces with an OS sandbox by owner decision.
+    The overall A28 record is FAIL when a part this run recorded on this OS failed. Otherwise it
+    stays INSUFFICIENT_EVIDENCE: the scenario names model-generated code and at most two repairs,
+    which need the assistant of Sprint 5, real sealed partitions (Sprint 9), and VM isolation,
+    which this build replaces with an OS sandbox by owner decision.
     """
     task = Path(__file__).parents[2] / "fixtures" / "tasks" / "read_secret.json"
     ran = CliRunner().invoke(app, ["run-task", str(task)])
@@ -345,6 +348,16 @@ def test_a28_the_acceptance_line_read_secret_is_denied_by_the_os(
     assert ran.exit_code == 2, ran.output
     assert said.startswith("failed: undeclared_read: 1 open(s) outside the declaration; the OS ")
     assert "[Errno " in said
+    platform = f"{sys.platform}-{os.uname().machine}"
+    written = Path(os.environ.get("DSP_EVIDENCE", "")).glob(f"A28-*-{platform}.json")
+    parts = {
+        path.name: json.loads(path.read_text()) for path in written if "generated" not in path.name
+    }
+    failed = sorted(
+        name.removeprefix("A28-").removesuffix(f"-{platform}.json")
+        for name, part in parts.items()
+        if (part["outcome"], part["commit"]) == ("FAIL", os.environ.get("DSP_COMMIT"))
+    )
     evidence(
         "A28",
         "acceptance-read-secret",
@@ -360,7 +373,7 @@ def test_a28_the_acceptance_line_read_secret_is_denied_by_the_os(
     evidence(
         "A28",
         "generated-code-containment",
-        "INSUFFICIENT_EVIDENCE",
+        "FAIL" if failed else "INSUFFICIENT_EVIDENCE",
         "containment-v1: the A28 parts on this OS",
         "real generated Python attempting a host-secret read, a network fetch, a dependency "
         "install, final-set access and metadata mutation is denied at the enforced boundary; CPU, "
@@ -368,7 +381,7 @@ def test_a28_the_acceptance_line_read_secret_is_denied_by_the_os(
         "each part ran through the job path and the OS sandbox and records its own outcome on "
         "this OS: host-secret, network-fetch, dependency-install, final-set (a stand-in file), "
         "metadata-mutation, process, bounds (CPU, memory, wall time, output, scratch), preserved; "
-        f"the acceptance line: {said}",
+        f"the acceptance line: {said}; failed on this OS: {', '.join(failed) or 'none'}",
         LIMIT,
         "the code was written by hand: model-generated code and its at most two repairs (D17) "
         "need the assistant of Sprint 5",
