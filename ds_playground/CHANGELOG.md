@@ -1,6 +1,6 @@
 # Changelog
 
-## Sprint 4 — sandboxed native runner (in progress)
+## Sprint 4 — sandboxed native runner (2026-10-13)
 
 - The activity trail is the one place outcomes appear: command receipts and their states with one wording,
   job states, refused admissions, the job the Run button queued, and any request the harness never
