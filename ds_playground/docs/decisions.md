@@ -963,3 +963,10 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   touched. Not adopted: running tasks as another user (needs admin setup and moves supervision into a
   root helper), the App Sandbox (closes neither gap), and marking the harness `CS_RESTRICT` (hides only
   the marking process's environment; arguments and every other process stay readable).
+- **2026-10-13 — S4 — DEFECT — the Linux built-app test raced the window's snapshot read (fixed in the
+  test)** — the test captured the window's text when the plan appeared and asserted the snapshot's CPU
+  line in that capture; the window reads the plan and the snapshot with separate requests, so the plan
+  can show first. Runs 38322576233 and 38379462014 failed this way (the plan shown, the trail's
+  "Environment observed", and "Resources not observed" with no read error), run 38367812467 passed. The
+  test now waits for the snapshot's line. The window was right throughout; the "Resources not read:
+  <reason>" line added for diagnosis stays, as it names a real read failure.

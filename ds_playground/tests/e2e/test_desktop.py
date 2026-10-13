@@ -165,7 +165,9 @@ def inspect_window(binary: Path, state_dir: Path) -> None:
                 assert "Environment and context\n● Completed" in text
                 assert "Outcome: INSUFFICIENT_EVIDENCE. local-native-draft is unqualified" in text
                 snapshot = harness(state_dir).get("/v1/hardware").json()
-                assert f"{snapshot['cpu']['visible_logical_processors']} visible" in text
+                cpus = snapshot["cpu"]["visible_logical_processors"]
+                # the window reads the snapshot apart from the plan, so it may show later
+                eventually(lambda: shown(f"{cpus} visible"))
                 denied = run(CALL_UNGRANTED_COMMAND, "async")
                 assert "not allowed" in denied, denied
                 run(CLICK_ADD_SOURCE)

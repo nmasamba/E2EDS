@@ -448,10 +448,11 @@ Code commit `2c81168`; the evidence and this file were committed after it.
   DuckDB; a future library reading another one gets EPERM (add it by name after checking it reveals
   nothing of another process; never by a `kern.` prefix). The System V rule uses Seatbelt's private
   `syscall-unix` filter and needs the profile's deny-by-default; the D21 test guards it.
-- Linux desktop job on CI: the built app's window showed "Resources not observed" on run 38322576233
-  while Python's read of the same harness succeeded. The gate's run (38367812467) passed, with the
-  window now showing "Resources not read: <reason>" on failure; the earlier failure did not recur and
-  its cause is not established.
+- Linux desktop job on CI (runs 38322576233 and 38379462014): the built-app test read the window's
+  text once the plan showed and required the snapshot in that same text, but the window reads the
+  snapshot with a separate request that can land later (the failing text had the plan and "Resources
+  not observed", no read error). The test now waits for the snapshot's line. Checked only by CI: the
+  Linux built-app test does not run locally.
 - macOS: one gate run's dispatcher logged `PermissionError` starting a task (no traceback): which call
   refused is not established. It is now a retried transient failure, not a stranded job.
 - macOS: after some `make e2e` runs a bundled harness was left running on one test's temporary profile,
