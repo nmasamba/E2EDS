@@ -14,14 +14,13 @@ from fastapi.testclient import TestClient
 
 from dsp.adapters.ledger_sqlite import SqliteLedger
 from dsp.application import admission, controls
-from dsp.application.planning import LOCAL_DRAFT
 from dsp.application.workloads import base_workload
 from dsp.contracts.canonical import pin
 from dsp.contracts.errors import DspError, ErrorCode, TrustedContext
 from dsp.harness import workspace
 from dsp.harness.app import SHELL_ORIGIN, create_app
 from tests.conftest import Clock
-from tests.integration.test_admission import attempt, fixed_probes, ledger, observed
+from tests.integration.test_admission import BINDING, attempt, fixed_probes, ledger, observed
 from tests.integration.test_jobs import job_of, kinds_of, replays_to, submit, until
 
 Harness = tuple[httpx.Client, Clock]
@@ -133,6 +132,9 @@ def test_a25_pause_racing_a_checkpoint_and_a_commit_then_an_explicit_resume(
     again = control(client, job, "resume")
     assert (again["state"], again["job"]["state"]) == ("rejected", "running")
     assert "only a paused job resumes" in again["because"]
+    events = client.get("/v1/events").json()["events"]
+    refused = [event["body"] for event in events if event["type"] == "command.rejected"][-1]
+    assert (refused["because"], refused["reason"]) == ("REVISION_CONFLICT", again["because"])
 
     cancelled = control(client, job, "cancel")
     assert (cancelled["state"], cancelled["job"]["state"]) == ("applied", "cancel_requested")
@@ -333,7 +335,7 @@ def test_r05_a_context_without_the_scope_cannot_command_or_resume(tmp_path: Path
     counter = itertools.count()
     settings: dict[str, Any] = {"ledger": store, "clock": lambda: NOW}
     settings["new_id"] = lambda: f"x{next(counter)}"
-    settings |= {"workload": base_workload(CTX), "binding": LOCAL_DRAFT}
+    settings |= {"workload": base_workload(CTX), "binding": BINDING}
     viewer = TrustedContext("viewer", CTX.tenant, frozenset({"workload:read"}))
     with pytest.raises(DspError) as raised:
         controls.command(viewer, "c", "m1", "pause now", "1.0.0", job_id=None, **settings)
@@ -353,7 +355,7 @@ def test_r05_a_context_without_the_scope_cannot_command_or_resume(tmp_path: Path
             viewer,
             job["id"],
             workload=base_workload(CTX),
-            binding=LOCAL_DRAFT,
+            binding=BINDING,
             ledger=store,
             clock=lambda: NOW,
             new_id=lambda: "x2",

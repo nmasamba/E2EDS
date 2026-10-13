@@ -2,7 +2,6 @@
 
 import json
 import os
-import re
 import signal
 import subprocess
 import sys
@@ -85,6 +84,26 @@ def launch(binary: Path, state_dir: Path) -> Iterator[Callable[[], subprocess.Po
         app.wait(10)
 
 
+def settled(app: subprocess.Popen[bytes]) -> None:
+    """Wait until the harness a launch spawned has found the profile served and given up.
+
+    Every launch spawns one; a frozen harness takes about 3 s to reach the profile lock, so one
+    still starting could take the lock after the serving harness stops.
+    """
+
+    def children() -> int:
+        return subprocess.run(["pgrep", "-P", str(app.pid), "dsp-harness"], check=False).returncode
+
+    def spawned() -> None:
+        assert children() == 0
+
+    def gone() -> None:
+        assert children() == 1
+
+    eventually(spawned)  # the shell spawns it as it starts, not before launch() returns
+    eventually(gone)
+
+
 def press(keys: str) -> None:
     """Send a key combination to the app's main window through the window manager."""
     window = xdotool("search", "--sync", "--onlyvisible", "--name", "^DS Playground$")
@@ -146,7 +165,9 @@ def inspect_window(binary: Path, state_dir: Path) -> None:
                 assert "Environment and context\n● Completed" in text
                 assert "Outcome: INSUFFICIENT_EVIDENCE. local-native-draft is unqualified" in text
                 snapshot = harness(state_dir).get("/v1/hardware").json()
-                assert f"{snapshot['cpu']['visible_logical_processors']} visible" in text
+                cpus = snapshot["cpu"]["visible_logical_processors"]
+                # the window reads the snapshot apart from the plan, so it may show later
+                eventually(lambda: shown(f"{cpus} visible"))
                 denied = run(CALL_UNGRANTED_COMMAND, "async")
                 assert "not allowed" in denied, denied
                 run(CLICK_ADD_SOURCE)
@@ -169,6 +190,21 @@ def inspect_window(binary: Path, state_dir: Path) -> None:
     assert harness(state_dir).get("/v1/grants").json() == {"grants": []}
 
 
+def sandboxed(client: httpx.Client, text: str) -> dict[str, object]:
+    """Run Python as a sandboxed job through the bundled harness, as `dsp run-task` does."""
+    source = client.post("/v1/sources", json={"text": text}).json()["sha256"]
+    task = {"language": "python", "source_sha256": source, "outputs": ["out.json"]}
+    request = {"operation": "analyse", "idempotency_key": uuid.uuid4().hex, "task": task}
+    job = client.post("/v1/jobs", json=request).json()
+
+    def ended() -> dict[str, object]:
+        found: dict[str, object] = client.get(f"/v1/jobs/{job['id']}").json()
+        assert found["state"] in ("succeeded", "failed", "cancelled")
+        return found
+
+    return eventually(ended)
+
+
 def test_the_built_app_works_and_survives_close_kill_crash_and_a_second_instance(
     binary: Path,
     launch: Callable[[], subprocess.Popen[bytes]],
@@ -180,10 +216,11 @@ def test_the_built_app_works_and_survives_close_kill_crash_and_a_second_instance
     """A44, R26, R20, D24: the built app, with no terminal or uv, on a fresh profile.
 
     Its own window makes the first discovery, which shows the real webview reached the bundled
-    harness. One harness then serves the profile across a second instance, a killed shell, a
-    reopen and a harness crash. On Linux the window is also inspected through WebDriver and the
-    real Quit shortcut and a real window close are pressed with xdotool; on macOS none of those
-    can be scripted, so Quit is exercised only as the request the shell sends.
+    harness. Its harness profiles a CSV as a sandboxed job and the OS refuses a task's read of a
+    host file (B26, A28). One harness then serves the profile across a second instance, a killed
+    shell, a reopen and a harness crash. On Linux the window is also inspected through WebDriver
+    and the real Quit shortcut and a real window close are pressed with xdotool; on macOS none
+    of those can be scripted, so Quit is exercised only as the request the shell sends.
     """
     if LINUX:
         inspect_window(binary, state_dir)
@@ -212,12 +249,18 @@ def test_the_built_app_works_and_survives_close_kill_crash_and_a_second_instance
     }
     assert bundled.post("/v1/profiles", json=request).json() == {"version": "v1", "files": 3}
     assert verify_pack(work / "out" / "v1") == []
+    assert kinds(bundled)[-3:] == ["job.started", "job.succeeded", "export.committed"]
     escape = bundled.post("/v1/profiles", json=request | {"relative_path": "../out"})
     assert (escape.status_code, sorted(p.name for p in (work / "out").iterdir())) == (403, ["v1"])
+    refused = sandboxed(bundled, "open('/etc/passwd').read()\n")
+    assert refused["state"] == "failed"
+    assert refused["reason"].startswith(
+        "undeclared_read: 1 open(s) outside the declaration; the OS"
+    )
     history = kinds(bundled)
 
     second = launch()  # a second instance attaches to the same harness
-    time.sleep(3)
+    settled(second)
     assert (first.poll(), second.poll()) == (None, None)
     assert harness(state_dir).get("/v1/status").json()["pid"] == owner["pid"]
 
@@ -228,7 +271,7 @@ def test_the_built_app_works_and_survives_close_kill_crash_and_a_second_instance
     assert bundled.get("/v1/status").json()["pid"] == owner["pid"]
 
     third = launch()  # reopen: same harness, same history, nothing done twice
-    time.sleep(3)
+    settled(third)
     assert third.poll() is None
     assert harness(state_dir).get("/v1/status").json()["pid"] == owner["pid"]
     assert kinds(bundled) == history
@@ -253,6 +296,9 @@ def test_the_built_app_works_and_survives_close_kill_crash_and_a_second_instance
         press("ctrl+q")  # a real Quit from a shell that did not start the harness leaves it too
         assert fifth.wait(20) == 0
         assert replaced.get("/v1/status").json()["pid"] == successor
+    else:
+        fourth.terminate()  # an open window would start another harness once this one stops
+        fourth.wait(10)
     assert replaced.post("/v1/shutdown").json() == {"status": "stopping"}
     assert harness_stopped(state_dir)
     (state_dir / "harness.json").unlink()
@@ -343,8 +389,9 @@ def drive_controls(binary: Path, state_dir: Path) -> None:
                 eventually(lambda: shown(first, "Harness connected"))
                 eventually(lambda: shown(first, "Environment and context\n● Completed"))
                 run(first, CLICK.format(name="Start the hung test job"))
-                text = eventually(lambda: shown(first, "queued, waiting for a worker"))
-                job = re.search(r"Queued (job-[0-9a-f]+)", text).group(1)  # type: ignore[union-attr]
+                eventually(lambda: shown(first, "queued, waiting for a worker"))
+                events = harness(state_dir).get("/v1/events").json()["events"]
+                job = next(e["body"]["job"] for e in events if e["type"] == "job.queued")
                 workers.append(worker(state_dir, job))
                 eventually(lambda: shown(first, "◐ Running"))
                 press("ctrl+p")  # the real Pause shortcut
@@ -413,8 +460,8 @@ def test_the_built_app_starts_pauses_and_cancels_the_hung_test_job(
         eventually(lambda: shows(bundled, job, "cancelled"))
         app.terminate()
         app.wait(10)
-        launch()
-        time.sleep(3)
+        reopened = launch()
+        settled(reopened)
     expected = [
         "job.queued",
         "job.started",
@@ -427,6 +474,9 @@ def test_the_built_app_starts_pauses_and_cancels_the_hung_test_job(
     ]
     assert [k for k in kinds_without_heartbeats(bundled) if k.startswith("job.")] == expected
     assert bundled.get("/v1/status").json()["status"] == "ok"
+    if not LINUX:
+        reopened.terminate()  # an open window would start another harness once this one stops
+        reopened.wait(10)
     assert bundled.post("/v1/shutdown").json() == {"status": "stopping"}
     assert harness_stopped(state_dir)
     (state_dir / "harness.json").unlink()

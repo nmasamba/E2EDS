@@ -10,7 +10,7 @@ from collections.abc import Callable
 from typing import Any
 
 from dsp.application import jobs
-from dsp.application.conversation import receipt, receive, settle
+from dsp.application.conversation import NO_ASSISTANT, receipt, receive, settle
 from dsp.application.workloads import patch_for, revise
 from dsp.contracts.canonical import pin
 from dsp.contracts.errors import DspError, ErrorCode, TrustedContext
@@ -64,7 +64,7 @@ def command(
     )
     answer = receipt(received)
     if received["operation"] == "instruction":
-        answer["because"] = "no assistant is bound yet"
+        answer["because"] = NO_ASSISTANT
     if received["state"] == "received" and received["operation"] == "change_requirements":
         return answer | change(
             ctx,
@@ -80,14 +80,24 @@ def command(
         shown = jobs.inspect(ctx, effect["id"], ledger=ledger, clock=clock) if effect else None
         return answer | {"job": shown, "changed": False}
     if not {"*", f"job:{received['operation']}"} & ctx.scopes:
-        settled = settle(ctx, received, "rejected", because="FORBIDDEN", ledger=ledger, clock=clock)
         because = f"this context may not {received['operation']}"
+        settled = settle(
+            ctx,
+            received,
+            "rejected",
+            because="FORBIDDEN",
+            reason=because,
+            ledger=ledger,
+            clock=clock,
+        )
         return receipt(settled) | {"job": None, "changed": False, "because": because}
     live = [] if job_id else live_jobs(ctx, ledger)
     if not job_id and len(live) != 1:
         state = "rejected" if not live else "needs_clarification"
         because = "no job is live" if not live else f"{len(live)} jobs are live; name the job"
-        settled = settle(ctx, received, state, because=because, ledger=ledger, clock=clock)
+        settled = settle(
+            ctx, received, state, because=because, reason=because, ledger=ledger, clock=clock
+        )
         return receipt(settled) | {"job": None, "changed": False, "because": because}
     target = job_id or live[0]["id"]
     try:
@@ -102,7 +112,15 @@ def command(
             binding=binding,
         )
     except DspError as error:
-        settled = settle(ctx, received, "rejected", because=error.code, ledger=ledger, clock=clock)
+        settled = settle(
+            ctx,
+            received,
+            "rejected",
+            because=error.code,
+            reason=error.message,
+            ledger=ledger,
+            clock=clock,
+        )
         shown = None
         if error.code is not ErrorCode.NOT_FOUND:
             shown = jobs.inspect(ctx, target, ledger=ledger, clock=clock)
@@ -137,7 +155,14 @@ def change(
         )
     except DspError as error:
         rejected = settle(
-            ctx, received, "rejected", because=error.code, patch=patch, ledger=ledger, clock=clock
+            ctx,
+            received,
+            "rejected",
+            because=error.code,
+            reason=error.message,
+            patch=patch,
+            ledger=ledger,
+            clock=clock,
         )
         return receipt(rejected) | {"job": None, "changed": False, "because": error.message}
     for job_id in impact["holds"]:

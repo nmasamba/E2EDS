@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dsplayground.dev/schemas/app/0.1.0/RunRecord.schema.json",
+  "title": "RunRecord — app-owned contract",
+  "description": "What one sandboxed attempt of a CodeTask produced, written by the harness after it checked and hashed the outputs and committed as the job's result under the attempt's fence: the CodeTask and binding it ran under, the attempt and fence, the assurance it ran at (OS sandbox, single user: not VM isolation) and each declared output by digest. A failed or stopped attempt has no record; its job says why.",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "revision": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "sha256": { "$ref": "#/$defs/digest" }
+      },
+      "required": ["id", "revision", "sha256"]
+    }
+  },
+  "properties": {
+    "schema_version": { "const": "0.1.0" },
+    "type": { "const": "RunRecord" },
+    "job": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "attempt": { "type": "integer", "minimum": 1 },
+    "fence": { "type": "integer", "minimum": 0 },
+    "code_task_ref": { "$ref": "#/$defs/ref" },
+    "compute_binding_ref": { "$ref": "#/$defs/ref" },
+    "assurance": { "const": "os_sandbox_single_user" },
+    "outputs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "maxLength": 100, "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+          "sha256": { "$ref": "#/$defs/digest" },
+          "bytes": { "type": "integer", "minimum": 0 }
+        },
+        "required": ["name", "sha256", "bytes"]
+      }
+    }
+  },
+  "required": [
+    "schema_version", "type", "job", "attempt", "fence", "code_task_ref", "compute_binding_ref",
+    "assurance", "outputs"
+  ]
+}

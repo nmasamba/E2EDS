@@ -1,5 +1,36 @@
 # Changelog
 
+## Sprint 4 — sandboxed native runner (2026-10-13)
+
+- The activity trail is the one place outcomes appear: command receipts and their states with one wording,
+  job states, refused admissions, the job the Run button queued, and any request the harness never
+  received. The notes beside the buttons, the composer and the Run section are gone.
+- Cmd+P and Cmd+. (Ctrl on Linux) pause and cancel the live job from anywhere in the window, as well as
+  from the native menu.
+- The harness listens before it publishes its port, so a client that starts at the same moment no longer
+  waits for a connect timeout.
+- The local compute option is a stored record at OS-sandbox, single-user assurance (not VM isolation),
+  with macOS as an execution OS; every admitted job pins it and a stored CodeTask declaring its source,
+  inputs, outputs, limits and permissions. A task whose input was not captured through a grant, whose
+  source is missing, that declares no output, asks for more than the workload allows or asks for a
+  permission is refused.
+- The runner: `python -m dsp_runner <attempt>/task.json` runs one CodeTask's Python, or its DuckDB SQL
+  against the inputs loaded as tables, in the task's scratch folder, and sends a result and the declared
+  outputs on one bounded channel. `make runner-env` builds its locked environment.
+- Generated or submitted Python and SQL run only in the OS sandbox: Seatbelt on macOS, bubblewrap with a
+  seccomp filter on Linux, at single-user OS-sandbox assurance (not VM isolation). A task reads only its
+  declared inputs and the runner, writes only its scratch folder, has no network, cannot start a process,
+  and is stopped at its CPU, memory, time, output and scratch limits.
+- `dsp run-task <task.json>` runs a declared task in the sandbox as a job and reports how it ended;
+  `fixtures/tasks/read_secret.json` is refused by the OS. `dsp profile` now runs its profiling in the
+  sandbox as a job the activity trail follows, and `profile.json` names its schema. A sandboxed job's
+  failure appears in the trail with its reason.
+- The resource bar says why the window could not read the observed hardware, instead of showing it as
+  not observed; a request that got no reply is listed as "no answer", since it may have been received.
+- On macOS, task code can no longer read the arguments and environment of the owner's other programs
+  (the harness included) or create System V shared memory, message queues or semaphores, which
+  outlived the task; Linux refuses both as well.
+
 ## Sprint 3 — jobs, admission, conversation and control (2026-10-08)
 
 - Durable jobs: `POST /v1/jobs` queues a job; a worker process leases one attempt at a time (60 s lease,

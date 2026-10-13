@@ -1,4 +1,8 @@
 import json
+import logging
+import os
+import sys
+import threading
 import time
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
@@ -11,16 +15,15 @@ from fastapi import Body, Depends, FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from dsp.adapters import export_fs
-from dsp.adapters.discovery import probes
-from dsp.adapters.duckdb_profile import profile_csv
+from dsp.adapters import export_fs, sandbox
+from dsp.adapters.discovery import host, probes
 from dsp.adapters.ledger_sqlite import SqliteLedger
 from dsp.adapters.store_fs import ContentStore
 from dsp.application import admission, controls, conversation, jobs
 from dsp.application.discovery import discover
-from dsp.application.grants import grant_folder, revoke, summary
-from dsp.application.packs import profile_granted
-from dsp.application.planning import LOCAL_DRAFT, propose_plan
+from dsp.application.grants import grant_folder, resolve, revoke, summary
+from dsp.application.packs import export_profile, submit_profile
+from dsp.application.planning import local_binding, propose_plan
 from dsp.application.workloads import current_workload
 from dsp.contracts.errors import DspError, ErrorCode, TrustedContext
 
@@ -50,6 +53,8 @@ STATUS = (
 )
 
 MESSAGE_FIELDS = {"client_message_id", "text", "expected_revision"}
+MAX_SOURCE = 2**20  # a task's source text
+ENDED = ("succeeded", "failed", "cancelled")
 
 
 def _now() -> str:
@@ -70,13 +75,92 @@ def mount(
 
     Every caller is the local owner, established by the token the guard has already checked;
     nothing in a request body is treated as authority. ``server`` is the running server, whose
-    shutdown ends open event streams; ``clock`` is the one source of time for the ledger and the
-    job coordinator.
+    shutdown ends open event streams and the background work, the reconcile tick every second and
+    the dispatcher, which runs queued sandboxed jobs one at a time; a quit lets a job already
+    running finish (D24). ``clock`` is the one source
+    of time for the ledger and the job coordinator. The runner environment is ``DSP_RUNNER_ENV``,
+    or ``.runner-env`` beside the source when the harness runs from source (a frozen harness has
+    only the variable); without it, or without the OS's sandbox, sandboxed work is refused, never
+    run another way.
     """
     ctx = TrustedContext.local()
+    binding = local_binding(ctx, *host())
+    beside = None if getattr(sys, "frozen", False) else Path(__file__).parents[3] / ".runner-env"
+    named = os.environ.get("DSP_RUNNER_ENV")
+    environment = Path(named) if named else beside  # a frozen harness has no source beside it
+    runner: sandbox.Confined | None = None
+    lock, unavailable = None, "the runner environment is not built (make runner-env)"
+    if environment and (environment / "bin" / "python").exists():
+        try:
+            runner, lock = sandbox.local(environment), sandbox.lock(environment)
+        except DspError as error:
+            unavailable = error.message
+    executing = threading.Lock()  # one sandboxed attempt at a time, as the binding allows
 
     def ledger() -> SqliteLedger:
         return SqliteLedger(state_dir / "ledger.sqlite", clock)
+
+    def sandboxed() -> sandbox.Confined:
+        if runner is None:
+            raise DspError(ErrorCode.DEPENDENCY_UNAVAILABLE, unavailable)
+        return runner
+
+    def running() -> bool:
+        return not (server and server.should_exit)
+
+    def execute(job_id: str) -> dict[str, Any]:
+        """Run one queued sandboxed job here, or wait for whoever leased it first to finish it."""
+        with executing:
+            store = ledger()
+            try:
+                return jobs.execute(
+                    ctx,
+                    job_id,
+                    ledger=store,
+                    store=ContentStore(state_dir / "store"),
+                    runner=sandboxed(),
+                    clock=clock,
+                    timer=time.monotonic,
+                )
+            except DspError as error:
+                if error.code is not ErrorCode.REVISION_CONFLICT:
+                    raise
+            job = jobs.inspect(ctx, job_id, ledger=store, clock=clock)
+        while job["state"] not in ENDED:
+            time.sleep(0.1)
+            job = jobs.inspect(ctx, job_id, ledger=ledger(), clock=clock)
+        return job
+
+    def dispatch() -> None:
+        """Finish or clear what a crash left, then run the oldest queued sandboxed job."""
+        store = ledger()
+        with executing:
+            jobs.tidy(
+                ctx, ledger=store, store=ContentStore(state_dir / "store"), runner=sandboxed()
+            )
+        queued = [job for job in store.current(ctx, "Job") if job["state"] == "queued"]
+        queued = [job for job in queued if job["task"] is None]
+        if queued:
+            execute(min(queued, key=lambda job: str(job["submitted_at"]))["id"])
+
+    def every(seconds: float, work: Callable[[], object]) -> None:
+        """Run ``work`` every ``seconds`` while the server runs; a failure is logged, not fatal."""
+
+        def loop() -> None:
+            while running():
+                try:
+                    work()
+                except Exception as error:
+                    name = getattr(work, "__name__", "work")
+                    logging.getLogger(__name__).error("%s failed: %s", name, type(error).__name__)
+                time.sleep(seconds)
+
+        threading.Thread(target=loop).start()  # not a daemon: a quit drains what it is doing
+
+    if server is not None:
+        every(1.0, lambda: jobs.reconcile(ctx, ledger=ledger(), clock=clock))
+        if runner is not None:
+            every(0.25, dispatch)
 
     def native(request: Request) -> None:
         """A lease, a heartbeat or a report comes from a worker process, never from the window."""
@@ -116,7 +200,7 @@ def mount(
         snapshot = discover(
             ctx, probes(state_dir), ledger=ledger(), clock=_now, new_id=_id, timer=time.monotonic
         )
-        propose_plan(ctx, ledger=ledger(), new_id=_id)
+        propose_plan(ctx, binding=binding, ledger=ledger(), new_id=_id)
         return snapshot
 
     @app.get("/v1/hardware")
@@ -128,7 +212,7 @@ def mount(
 
     @app.post("/v1/plan")
     def create_plan() -> dict[str, Any]:
-        return propose_plan(ctx, ledger=ledger(), new_id=_id)
+        return propose_plan(ctx, binding=binding, ledger=ledger(), new_id=_id)
 
     @app.get("/v1/plan")
     def latest_plan() -> dict[str, Any]:
@@ -190,19 +274,51 @@ def mount(
         relative_path: Annotated[str, Body()],
         output_handle: Annotated[str, Body()],
     ) -> dict[str, Any]:
-        receipt = profile_granted(
+        """Profile a granted CSV as a sandboxed job the trail follows, then export its pack."""
+        store, content = ledger(), ContentStore(state_dir / "store")
+        sandboxed()
+        resolve(ctx, output_handle, ".", "output_root", ledger=store)  # before any capture
+        if not store.current(ctx, "HardwareSnapshot"):
+            discover_hardware()  # nothing is admitted blind; a first profile observes first
+        job, data = submit_profile(
             ctx,
             source_handle,
             relative_path,
+            ledger=store,
+            store=content,
+            workload=current_workload(ctx, store),
+            binding=binding,
+            environment=lock,
+            clock=clock,
+            new_id=_id,
+        )
+        job = execute(job["id"])
+        if job["state"] != "succeeded":
+            raise DspError(ErrorCode.INPUT_INVALID, str(job["reason"] or f"the job {job['state']}"))
+        receipt = export_profile(
+            ctx,
+            job,
+            data,
             output_handle,
-            ledger=ledger(),
-            store=ContentStore(state_dir / "store"),
+            ledger=store,
+            store=content,
             exporter=export_fs,
-            profiler=profile_csv,
             clock=_now,
             new_id=_id,
         )
         return {"version": receipt["version"], "files": len(receipt["files"])}
+
+    @app.post("/v1/sources", dependencies=[Depends(native)])
+    def store_source(
+        text: Annotated[str, Body(embed=True, max_length=MAX_SOURCE)],
+    ) -> dict[str, str]:
+        """Keep a task's source text in the content store; a job names it by digest."""
+        content = ContentStore(state_dir / "store")
+        work = content.staging(_id())
+        (work / "source").write_text(text)
+        stored = content.commit(ctx, work / "source")
+        content.discard(work)
+        return {"sha256": stored}
 
     @app.post("/v1/jobs")
     def submit_job(
@@ -214,16 +330,20 @@ def mount(
         task: Annotated[dict[str, Any], Body()],
     ) -> dict[str, Any]:
         store = ledger()
+        if "language" in task:
+            sandboxed()
         return admission.admit(
             ctx,
             operation,
             idempotency_key,
             task,
             workload=current_workload(ctx, store),
-            binding=LOCAL_DRAFT,
+            binding=binding,
             ledger=store,
+            store=ContentStore(state_dir / "store"),
             clock=clock,
             new_id=_id,
+            environment=lock,
         )
 
     @app.get("/v1/jobs/{job_id}")
@@ -232,6 +352,10 @@ def mount(
 
     @app.post("/v1/jobs/{job_id}/lease", dependencies=[Depends(native)])
     def lease_job(job_id: str, worker: Annotated[str, Body(embed=True)]) -> dict[str, Any]:
+        if jobs.inspect(ctx, job_id, ledger=ledger(), clock=clock)["task"] is None:
+            raise DspError(
+                ErrorCode.FORBIDDEN, "a sandboxed job runs only in the harness's sandbox"
+            )
         return jobs.lease(ctx, job_id, worker, ledger=ledger(), clock=clock)
 
     @app.post("/v1/jobs/{job_id}/heartbeat", dependencies=[Depends(native)])
@@ -307,7 +431,7 @@ def mount(
             clock=clock,
             new_id=_id,
             workload=current_workload(ctx, store),
-            binding=LOCAL_DRAFT,
+            binding=binding,
         )
 
     def controlled(job_id: str | None, command_id: str, action: str) -> dict[str, Any]:

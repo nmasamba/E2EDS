@@ -7,7 +7,8 @@ applied to the latest observation less what other live jobs already hold.
 
 from typing import Any
 
-from dsp.contracts.errors import ErrorCode
+from dsp.contracts.canonical import canonical_json, digest
+from dsp.contracts.errors import DspError, ErrorCode
 from dsp.domain.feasibility import judge, needs
 
 UNITS = {"processors": "cpu_cores", "GiB memory": "memory_gib", "GiB scratch": "scratch_gib"}
@@ -17,6 +18,57 @@ DATA_ACCESS = {
     "evaluate": "sealed_evaluator_only",
     "infer": "inference_only",
 }
+OPEN_FILES = 256
+OUTPUT_BYTES = 64 * 2**20  # D20's order of magnitude for one task's declared outputs together
+SUPPLIED = ("language", "source_sha256", "inputs", "outputs", "limits", "permissions")
+
+
+def envelope(workload: dict[str, Any]) -> dict[str, int]:
+    """The most one CodeTask may ask for under this workload revision (D01, D21)."""
+    asked = workload["requested_resources"]
+    scratch = int(asked["scratch_gib"] * 2**30)
+    return {
+        "cpu_seconds": asked["wall_time_seconds"] * asked["cpu_cores"],
+        "memory_mib": int(asked["memory_gib"] * 1024),
+        "wall_seconds": asked["wall_time_seconds"],
+        "output_bytes": min(scratch, OUTPUT_BYTES),
+        "scratch_bytes": scratch,
+        "open_files": OPEN_FILES,
+    }
+
+
+def code_task(
+    task: dict[str, Any], workload: dict[str, Any], environment: str | None = None
+) -> dict[str, Any]:
+    """The CodeTask a submitted task declares, written for the current requirement revision.
+
+    A task with ``language`` is Python or SQL: the caller supplies only the source digest, inputs,
+    outputs, limits within the workload's envelope and permissions; the rest is derived, the runner
+    environment's lock digest (``environment``) included. Any other task is the test worker's cues,
+    recorded by their digest. The ID is derived from the content, so the same declaration under the
+    same revision and environment is the same CodeTask.
+    """
+    if "language" in task:
+        if unknown := sorted(set(task) - set(SUPPLIED)):
+            raise DspError(ErrorCode.INPUT_INVALID, f"a task does not set {unknown[0]}")
+        if task["language"] not in ("python", "sql"):
+            raise DspError(ErrorCode.INPUT_INVALID, "a task's language is python or sql")
+        declared = {"inputs": [], "permissions": []} | task
+    else:
+        declared = {"language": "test_worker", "source_sha256": digest(canonical_json(task))}
+        declared |= {"inputs": [], "outputs": [], "permissions": []}
+    body = {
+        "schema_version": "0.1.0",
+        "type": "CodeTask",
+        "revision": "1.0.0",
+        "parent_ref": None,
+        "requirement_revision": workload["revision"],
+        "environment_lock_sha256": environment if "language" in task else None,
+        **declared,
+    }
+    limits = declared.get("limits", {})
+    body["limits"] = envelope(workload) | limits if isinstance(limits, dict) else limits
+    return {"id": f"code-task-{digest(canonical_json(body))[7:23]}", **body}
 
 
 def reservation(workload: dict[str, Any], binding: dict[str, Any]) -> dict[str, Any]:
@@ -33,7 +85,8 @@ def reservation(workload: dict[str, Any], binding: dict[str, Any]) -> dict[str, 
 
 def refusal(
     operation: str,
-    task: dict[str, Any],
+    task: dict[str, Any] | None,
+    code: dict[str, Any],
     workload: dict[str, Any],
     binding: dict[str, Any],
     snapshot: dict[str, Any] | None,
@@ -42,23 +95,32 @@ def refusal(
     """Return why the request is refused, or None when it may be admitted.
 
     In order: the operation must be declared by the workload and offered by the binding; the
-    task must fit the workload's wall time; an
-    accelerator needs a binding that has one; any external charge needs a spend grant, and none
-    exists, so the charge is zero or the request is refused; then the planner's rule table against
-    the latest observation (none observed is "unknown", so nothing is admitted blind), and finally
-    the capacity left after what live jobs hold.
+    task must fit the workload's wall time and every limit within its envelope; it may ask for no
+    permission, since the binding grants none; an accelerator needs a binding that has one; any
+    external charge needs a spend grant, and none exists, so the charge is zero or the request is
+    refused; then the planner's rule table against the latest observation (none observed is
+    "unknown", so nothing is admitted blind), and finally the capacity left after what live jobs
+    hold.
     """
     asked = workload["requested_resources"]
     if operation not in workload["execution_requirements"]["required_operations"]:
         return ErrorCode.INPUT_INVALID, f"operation {operation} is not declared by the workload"
     if operation not in binding["capabilities"]["declared_operations"]:
         return ErrorCode.INPUT_INVALID, f"the compute option does not offer {operation}"
-    if task["seconds"] > asked["wall_time_seconds"]:
+    if task and task["seconds"] > asked["wall_time_seconds"]:
         allowed = asked["wall_time_seconds"]
         return (
             ErrorCode.INPUT_INVALID,
             f"the task asks for {task['seconds']:g} s of {allowed} s allowed",
         )
+    for limit, most in envelope(workload).items():
+        if code["limits"][limit] > most:
+            return (
+                ErrorCode.INPUT_INVALID,
+                f"the task asks for {limit} {code['limits'][limit]} of {most} allowed",
+            )
+    if code["permissions"]:
+        return ErrorCode.FORBIDDEN, f"the compute option grants no {code['permissions'][0]}"
     if asked["gpu_count"] and not binding["capabilities"]["gpu_capable"]:
         return ErrorCode.QUOTA_EXCEEDED, "an accelerator is requested and the option has none"
     if asked["max_external_charge_minor"]:

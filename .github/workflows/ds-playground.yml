@@ -13,8 +13,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
+      - if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update && sudo apt-get install -y bubblewrap
+          sh tools/bwrap_apparmor.sh
       - run: uv sync --frozen
-      - run: sh tools/verify.sh
+      - run: make verify
   desktop:
     strategy:
       fail-fast: false
@@ -37,7 +41,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev \
-            libssl-dev libayatana-appindicator3-dev librsvg2-dev webkit2gtk-driver xvfb xdotool wmctrl openbox
+            libssl-dev libayatana-appindicator3-dev librsvg2-dev webkit2gtk-driver xvfb xdotool wmctrl openbox \
+            bubblewrap
+          sh tools/bwrap_apparmor.sh
           cargo install tauri-driver --version 2.1.0 --locked
       - run: uv sync --frozen
       - run: make desktop-build

@@ -158,11 +158,11 @@ test("A24: the live job is the newest that has not ended; the revision is the la
   expect(expectedRevision([...log, revised])).toBe("2.0.0");
 });
 
-test("A27, R20: the activity trail is the committed events with each command's reached state", () => {
+test("A27, R20: the activity trail is the committed events with each command's reached state and one wording", () => {
   const log = [
     event(1, "discovery.finished", { evidence_source: "observed" }),
     event(2, "message.received", { command: "c1", text: "pause now", state: "received" }),
-    event(3, "command.rejected", { command: "c1", state: "rejected", because: "no job is live" }),
+    event(3, "command.rejected", { command: "c1", state: "rejected", because: "no job is live", reason: "no job is live" }),
     job(4, "job.queued", "job-abcdef", "queued"),
     job(5, "job.heartbeat", "job-abcdef", "running", 1),
     job(6, "job.started", "job-abcdef", "running", 1),
@@ -176,6 +176,15 @@ test("A27, R20: the activity trail is the committed events with each command's r
     event(9, "command.applied", { command: "c2", state: "applied" }),
     event(10, "admission.rejected", { reason: "needs 1 processors; 0 free" }),
     event(11, "message.received", { command: "c3", text: "status", state: "received" }),
+    event(12, "message.received", { command: "c4", text: "summarise it", state: "received" }),
+    event(13, "command.rejected", {
+      command: "c4",
+      state: "rejected",
+      because: "ASSISTANT_UNAVAILABLE",
+      reason: "no assistant is bound yet",
+    }),
+    event(14, "message.received", { command: "c5", text: "resume", state: "received" }),
+    event(15, "command.rejected", { command: "c5", state: "rejected", because: "PAUSED" }),
   ];
   expect(activity(log).map((item) => [item.seq, item.text, item.state])).toEqual([
     [1, "Environment observed: observed", ""],
@@ -186,5 +195,27 @@ test("A27, R20: the activity trail is the committed events with each command's r
     [8, "Requirements 1.0.0 → 2.0.0: allowed_fields, excluded_fields; 1 stale, 1 held", ""],
     [10, "Admission refused: needs 1 processors; 0 free", ""],
     [11, "You: status", "received"],
+    [12, "You: summarise it", "rejected · no assistant is bound yet"],
+    [14, "You: resume", "rejected · PAUSED"],
+  ]);
+});
+
+test("B26, A04: a sandboxed job's failure and a refused late result read in one wording", () => {
+  const reason = "undeclared_read: 1 open(s) outside the declaration; the OS answered PermissionError";
+  const log = [
+    job(1, "job.started", "job-123456", "running", 1),
+    job(2, "job.failed", "job-123456", "failed", 1, 0, { input: { attempt: 1, fence: 0, reason } }),
+    job(3, "job.expired", "job-abcdef", "queued", 1, 1),
+    job(4, "job.result_rejected", "job-abcdef", "queued", 1, 1, {
+      input: { attempt: 1, fence: 0, outcome: "succeeded", because: "REVISION_CONFLICT" },
+    }),
+    job(5, "job.succeeded", "job-fedcba", "succeeded", 1),
+  ];
+  expect(activity(log).map((item) => [item.text, item.state])).toEqual([
+    ["Job 123456: running (attempt 1, fence 0)", ""],
+    ["Job 123456: failed (attempt 1, fence 0)", reason],
+    ["Job abcdef: queued (attempt 1, fence 1)", ""],
+    ["Job abcdef: succeeded result refused (attempt 1, fence 0)", "REVISION_CONFLICT"],
+    ["Job fedcba: succeeded (attempt 1, fence 0)", ""],
   ]);
 });

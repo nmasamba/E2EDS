@@ -1,4 +1,4 @@
-"""Fail when a module under src/dsp imports across a forbidden layer boundary (AGENTS.md §4)."""
+"""Fail when a module under src imports across a forbidden layer boundary (AGENTS.md §4)."""
 
 import ast
 import sys
@@ -10,20 +10,22 @@ ALLOWED = {
     "ports": {"contracts", "domain", "ports"},
     "application": {"contracts", "domain", "ports", "application"},
     "adapters": {"contracts", "domain", "ports", "adapters"},
+    "dsp_runner": {"contracts"},
 }
 SUBPROCESS_OK = {"adapters", "harness"}
 
 
 def violations(src: Path) -> list[str]:
-    """Return one line per forbidden import found under ``src/dsp``."""
+    """Return one line per forbidden import found under ``src/dsp`` and ``src/dsp_runner``."""
     found = []
-    for path in sorted((src / "dsp").rglob("*.py")):
-        layer = path.relative_to(src / "dsp").with_suffix("").parts[0]
+    for path in sorted([*(src / "dsp").rglob("*.py"), *(src / "dsp_runner").rglob("*.py")]):
+        parts = path.relative_to(src).with_suffix("").parts
+        layer = parts[0] if parts[0] == "dsp_runner" else parts[1]
         for node in ast.walk(ast.parse(path.read_text())):
             if isinstance(node, ast.Import):
                 names = [alias.name for alias in node.names]
             elif isinstance(node, ast.ImportFrom):
-                names = [node.module or ""]
+                names = [f"{node.module or ''}.{alias.name}" for alias in node.names]
             else:
                 continue
             for name in names:
@@ -35,7 +37,9 @@ def violations(src: Path) -> list[str]:
                     and target[1] not in ALLOWED[layer]
                 )
                 if crosses or (target[0] == "subprocess" and layer not in SUBPROCESS_OK):
-                    found.append(f"{path}:{node.lineno}: {layer} may not import {name}")
+                    named = isinstance(node, ast.ImportFrom) and node.module != "dsp"
+                    shown = name.rsplit(".", 1)[0] if named else name
+                    found.append(f"{path}:{node.lineno}: {layer} may not import {shown}")
     return found
 
 

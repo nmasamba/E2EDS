@@ -4,9 +4,10 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 
 ## Now
 
-- **Sprint:** 3 — M1 jobs, admission, conversation and control: complete, gate below. Sprint 4 is next.
-- **Claimed prompt:** none. 3.1 to 3.7 are done and waiting in the pull request.
-- **Branch:** `sprint-3-control`, from `main` at `cbde3fd`, with a pull request open against `main`
+- **Sprint:** 4 — M1 sandboxed native runner (B26; A28; R16; C14, C18; D01, D21).
+- **Claimed prompt:** 4.7 (Sprint 4 gate): done. The two macOS containment gaps that halted the first
+  gate runs are closed (decisions, 2026-10-13, "both macOS containment gaps closed").
+- **Branch:** `sprint-4-runner`, from `main` at `0cb7674` (PRs #1 to #7 merged).
 
 ## Done
 
@@ -21,8 +22,9 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 | 0 | Setup | done | G0: PASS for synthetic scope |
 | 1 | M0 foundations and thin slice | merged to `main` (PR #1) | PASS, see below |
 | 2 | M1 desktop, discovery, plan | merged to `main` (PR #5) | PASS for Sprint 2 scope, see below |
-| 3 | M1 jobs, admission, conversation, control | done; in the pull request | PASS for Sprint 3 scope, see below |
-| 4–11 | M1 | not started | — |
+| 3 | M1 jobs, admission, conversation, control | merged to `main` (PRs #6, #7) | PASS for Sprint 3 scope, see below |
+| 4 | M1 sandboxed native runner | on `sprint-4-runner`, pull request #8 open | PASS for Sprint 4 scope, see below |
+| 5–11 | M1 | not started | — |
 | 12–20 | M1B, M1C, M1R, M2, M3, M3Z, M4 | not started | — |
 
 ## Environment observed (2026-10-01, this Mac)
@@ -225,8 +227,246 @@ Code commit `2c81168`; the evidence and this file were committed after it.
   (`docs/decisions.md`, 2026-10-08, "the integrity review").
 - Gate outcome: **PASS** for Sprint 3 scope. Scenario outcomes are as listed; none is rounded up.
 
+## Sprint 4 housekeeping (2026-10-12)
+
+- Activity trail is the one place outcomes appear; `command.*` events carry the readable `reason`.
+  Vitest 9 passed; Playwright work spec 3 passed (composer, buttons, a dropped request, Run and a refused
+  admission). Guards mutation-checked: the not-received line only for an unanswered Run, the reason shown.
+- Renderer shortcuts CmdOrCtrl+P and CmdOrCtrl+. on the live job; Playwright presses them on macOS (Meta).
+  Guard mutation-checked: the platform's modifier. The built app's press is asked of the owner at the gate.
+- Found and fixed: the harness published `harness.json` before listening (a client waited 10 s); a test
+  connects to the published port before the server loop runs. Renderer suite on macOS: 20 passed.
+
+## Prompt 4.1 — contracts for the runner (2026-10-12)
+
+- App ComputeBinding 0.6.0 (OS-sandbox policy, `assurance`, darwin), CodeTask 0.1.0, Job 0.2.0; the loader
+  dispatches on `schema_version`. The stored local binding `compute-local-native` 1.0.0 replaces
+  `LOCAL_DRAFT`; admission stores and pins it and a stored CodeTask for every job, test-worker jobs included.
+- Tests: `tests/contract/test_app_contracts.py` (9: app schemas meta-validate, the binding at OS-sandbox
+  assurance on darwin and linux, a policy cannot claim another assurance, prior versions read, CodeTasks
+  conform), `test_admission.py` (+2: binding and CodeTask stored and pinned, idempotent retry; undeclared
+  input, duplicate name, missing source, over-envelope limit and a permission refused and recorded, no
+  output refused before anything is written). `make test-fast` 288 passed on macOS. Guards mutation-checked
+  (11): input captured, input names unique, source stored, limits within the envelope, no permission,
+  caller sets only supplied fields, language Python or SQL, policy ties assurance and trust, Python
+  declares an output, version dispatch, idempotency compares the payload.
+
+## Prompt 4.2 — runner entry point and environment (2026-10-12)
+
+- `src/dsp_runner` (`python -m dsp_runner <attempt>/task.json`), the shared process core
+  `adapters/sandbox.py` (layout, fixed argv, scrubbed environment, wall clock, bounded tar channel),
+  `Runner` in `ports.py`, app `RunnerResult` 0.1.0, `make runner-env` (0.4 s, rebuilt by `test-fast`,
+  `sat`, `verify`; CI's verify job runs `make verify`). The boundary checker scans `src/dsp_runner`
+  (contracts only, no `subprocess`) and now reads `from dsp import x` as `dsp.x`. Not reachable from the
+  application; no sandbox yet.
+- Tests: `tests/integration/test_runner.py` (8, real processes from the runner environment): Python and
+  SQL outputs; undeclared reads (plain, swallowed, failing, SQL) and writes (path, `..`, symlink);
+  output at, over and far over the cap; an exception, an exit status, a missing output, no result, three
+  forged channels, a source that differs from its digest; the wall-clock limit kills the task and a
+  process it started. `test_gate.py` +1 (the runner's imports), contract test +2 SQL cases. `make
+  test-fast` 297 passed on macOS. Guards mutation-checked (19): the runner's allowed imports, `from dsp
+  import`, the runner tree scanned, digests before running, undeclared read and write recorded, symlinks
+  resolved, a refusal outranks its crash, DuckDB external access off, missing output, channel closed
+  before exit, channel bounded while read, outputs summed against the cap, declared regular entries only,
+  result validated, every output present, wall-clock deadline, group killed after the leader, SQL's one
+  output (one found by the check: the refusal-over-crash case had no test; added).
+
+## Prompt 4.3 — macOS sandbox adapter (2026-10-12)
+
+- `adapters/seatbelt.py` (profile, sparse scratch image, jetsam limit and `CLOEXEC_DEFAULT` on the
+  spawn, CPU poll), `adapters/seatbelt_child.py` (`sandbox_init`, then the runner in-process), the shared
+  core as the `Confined` base with `sandbox.local()` choosing the OS's adapter. The runner's messages
+  carry an OSError's errno and meaning, not its path. CI on `b8be28a` (the 4.2 push, run 38298066312):
+  verify and desktop green on `ubuntu-24.04` and macOS.
+- Tests: `tests/integration/test_containment.py` (10, `sandbox`, real tasks through libc past the audit
+  hook): reads (planted secret, `~/.ssh`, the ledger, even `stat`) refused and the declared input read;
+  writes by path, `..`, the inputs, a symlink and into the runner environment refused and scratch
+  written; no connect to a loopback listener and no name resolved; only `HOME`/`TMPDIR` (and two the
+  runtime adds) and only descriptors 0–4, an inheritable harness file left behind; fork, spawn and exec
+  refused; memory over 256 MiB killed and 64 MiB allowed; CPU stopped with and without SIGXCPU
+  ignored; scratch refuses at its size and is detached and deleted; wall time and output; a profile that
+  does not compile runs nothing. `test_runner.py` now runs the core through a test-only `Unconfined`.
+  macOS: 18 runner and containment tests pass; `make test-fast` 297 passed. Guards mutation-checked (16):
+  deny by default, reads limited, metadata only on ancestors, writes only to scratch, no network, no
+  process creation, environment scrubbed, only standard descriptors, memory limit on the spawn, an
+  unexplained kill is memory, CPU poll, scratch volume capped, scratch volume detached, profile applied
+  before the runner, a refused profile ends the process; the runner's CPU rlimit survives on macOS
+  (the poll also stops the task) and is checked on Linux in 4.4. Two survivors on the first pass (metadata
+  and inherited descriptors) led to sharper probes, then were caught.
+
+## Prompt 4.4 — Linux sandbox adapter (2026-10-12)
+
+- `adapters/bubblewrap.py` (bubblewrap, `prlimit --as`, the seccomp filter for x86-64 and aarch64);
+  `sandbox.local()` chooses it on Linux; `chain()` is shared; `make verify-linux` installs bubblewrap
+  and runs as an unprivileged user (`tools/verify_linux.sh`). **bubblewrap runs inside the
+  verify-linux container** (linux/arm64, `seccomp=unconfined`, by owner approval), so the Linux sandbox
+  tests run locally as well as on CI's `ubuntu-24.04`, where the verify job now installs bubblewrap.
+- Tests: `test_containment.py` now 11, all on both OSes: + Python with a thread and DuckDB SQL run
+  under the sandbox; the network test also tries a Unix listener by path and, on Linux, an abstract
+  name; the process test also calls `clone3` directly on Linux; writes to `/` and `/dev/shm` refused.
+  `make verify-linux`: format, lint, mypy, boundaries clean; **312 passed, 2 deselected**, coverage
+  91.78%, 5 min 24 s. `make verify` on macOS arm64: **312 passed, 2 deselected**, coverage 91.11%,
+  5 min 12 s.
+- Guards mutation-checked on Linux (21): process creation refused but threads, the thread rule,
+  `clone3` refused, the filter installed, the namespace alone (abstract socket), both network layers
+  together, root read-only, `/dev` read-only, the attempt read-only, only the allowlist mounted,
+  scratch tmpfs sized, `RLIMIT_AS`, inherited descriptors closed, environment scrubbed, signals relayed
+  as 128 + n, the runner as first process, the runner's CPU rlimit (the 4.3 survivor, caught here),
+  dies with its supervisor. Not caught: the socket rule alone (the namespace still refuses), logged;
+  `clone3`'s ENOSYS rather than EPERM (threads do not use it on this glibc). Found by the checks: the
+  first pass's survivors led to the thread, abstract-socket and `clone3` probes, and to dropping
+  `--clearenv`, which duplicated the spawn's scrubbed environment.
+
+## Prompt 4.5 — CodeTasks through jobs (2026-10-12)
+
+- Coordinator: `execute`, `reconcile` (the tick), `tidy`; the harness's dispatcher and tick; app
+  RunRecord 0.1.0 and Profile 0.1.0; the profiling recipe in the sandbox (`src/dsp/recipes`);
+  `POST /v1/sources`; `dsp run-task`; `fixtures/tasks/read_secret.json`; the macOS orphan watcher; the
+  trail's failure reasons. Run for real on macOS: `dsp run-task fixtures/tasks/read_secret.json` →
+  `failed: undeclared_read: 1 open(s) outside the declaration; the OS answered PermissionError:
+  [Errno 1] Operation not permitted`, exit 2.
+- Tests: `tests/integration/test_runs.py` (9, sandbox): a sandboxed job commits a RunRecord naming its
+  outputs, events replay; over the size cap fails, nothing stored; a late result after its fence moved
+  is refused, nothing kept; cancel mid-run kills the task, no success, no artifact; the tick expires a
+  dead attempt untouched; a lease expiring mid-run stops the run and attempt 2 commits; tidy finishes a
+  crash between commit and storage; no runner environment refuses sandboxed work; a staged output
+  changed after hashing is never stored. `test_containment.py` +1 (a dead harness ends its task);
+  `test_profile_export.py` reworked (the recipe's logic unit-tested, the CLI path sandboxed); the
+  built-app test profiles in the sandbox and sees the OS refuse `/etc/passwd`. Vitest 10, Playwright
+  `runs.spec.ts` 1 (real sandboxed jobs in the trail). Guards mutation-checked (13): the tick expires
+  due leases, the tick runs with the server, a stop request stops the run, a fenced attempt stops its
+  run, outputs stored only after the commit, a refused result leaves no staging, a task's failure is
+  final, stored bytes are the hashed bytes, tidy finishes a committed promotion, tidy clears a dead
+  attempt, the dispatcher runs only sandboxed jobs, no runner no sandboxed job, the macOS orphan
+  watcher. Found by the checks: a fenced run kept running until its end (now stops), and `tidy`'s
+  live-attempt check could never matter under the lock (removed).
+
+## Fixes after CI run 38305340576 (2026-10-12)
+
+- CI on `addc8f7` (4.4): verify failed on `ubuntu-24.04` (every sandboxed task ended with status 1:
+  bubblewrap could not build its namespaces there) and on macOS (the jetsam limit did not stop a 2 GiB
+  allocation on GitHub's VM); the Linux desktop job's window showed "Resources not observed"; macOS
+  desktop passed. Fixed in four commits: the harness's background work ends with its server (a stopped
+  test server had kept a test process alive); macOS memory is also polled from the kernel's footprint
+  (checked here with jetsam disabled: the poll alone stopped the task) and the runner keeps the OS's
+  errno under a wrapper; CI gives `/usr/bin/bwrap` alone an AppArmor profile for user namespaces, then
+  proves a sandbox can be built; the window reads the snapshot and plan again until a read succeeds.
+
+## Prompt 4.6 — containment suite (2026-10-12)
+
+- `tests/sat/test_sprint_04.py` (8, sandbox): a planted host secret and a key under `~/.ssh`; an HTTP
+  fetch from a loopback listener and a name lookup; pip and a write into the runner environment; a
+  state-folder file standing for a sealed partition; the ledger and the task's own declaration; fork
+  and a shell's spawn; CPU, memory, wall time, output and scratch; the source and attempts kept. Each
+  runs real Python through admission, the dispatcher and the OS sandbox, and writes its A28 part
+  (`make sat`) at `os_sandbox_single_user` assurance. The evidence fixture records `assurance`.
+- `make verify-linux` (container): **332 passed, 2 deselected**, coverage 90.15%, 6 min 07 s.
+  `make verify` on macOS: **332 passed, 2 deselected**, 7 min 15 s of tests (one run's wall time was
+  22 min, not reproduced: decisions, 2026-10-13); a rerun of the gate's pytest: 332 passed, coverage
+  90%.
+
+## Sprint 4 gate (2026-10-13)
+
+- Shipped at 4.7: `dsp run-task`'s acceptance test and the overall A28 record (FAIL on an OS where a
+  part failed, otherwise INSUFFICIENT_EVIDENCE with the missing parts named); `make sat-linux`; the
+  integrity review's fixes (decisions, 2026-10-13): promotion checks a digest before it moves a file and
+  finishes a part-way move, `tidy` sets aside once what it cannot finish (`.held`); Linux refuses
+  `memfd_create` and `shmget`; a frozen harness uses only `DSP_RUNNER_ENV` and refuses an environment
+  others could write; a failing watch kills and reaps the task first; no host path in a failure
+  message; no outside lease of a sandboxed job; each A28 part requires the OS's own answer. After the
+  first gate run: a sandbox that cannot start the task is a transient `sandbox_unavailable` failure,
+  retried, not a stranded job; the window says why it could not read the snapshot ("Resources not read:
+  <reason>") and calls an unanswered request "no answer"; the overall A28 record is FAIL on an OS where
+  a part failed. Then the two macOS containment gaps were closed (below).
+- Tests added at 4.7: `test_runner.py` +1 (a failure while a task runs leaves no task running);
+  `test_runs.py` +3 (an environment others could write and a frozen harness's guess refused; no outside
+  worker leases a sandboxed job; a sandbox that cannot start the task is retried) and the tidy test now
+  covers a move stopped part-way; `test_containment.py`: C14 also reads the parent's environment
+  through the process table, D21 also tries memfd and System V shared memory; `tests/sat/test_sprint_04.py`
+  +1 (the acceptance line and the overall record). Guards mutation-checked: review fixes 9, 8 caught
+  (digest before the move, an output already stored counts as moved, tidy holds what it cannot finish,
+  the environment is the owner's alone, a frozen harness guesses no environment, a failing watch kills
+  the task first, no host path in a message, no outside lease of a sandboxed job); the ninth, a
+  file-size limit, survived because every writable file system is the sized scratch, so it was removed;
+  memfd and `shmget` refused (Linux, 2, caught); a sandbox that cannot start the task caught and
+  retried (2, caught); the memory test's segment removal (1, caught: without it 1 MiB was left).
+- Closing the two macOS gaps (`9be5f61`; decisions, 2026-10-13, "both macOS containment gaps
+  closed"): the profile denies `process-info*` and allows sysctl reads by exact name only (eleven,
+  measured from the sandbox's denial log), and denies every System V call by number, the multiplexers
+  included; Linux also refuses `msgget` and `semget`. C14 also reads an unrelated sibling's
+  environment; D21 also tries message queues, semaphores and the `shmsys` multiplexer and removes with
+  `ipcrm` anything a task made. Mutation-checked: macOS 6 (the blanket sysctl allowance back, no
+  `(deny process-info*)`, no System V rule, no multiplexers, no `msgget`, no `semget`), Linux 2 (no
+  `msgget`, no `semget`), all caught; the sibling probe alone catches the old profile.
+- `make verify` on macOS arm64 (at `9be5f61`): format, lint, mypy strict, boundaries clean;
+  **337 passed, 2 deselected**, coverage 90.89%, 6 min 57 s. Tail:
+  ```
+  Required test coverage of 85% reached. Total coverage: 90.89%
+  337 passed, 2 deselected, 1 warning in 417.52s (0:06:57)
+  ```
+  The earlier runs failed on the two gaps: at `e6cf725` and `b897ec6` 3 failed, 334 passed (C14, D21
+  and the A28 host-secret part), and the first also failed the A28 bounds part on a spawn's
+  `PermissionError` (fixed in `b897ec6`).
+- `make verify-linux` (container, linux/arm64, at `9be5f61`): format, lint, mypy strict, boundaries
+  clean; **337 passed, 2 deselected**, coverage 90.98%, 6 min 29 s. Tail:
+  ```
+  Required test coverage of 85% reached. Total coverage: 90.98%
+  337 passed, 2 deselected, 1 warning in 389.91s (0:06:29)
+  ```
+- `make sat` on macOS (at `9be5f61`): **22 passed** in 4 min 21 s. `make sat-linux` (container, at
+  `9be5f61`): **22 passed** in 3 min 44 s. Evidence for A28 (ten records per OS) and every earlier
+  sprint's scenarios refreshed in `docs/evidence/`.
+- **A28 outcomes, per part, at OS-sandbox single-user assurance, the same on macOS arm64 and Linux
+  arm64:** host-secret (a planted secret, `~/.ssh`, and the harness's environment through the process
+  table), network-fetch, dependency-install, final-set (a stand-in file), metadata-mutation, process,
+  bounds (CPU, memory, wall time, output, scratch), preserved and the acceptance line all PASS; the
+  overall record INSUFFICIENT_EVIDENCE (model-generated code and repairs need Sprint 5, sealed
+  partitions Sprint 9, and the suite asks for a VM). At `e6cf725` the macOS host-secret part and the
+  overall record were FAIL.
+- Acceptance line, run for real at `9be5f61`: macOS, `uv run dsp run-task fixtures/tasks/read_secret.json`
+  → `failed: undeclared_read: 1 open(s) outside the declaration; the OS answered PermissionError:
+  [Errno 1] Operation not permitted`, exit status 2. Linux (container, the same command after the SAT)
+  → `... the OS answered FileNotFoundError: [Errno 2] No such file or directory`, nonzero exit (`/etc`
+  is not mounted in the sandbox at all). Both in `docs/evidence/A28-acceptance-read-secret-*.json`.
+- `make desktop-build` then `make e2e` on macOS (at `9be5f61`): Vitest 10 passed, Playwright 21
+  passed, the shell's Rust test 1 passed, the built app 2 passed. No harness was left running.
+- CI at the first gate push (run 38367812467, `509add9`): `verify (ubuntu-24.04)`, `desktop
+  (ubuntu-24.04)` and `desktop (macos-latest)` pass; `verify (macos-latest)` failed on the same three
+  tests on GitHub's `macos-26-arm64` image. On the fix (run 38379462014, `a58ad3b`) both
+  verify jobs and macOS desktop passed and the Linux desktop job failed on the test's race (open
+  defects); on its fix (run 38380964046, `c367957`) **all four pass**: `verify (ubuntu-24.04)` 6 min
+  29 s, `verify (macos-latest)` 6 min 47 s, `desktop (ubuntu-24.04)` 10 min 31 s, `desktop
+  (macos-latest)` 7 min 43 s.
+- ID trace (`tools/trace_ids.py 4`): A28, C14, C18, D01, D21, R16 covered; B26 is in test docstrings.
+- `integrity-reviewer` (once, 249k tokens): REVIEW: PASS, six should-fix findings and five notes; all
+  six fixed, notes 8 and 11 fixed, note 7 measured as worse (the process-table gap), notes 9 and 10
+  logged for later sprints (decisions, 2026-10-13).
+- Gap investigation (at the owner's request, after the gate's CI read): one workflow, 9 agents, 1.05M
+  tokens; five investigators and an adversarial verifier per claimed closure (decisions, 2026-10-13).
+- Gate outcome: **PASS** on macOS and Linux for Sprint 4 scope. Scenario outcomes are as listed; none
+  is rounded up.
+
 ## Open defects and gaps
 
+- macOS sandbox: sysctl reads are allowed by name only, the eleven measured for the standard library and
+  DuckDB; a future library reading another one gets EPERM (add it by name after checking it reveals
+  nothing of another process; never by a `kern.` prefix). The System V rule uses Seatbelt's private
+  `syscall-unix` filter and needs the profile's deny-by-default; the D21 test guards it.
+- Linux desktop job on CI (runs 38322576233 and 38379462014): the built-app test read the window's
+  text once the plan showed and required the snapshot in that same text, but the window reads the
+  snapshot with a separate request that can land later (the failing text had the plan and "Resources
+  not observed", no read error). The test now waits for the snapshot's line; it passed on run
+  38380964046. One pass does not prove a race gone; the Linux built-app test runs only on CI.
+- macOS: one gate run's dispatcher logged `PermissionError` starting a task (no traceback): which call
+  refused is not established. It is now a retried transient failure, not a stranded job.
+- macOS: after some `make e2e` runs a bundled harness was left running on one test's temporary profile,
+  started by a process that had exited; origin not established (not seen in the 2026-10-13 run).
+- One macOS gate run took 22 minutes of wall time against 7 to 8 minutes of tests; not reproduced.
+- Logged from the review, not fixed: the Linux filter allows `execve` (a task can replace itself with
+  the interpreter, still confined; there is no `/bin/sh`); admission accepts any captured DataManifest
+  as an input and nothing reads the binding's `sealed_data_access: false` (Sprint 9 must exclude sealed
+  manifests). A failure message is text the task chooses (up to 200 characters in the trail): Sprint 5
+  must treat it as customer content before any of it reaches a prompt.
 - Linux x86-64 is verified by CI only; the local container run is linux/arm64.
 - macOS: the window's text is not read by any automated test (no WebDriver for WKWebView). The built-app
   tests check behaviour through the bundled harness: the window's own discovery, and in Sprint 3 the
@@ -234,15 +474,17 @@ Code commit `2c81168`; the evidence and this file were committed after it.
   Linux in CI and, on macOS, only as the request the shell sends (Rust test) and by the owner by hand.
 - Linux: the desktop end-to-end test has run only in CI (x86-64). The AppImage is built but never
   launched. No Linux arm64 bundle is built.
-- Jobs: a worker that dies is shown as running until the next operation touches its job (a lease,
-  heartbeat, report, control or read reconciles the expired lease); no reconciler runs on a timer until
-  the Sprint 4 runner. The only worker is the test worker, started outside the harness; a queued job
-  waits for one. A checkpoint is recorded but nothing restores from it yet.
+- Jobs: a worker that dies is shown as running until its lease expires; the harness's tick (every
+  second, Sprint 4) then reconciles it. Sandboxed jobs are run by the harness's own dispatcher, one at
+  a time; a test job still waits for the outside test worker. A checkpoint is recorded but nothing
+  restores from it yet.
 - Controls: a phrase with several live jobs needs clarification; only the job's own controls (buttons)
-  name a job. There is no Resume menu item. **Open DEFECT (2026-10-12):** on macOS neither Cmd+. nor a trial
-  CmdOrCtrl+Shift+C fired the Cancel run item from the real menu, while Cmd+P fired Pause; cause unknown,
-  menu item untried by mouse, chord unchanged. **Open DEFECT (2026-10-12):** action outcomes are shown in
-  four places with differing wording and no central place; the activity trail should be the one place. Resume and admission are serialised on one aggregate; a
+  name a job. There is no Resume menu item. **Open DEFECT:** in the built macOS app Cmd+. cancels
+  nothing. The owner's press on 2026-10-13: Cmd+P paused the job through the window's own handler;
+  Cmd+. reached neither the window nor the native menu (no command arrived at the harness). Both
+  chords work in Playwright and on Linux. Changing the chord is the owner's call (waiting on the
+  owner). Action outcomes are shown in the activity trail only, with one wording (closed in Sprint 4
+  housekeeping). Resume and admission are serialised on one aggregate; a
   revision followed by a crash before the hold leaves a job on the old revision until its next resume.
 - Requirements: three change instructions are understood by a fixed grammar; a budget or evaluation
   change is refused because the owner action that would approve it does not exist yet.
@@ -256,13 +498,18 @@ Code commit `2c81168`; the evidence and this file were committed after it.
 
 ## Waiting on the owner
 
-Nothing. Standing approvals are in `docs/decisions.md`.
+1. **Cmd+. in the built macOS app** reaches neither the window nor the native menu: choose another
+   chord for Cancel run (for example Cmd+Shift+K) or keep it and rely on the button.
+2. Merging the Sprint 4 pull request (#8).
+3. Optional: remove `~/Library/Containers/dsp.probe.appsandbox` (28 KB), left by the gap investigation's
+   App Sandbox probe; the system refused its deletion from this session.
 
 ## Handoff note
 
-Sprints 1 to 3 are built. Sprint 3 (prompts 3.1 to 3.7) is on `sprint-3-control`, pull request against
-`main` titled "Sprint 3: jobs, admission, conversation and control"; merging is the owner's. **Next is
-Sprint 4, prompt 4.1**, on a new branch from `main` once the pull request is merged.
+Sprint 4 (prompts 4.1 to 4.7) is on `sprint-4-runner`, pull request #8 against `main` titled "Sprint 4:
+sandboxed native runner"; merging is the owner's. The gate is PASS on macOS and Linux for Sprint 4 scope
+after the two macOS containment gaps were closed. **Next is Sprint 5, prompt 5.1**, on a new branch from
+`main` once the pull request is merged.
 
 Notes for the next session: the `harness` fixture serves the real app from the test process on a loopback
 socket with a clock the test moves (`clock.advance(61)` expires a lease); the `worker` fixture starts
@@ -274,6 +521,13 @@ job together on the `admission:host-local` aggregate; resume rides the same aggr
 revision immutability against a racing transition. The window derives everything from `/v1/events`
 (`trail.ts`: `trail`, `jobs`, `liveJob`, `expectedRevision`, `activity`); the Rust menu posts
 `/v1/control`. `make e2e` needs `make desktop-build` after any Python change; the Rust build in a fresh
-worktree takes several minutes. `make sat` writes evidence with `sprint=3` for the Sprint 3 scenarios;
-the Linux records come from running `tests/sat` in the container with `docs/evidence` mounted writable,
-and the Linux A44 record from the CI artifact. Run `uv run mypy` in the chain before every commit.
+worktree takes several minutes. `make sat` writes evidence for every sprint's scenarios on macOS and
+`make sat-linux` in the container; the Linux A44 record comes from the CI artifact. Run `uv run mypy`
+in the chain before every commit.
+
+Sprint 4 notes: sandboxed tasks need `make runner-env` (the `runner_env` fixture refuses a stale one);
+tests that run real tasks carry the `sandbox` marker, and one `executing` lock in the harness runs one
+task at a time. On macOS each task mounts a scratch disk image (about 1.7 s); after interrupted runs,
+detach only images under `pytest-of-…`, never the owner's. A macOS task's System V segment outlives
+it (`ipcs -m`); remove only segments the tests' tasks made. `make verify-linux` runs bubblewrap
+inside Docker with `seccomp=unconfined`; `/proc` cannot be mounted there.

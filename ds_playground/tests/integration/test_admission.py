@@ -12,11 +12,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from dsp.adapters.ledger_sqlite import SqliteLedger
+from dsp.adapters.store_fs import ContentStore
 from dsp.application import admission, jobs
 from dsp.application.discovery import discover
-from dsp.application.planning import LOCAL_DRAFT, propose_plan
+from dsp.application.planning import local_binding, propose_plan
 from dsp.application.workloads import base_workload
-from dsp.contracts.canonical import pin
+from dsp.contracts.canonical import canonical_json, digest, pin
 from dsp.contracts.errors import DspError, ErrorCode, TrustedContext
 from dsp.contracts.schemas import validate
 from dsp.harness import workspace
@@ -24,6 +25,8 @@ from dsp.harness.app import SHELL_ORIGIN, create_app
 from tests.conftest import Clock
 
 CTX = TrustedContext.local()
+BINDING = local_binding(CTX, "linux", "x86_64")
+NO_SOURCES = ContentStore(Path("no-store"))  # holds nothing; test-worker tasks never read it
 NOW = "2026-10-08T10:00:00+00:00"
 TASK = {"cues": ["hang"], "seconds": 0}
 REQUEST = {"operation": "analyse", "idempotency_key": "key-1", "task": TASK}
@@ -88,8 +91,9 @@ def attempt(store: SqliteLedger, **choices: Any) -> dict[str, Any]:
         choices.get("key", new_id()),
         choices.get("task", TASK),
         workload=choices.get("workload", base_workload(CTX)),
-        binding=LOCAL_DRAFT,
+        binding=BINDING,
         ledger=store,
+        store=choices.get("content", NO_SOURCES),
         clock=lambda: NOW,
         new_id=new_id,
     )
@@ -218,7 +222,7 @@ def test_d05_an_admitted_job_holds_its_reservation_until_it_ends_and_its_key_is_
         "permitted_snapshot",
     )
     assert (request["compute_binding_ref"], request["authorisation_context_ref"]) == (
-        pin(LOCAL_DRAFT),
+        pin(BINDING),
         "owner-local",
     )
     assert request["workload_ref"] == job["workload_ref"]
@@ -226,7 +230,7 @@ def test_d05_an_admitted_job_holds_its_reservation_until_it_ends_and_its_key_is_
     plan = store.get(CTX, "WorkflowPlan", request["workflow_plan_ref"]["id"], "1.0.0")
     assert plan["hardware_snapshot_refs"][-1]["id"] == snapshot["id"]
     assert store.get(CTX, "WorkloadSpec", "workload-test-job", "1.0.0") == base_workload(CTX)
-    assert LOCAL_DRAFT["capabilities"]["external_billing_possible"] is False
+    assert BINDING["capabilities"]["external_billing_possible"] is False
 
     assert attempt(store, key="k1") == job
     with pytest.raises(DspError) as raised:
@@ -242,7 +246,7 @@ def test_d05_an_admitted_job_holds_its_reservation_until_it_ends_and_its_key_is_
         clock=lambda: NOW,
         new_id=new_id,
         workload=base_workload(CTX),
-        binding=LOCAL_DRAFT,
+        binding=BINDING,
     )
     released = store.latest(CTX, "Reservation", job["reservation"])
     assert ended["state"] == "cancelled"
@@ -266,7 +270,7 @@ def test_a33_a_plan_older_than_its_snapshot_is_rechecked_and_refused_when_capaci
     """
     store = ledger(tmp_path)
     observed(store)
-    first = propose_plan(CTX, ledger=store, new_id=new_id)
+    first = propose_plan(CTX, binding=BINDING, ledger=store, new_id=new_id)
     small = observed(
         store, memory_gib=2.5
     )  # the 2 GiB host reserve leaves 0.5 GiB for 1 GiB needed
@@ -419,3 +423,120 @@ def test_a08_an_admission_that_lands_between_read_and_commit_is_seen_every_time(
         attempt(racing)
     assert raised.value.code is ErrorCode.QUOTA_EXCEEDED
     assert written(store) == {"Job": 1, "Reservation": 1, "ExecutionRequest": 2}
+
+
+def captured(store: SqliteLedger, content: ContentStore, data: bytes) -> str:
+    """Capture bytes as data the owner granted, the way profiling records a DataManifest."""
+    staged = content.staging(new_id()) / "raw"
+    staged.write_bytes(data)
+    sha256 = content.commit(CTX, staged)
+    manifest = {
+        "schema_version": "0.1.0",
+        "type": "DataManifest",
+        "id": f"data-{new_id()}",
+        "revision": "1.0.0",
+        "source_name": "orders.csv",
+        "sha256": sha256,
+        "bytes": len(data),
+        "captured_at": NOW,
+        "rights": "owner_supplied_unreviewed",
+    }
+    store.commit(CTX, f"data:{manifest['id']}", 0, manifest["id"], "data.captured", {}, [manifest])
+    return sha256
+
+
+def python_task(content: ContentStore, inputs: list[dict[str, str]]) -> dict[str, Any]:
+    """A Python task whose source is in the content store."""
+    staged = content.staging(new_id()) / "source.py"
+    staged.write_text("print('summary')\n")
+    source = content.commit(CTX, staged)
+    return {"language": "python", "source_sha256": source, "inputs": inputs, "outputs": ["a.json"]}
+
+
+def test_b26_admission_stores_and_pins_the_local_binding_and_the_code_task(tmp_path: Path) -> None:
+    """B26, A28: the request pins the stored binding and CodeTask by digest; a retry is the same.
+
+    A runner job carries no test-worker task; a test-worker job's CodeTask records its cues by
+    digest. The same idempotency key with another declaration conflicts.
+    """
+    store, content = ledger(tmp_path), ContentStore(tmp_path / "store")
+    observed(store)
+    data = captured(store, content, b"order_id\n000001\n")
+    task = python_task(content, [{"name": "orders.csv", "sha256": data}])
+    job = attempt(store, key="k1", task=task, content=content)
+    request = store.get(CTX, "ExecutionRequest", job["request_ref"]["id"], "1.0.0")
+    ref = request["source_code_task_ref"]
+    code = store.get(CTX, "CodeTask", ref["id"], ref["revision"])
+    assert pin(code) == ref
+    assert (code["language"], code["inputs"], code["outputs"]) == (
+        "python",
+        task["inputs"],
+        ["a.json"],
+    )
+    assert (code["requirement_revision"], code["permissions"]) == ("1.0.0", [])
+    binding = store.get(CTX, "ComputeBinding", BINDING["id"], BINDING["revision"])
+    assert (binding, request["compute_binding_ref"]) == (BINDING, pin(BINDING))
+    assert binding["assurance"] == "os_sandbox_single_user"
+    assert (job["schema_version"], job["task"]) == ("0.2.0", None)
+    assert job["payload_sha256"] == digest(canonical_json(task))
+    validate("Job", job)
+    assert attempt(store, key="k1", task=task, content=content) == job
+    with pytest.raises(DspError) as raised:
+        attempt(store, key="k1", task=task | {"outputs": ["b.json"]}, content=content)
+    assert raised.value.code is ErrorCode.IDEMPOTENCY_CONFLICT
+
+    worker = attempt(store, key="k2")
+    request = store.get(CTX, "ExecutionRequest", worker["request_ref"]["id"], "1.0.0")
+    ref = request["source_code_task_ref"]
+    code = store.get(CTX, "CodeTask", ref["id"], ref["revision"])
+    assert (code["language"], code["source_sha256"]) == (
+        "test_worker",
+        digest(canonical_json(TASK)),
+    )
+    assert worker["task"] == TASK
+
+
+def test_b26_a_task_with_an_undeclared_input_or_output_is_refused(tmp_path: Path) -> None:
+    """B26, C14: inputs must be captured data and the source stored; outputs must be declared.
+
+    A malformed declaration (no output) is refused before anything is written; every other
+    refusal is a rejected request that pins the CodeTask it declared, with no job or reservation.
+    """
+    store, content = ledger(tmp_path), ContentStore(tmp_path / "store")
+    observed(store)
+    data = captured(store, content, b"order_id\n000001\n")
+    declared = [{"name": "orders.csv", "sha256": data}]
+    with pytest.raises(DspError) as raised:
+        attempt(store, task=python_task(content, declared) | {"outputs": []}, content=content)
+    assert raised.value.code is ErrorCode.INPUT_INVALID
+    assert written(store) == {"Job": 0, "Reservation": 0, "ExecutionRequest": 0}
+
+    stray = {"name": "secret.csv", "sha256": digest(b"never captured")}
+    cases = [
+        (python_task(content, [stray]), ErrorCode.INPUT_INVALID, "secret.csv was not captured"),
+        (python_task(content, declared * 2), ErrorCode.INPUT_INVALID, "two inputs share a name"),
+        (
+            python_task(content, declared) | {"source_sha256": digest(b"elsewhere")},
+            ErrorCode.INPUT_INVALID,
+            "source is not in the store",
+        ),
+        (
+            python_task(content, declared) | {"limits": {"memory_mib": 4096}},
+            ErrorCode.INPUT_INVALID,
+            "memory_mib 4096 of 1024 allowed",
+        ),
+        (
+            python_task(content, declared) | {"permissions": ["network"]},
+            ErrorCode.FORBIDDEN,
+            "grants no network",
+        ),
+    ]
+    for task, code, says in cases:
+        error = refused_by(store, task=task, content=content)
+        assert (error.code, says in error.message) == (code, True), error.message
+    rejected = store.current(CTX, "ExecutionRequest")
+    assert [request["state"] for request in rejected] == ["rejected"] * len(cases)
+    for request in rejected:
+        ref = request["source_code_task_ref"]
+        assert pin(store.get(CTX, "CodeTask", ref["id"], ref["revision"])) == ref
+    assert written(store) == {"Job": 0, "Reservation": 0, "ExecutionRequest": len(cases)}

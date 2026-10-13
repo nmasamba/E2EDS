@@ -40,6 +40,7 @@ def serve(state_dir: Path, host: str = "127.0.0.1", dev: bool = False) -> None:
         return
     listener = socket.socket()
     listener.bind((host, 0))
+    listener.listen()  # before the port is published, so a reader never meets a silent port
     port, token = listener.getsockname()[1], secrets.token_urlsafe(32)
     descriptor = os.open(state_dir / "harness.json", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(descriptor, "w") as handle:
@@ -47,7 +48,10 @@ def serve(state_dir: Path, host: str = "127.0.0.1", dev: bool = False) -> None:
     app = create_app(token, port, dev)
     server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
     mount(app, state_dir, server)
-    server.run(sockets=[listener])
+    try:
+        server.run(sockets=[listener])
+    finally:
+        server.should_exit = True  # the background work ends with the server, however it ended
 
 
 def connect(state_dir: Path) -> httpx.Client:

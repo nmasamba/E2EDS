@@ -27,11 +27,11 @@ Transition = tuple[dict[str, Any], str | None, dict[str, Any]]
 def new(job_id: str, at: str, **fields: Any) -> Transition:
     """Return a queued job (revision 1.0.0, fence 0, no attempt yet) and its first event.
 
-    ``fields`` are what admission settled: the task, the pinned request and workload, the
-    reservation and the idempotency key.
+    ``fields`` are what admission settled: the test-worker task (None for a runner task), the
+    payload digest, the pinned request and workload, the reservation and the idempotency key.
     """
     job = {
-        "schema_version": "0.1.0",
+        "schema_version": "0.2.0",
         "type": "Job",
         "id": job_id,
         "revision": "1.0.0",

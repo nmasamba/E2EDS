@@ -1,9 +1,16 @@
+"""The built-in profiling recipe (R11, D20), run as a CodeTask inside the sandbox.
+
+The harness runs this file's source as a Python task whose one declared input is the captured CSV,
+``data.csv``, and whose one output is ``profile.json`` (app Profile 0.1.0), in canonical JSON. The
+parser touches the owner's data, so it runs confined (C18); the harness renders the report from the
+validated profile. Nothing here imports the project: the runner executes this text as it is.
+"""
+
+import json
 from pathlib import Path
 from typing import Any
 
 import duckdb
-
-from dsp.contracts.errors import DspError, ErrorCode
 
 MAX_ROWS, MAX_COLUMNS = 100_000, 200  # D20
 
@@ -19,7 +26,7 @@ FROM t
 """
 
 
-def profile_csv(path: Path) -> dict[str, Any]:
+def profile(path: Path) -> dict[str, Any]:
     """Profile every row of a CSV: counts, nulls, distinct values, ranges and a proposed type.
 
     Values are read as text so identifiers keep their exact form; a column with leading-zero values
@@ -35,15 +42,14 @@ def profile_csv(path: Path) -> dict[str, Any]:
             [str(path)],
         )
     except duckdb.Error as error:
-        raise DspError(ErrorCode.INPUT_INVALID, "file could not be read as CSV") from error
+        raise ValueError("the file could not be read as CSV") from error
     rows = con.execute("SELECT count(*) FROM t").fetchall()[0][0]
     rejected = con.execute("SELECT count(DISTINCT line) FROM reject_errors").fetchall()[0][0]
     names = [row[0] for row in con.execute("DESCRIBE t").fetchall()]
     if rows > MAX_ROWS or len(names) > MAX_COLUMNS:
-        raise DspError(
-            ErrorCode.INPUT_INVALID,
-            f"{rows} rows and {len(names)} columns exceed the limits {MAX_ROWS} and {MAX_COLUMNS}",
-            {"limit": "D20"},
+        raise ValueError(
+            f"{rows} rows and {len(names)} columns exceed the D20 limits"
+            f" {MAX_ROWS} and {MAX_COLUMNS}"
         )
     columns = []
     for name in names:
@@ -70,4 +76,18 @@ def profile_csv(path: Path) -> dict[str, Any]:
                 "max": high,
             }
         )
-    return {"rows": rows, "rows_rejected": rejected, "columns": columns}
+    return {
+        "schema_version": "0.1.0",
+        "type": "Profile",
+        "rows": rows,
+        "rows_rejected": rejected,
+        "columns": columns,
+    }
+
+
+if __name__ == "__main__":
+    found = profile(Path("../inputs/data.csv"))
+    text = json.dumps(
+        found, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
+    )
+    Path("profile.json").write_bytes(text.encode())

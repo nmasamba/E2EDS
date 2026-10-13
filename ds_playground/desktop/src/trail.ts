@@ -143,23 +143,31 @@ export const expectedRevision = (log: LedgerEvent[]) =>
 const tail = (id: unknown) => String(id).slice(-6);
 
 /**
- * The activity trail: what the owner said with the state each command reached, every job
- * transition except heartbeats, requirement revisions, refused admissions and the workspace's own
- * events, in commit order. Nothing here is a model's narration; every line is a committed event.
+ * The activity trail, the one place an outcome is shown: what the owner said (typed, a button, a
+ * shortcut or the menu) with the state each command reached and its reason, every job
+ * transition except heartbeats, with the reason the coordinator recorded for a failure (a sandboxed
+ * task's failure kind and message) and the code that refused a late result, requirement
+ * revisions, refused admissions and the workspace's own events, in commit order. Nothing here is
+ * a model's narration; every line is a committed event.
  */
 export function activity(log: LedgerEvent[]): Activity[] {
   const settled = new Map<string, string>();
   for (const { type, body } of log)
     if (type.startsWith("command."))
-      settled.set(String(body.command), `${body.state}${body.because ? ` · ${body.because}` : ""}`);
+      settled.set(String(body.command), [body.state, body.reason ?? body.because].filter(Boolean).join(" · "));
   const items: Activity[] = [];
   for (const { seq, recorded_at: at, type, body } of log) {
     const add = (text: string, state = "") => items.push({ seq, at, text, state });
     if (type === "message.received") add(`You: ${body.text}`, settled.get(String(body.command)) ?? "received");
     else if (type === "job.heartbeat" || type.startsWith("command.")) continue;
     else if (jobState(type, body)) {
-      const attempt = Number(body.attempt) ? ` (attempt ${body.attempt}, fence ${body.fence})` : "";
-      add(`Job ${tail(body.job)}: ${String(body.state).replace("_", " ")}${attempt}`);
+      // A refused result is about the attempt that sent it, not the job's state now.
+      const input = (body.input ?? {}) as Record<string, unknown>;
+      const refused = type === "job.result_rejected";
+      const [number, fence] = refused ? [input.attempt, input.fence] : [body.attempt, body.fence];
+      const attempt = Number(number) ? ` (attempt ${number}, fence ${fence})` : "";
+      const said = refused ? `${input.outcome} result refused` : String(body.state).replace("_", " ");
+      add(`Job ${tail(body.job)}: ${said}${attempt}`, String(input.reason ?? input.because ?? ""));
     } else if (type === "workload.revised") {
       const impact = body.impact as { stale: unknown[]; holds: unknown[] };
       const changed = (body.patch as { path: string }[]).map((op) => op.path.split("/").at(-1)).join(", ");

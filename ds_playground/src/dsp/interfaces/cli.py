@@ -1,5 +1,8 @@
+import json
+import time
 from pathlib import Path
 from typing import Annotated, Any
+from uuid import uuid4
 
 import typer
 
@@ -15,7 +18,7 @@ def _fail(error: DspError) -> typer.Exit:
     return typer.Exit(2)
 
 
-def _call(method: str, route: str, **body: str) -> Any:
+def _call(method: str, route: str, **body: Any) -> Any:
     """Send one request to the harness, starting it if needed, and return its JSON answer."""
     response = connect(home()).request(method, route, json=body or None)
     answer = response.json()
@@ -50,6 +53,35 @@ def profile(
     except DspError as error:
         raise _fail(error) from error
     typer.echo(f"exported {out / result['version']} ({result['files']} files)")
+
+
+@app.command("run-task")
+def run_task(task: Annotated[Path, typer.Argument(exists=True, dir_okay=False)]) -> None:
+    """Run a declared Python or SQL task in the OS sandbox and report how it ended.
+
+    The task file names its language, its source file (beside it) and its outputs; it reads no
+    input. The job runs like any other and the window's trail follows it. Exit status 2 unless
+    it succeeded.
+    """
+    try:
+        try:
+            _call("GET", "/v1/hardware")
+        except DspError:
+            _call("POST", "/v1/hardware")  # nothing is admitted blind
+        declared = json.loads(task.read_text())
+        text = (task.parent / declared["source"]).read_text()
+        source = _call("POST", "/v1/sources", text=text)["sha256"]
+        work = {"language": declared["language"], "source_sha256": source}
+        work["outputs"] = declared["outputs"]
+        job = _call("POST", "/v1/jobs", operation="analyse", idempotency_key=uuid4().hex, task=work)
+        while job["state"] not in ("succeeded", "failed", "cancelled"):
+            time.sleep(0.2)
+            job = _call("GET", f"/v1/jobs/{job['id']}")
+    except DspError as error:
+        raise _fail(error) from error
+    typer.echo(f"{job['id']} {job['state']}" + (f": {job['reason']}" if job["reason"] else ""))
+    if job["state"] != "succeeded":
+        raise typer.Exit(2)
 
 
 @app.command()

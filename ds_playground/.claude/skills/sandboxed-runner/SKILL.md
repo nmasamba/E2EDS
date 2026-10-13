@@ -27,10 +27,19 @@ Write: the task scratch directory only. Environment variables scrubbed to an all
 memory, wall clock, open files, output bytes, scratch bytes (D01, D21). Kill on limit; partial output is not a
 result.
 
-- **macOS:** `sandbox-exec -f <profile>` with `(deny default)`, explicit `file-read*` for the allowlist,
-  `file-write*` for scratch, no `network*`.
-- **Linux:** `bwrap --unshare-all --die-with-parent --new-session --clearenv --ro-bind` for the allowlist,
-  `--bind` for scratch, `--tmpfs /tmp`, plus a seccomp filter; `prlimit` or cgroups for resources.
+- **macOS:** a Seatbelt profile with `(deny default)`, explicit `file-read*` for the allowlist,
+  `file-write*` for scratch, no `network*`, applied by `sandbox_init` inside the spawned process
+  (`dsp.adapters.seatbelt_child`), not by `sandbox-exec`, whose exec drops the jetsam memory limit;
+  scratch is a size-capped disk image; CPU time is also polled, as Darwin does not kill at the hard limit.
+  No blanket `(allow sysctl-read)`: it lets `sysctl(KERN_PROCARGS2)` read any same-user process's
+  arguments and environment. Deny `process-info*` and allow only the sysctls Python needs, by exact
+  name (the kernel names that read `kern.procargs2.<pid>`, so a `kern.` prefix reopens it). Creating
+  a System V object passes no ipc rule: deny every System V call with `syscall-unix`, the `shmsys`,
+  `msgsys` and `semsys` multiplexers included. `log stream` shows each denial while tests run.
+- **Linux:** `prlimit --as=<memory> -- bwrap --unshare-all --as-pid-1 --die-with-parent --new-session`,
+  `--ro-bind` for the allowlist, a `--size`d `--tmpfs` on scratch, `--remount-ro` for `/` and `/dev`, no
+  `/tmp`, `/proc` or `/etc` (but `ld.so.cache`), and a seccomp filter; the environment is scrubbed at
+  the spawn and inherited descriptors closed there.
 - DuckDB inside the task: `enable_external_access=false`, no extension loading, `lock_configuration=true`.
   This is defence in depth, not the boundary.
 
@@ -55,4 +64,6 @@ isolation or as safe for other people's code on shared infrastructure.
 
 Python needs read access to its own environment and system libraries or it will not start; resolve symlinks
 before building the allowlist; bubblewrap may be blocked inside a default container, so run Linux sandbox
-tests in CI and say so; a static AST check is a diagnostic, never the control.
+tests in CI and say so (here it runs with `--security-opt seccomp=unconfined` as an unprivileged user,
+by owner approval, and without `/proc`, which Docker's masked paths forbid); a static AST check is a
+diagnostic, never the control.

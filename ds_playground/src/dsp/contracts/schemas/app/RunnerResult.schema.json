@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dsplayground.dev/schemas/app/0.1.0/RunnerResult.schema.json",
+  "title": "RunnerResult — app-owned contract",
+  "description": "The result file the sandboxed runner sends on its one channel with the declared outputs: null when the task succeeded, or the kind of failure the runner saw and a bounded message. Untrusted: the sandbox adapter validates it, takes only declared outputs within the cap and hashes them itself; failures the runner cannot see (time, CPU, the output cap, a kill) are the adapter's to report.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "0.1.0" },
+    "type": { "const": "RunnerResult" },
+    "failure": {
+      "anyOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "enum": [
+                "digest_mismatch", "undeclared_read", "undeclared_write", "undeclared_access", "crash",
+                "memory_limit", "scratch_limit", "missing_output"
+              ]
+            },
+            "message": { "type": "string", "maxLength": 500 }
+          },
+          "required": ["kind", "message"]
+        }
+      ]
+    }
+  },
+  "required": ["schema_version", "type", "failure"]
+}

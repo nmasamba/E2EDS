@@ -1,5 +1,6 @@
 import contextlib
 import fcntl
+import filecmp
 import json
 import os
 import secrets
@@ -72,6 +73,7 @@ def evidence() -> Callable[..., None]:
         actual: str,
         *limits: str,
         sprint: int = 2,
+        assurance: str | None = None,
     ) -> None:
         if folder := os.environ.get("DSP_EVIDENCE"):
             platform = f"{sys.platform}-{os.uname().machine}"
@@ -85,12 +87,31 @@ def evidence() -> Callable[..., None]:
                 "actual": actual,
                 "outcome": outcome,
                 "limits": list(limits),
-            }
+            } | ({"assurance": assurance} if assurance else {})
             Path(folder).mkdir(parents=True, exist_ok=True)
             path = Path(folder) / f"{scenario}-{slug}-{platform}.json"
             path.write_text(json.dumps(record, indent=2) + "\n")
 
     return write
+
+
+@pytest.fixture(scope="session")
+def runner_env() -> Path:
+    """The locked runner environment `make runner-env` built; refused if its runner is stale."""
+    env = Path(os.environ.get("DSP_RUNNER_ENV") or ROOT / ".runner-env")
+    site = next(env.glob("lib/python3.12/site-packages"), env / "missing")
+    src = ROOT / "src"
+    code = [*(src / "dsp_runner").rglob("*.py"), *(src / "dsp" / "contracts").rglob("*.py")]
+    code += (src / "dsp" / "contracts").rglob("*.json")
+    installed = [site / path.relative_to(src) for path in code]
+    stale = [
+        path
+        for path, copy in zip(code, installed, strict=True)
+        if not copy.is_file() or not filecmp.cmp(path, copy, shallow=False)
+    ]
+    if stale:
+        pytest.fail(f"the runner environment {env} is missing or stale: run `make runner-env`")
+    return env
 
 
 @pytest.fixture

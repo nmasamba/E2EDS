@@ -109,6 +109,12 @@ def mac_devices(profile: str) -> list[dict[str, Any]]:
     ]
 
 
+def host() -> tuple[str, str]:
+    """This machine's OS and instruction set, as a ComputeBinding names them."""
+    machine = platform.machine()
+    return platform.system().lower(), {"aarch64": "arm64", "AMD64": "x86_64"}.get(machine, machine)
+
+
 def _system() -> dict[str, Any]:
     names = {"os": platform.system().lower(), "architecture": platform.machine()}
     return {"system": {**names, "cpu_features": []}}

@@ -539,3 +539,434 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   with no single place to read them, and the wording differs between places and from what the activity
   trail shows. Sprint 4's housekeeping makes the activity trail the one place every outcome appears,
   removes the inline notes, and tests the wording once.
+
+## Sprint 4
+
+- **2026-10-12 — S4 — DEFECT — the harness published its port before listening (housekeeping)** — `serve`
+  wrote `harness.json` after `bind()` and before uvicorn's `listen()`. On this Mac (macOS 26.3.1) a client
+  that read the file in that window had its connection left unanswered, not refused: Node's `fetch`
+  waited out its 10 s connect timeout, which pushed the renderer's "lost harness, restarted one rejoined"
+  test past its 30 s limit on every run (it passed at the Sprint 3 gate). The listener now listens before
+  the port is published; a test connects to the published port before the server loop runs.
+- **2026-10-12 — S4 — DECISION — the activity trail is the one place outcomes appear (housekeeping)** —
+  closes the 2026-10-12 feedback defect. The notes beside the header buttons, under the composer and in
+  the Run section are gone. Every outcome the harness commits is shown once, in the activity trail, from
+  its events: command receipts and states with one wording (`command.*` events now carry `reason`, the
+  same sentence the HTTP answer gives, beside the `because` code), job states, refused admissions and
+  the job the Run button queued. A request the harness never recorded (no answer, or refused before it
+  was read) is listed in the same trail as "not received" with the reason; the Run button adds such a
+  line only when the harness did not answer, since every admission refusal is itself an event. The
+  folder list keeps its own alert: a refused grant is not an event. Tested once in Vitest (`activity`)
+  and once in Playwright (composer, buttons, a dropped request, Run and a refused admission).
+- **2026-10-12 — S4 — DECISION — the Pause and Cancel chords are handled in the renderer too
+  (housekeeping)** — for the open macOS Cancel run defect. A document `keydown` handler in the window
+  sends the same command as the header buttons for CmdOrCtrl+P (pause) and CmdOrCtrl+. (cancel) on the
+  live job, and calls `preventDefault`, so one press sends one command whichever of the webview and the
+  native menu sees it first. Cmd is the modifier on macOS, Ctrl elsewhere; Shift or Alt with it is not a
+  shortcut. The native menu items stay, unchanged (`CmdOrCtrl+.` for Cancel run), for the mouse and for
+  when no job is live (the menu's command is then refused, "no job is live", which the trail shows).
+  Playwright presses both chords on macOS (Meta) and Linux (Ctrl) against a real harness. Whether the
+  built app on macOS delivers Cmd+. to the webview is not known until the owner presses it at the gate.
+- **2026-10-12 — S4 — DECISION — bubblewrap in the local Linux container (owner)** — the owner approved
+  installing Debian's `bubblewrap` package inside the throwaway `make verify-linux` container and running
+  that container with `--security-opt seccomp=unconfined`, because Docker's default seccomp profile
+  refuses user namespaces (measured: `unshare -Urn` fails with EPERM by default and succeeds unconfined
+  on Docker Desktop 29.8.1, kernel 7.0.14-linuxkit). The sandbox tests then run in the container as a
+  non-root user, so the Linux sandbox is built and checked locally, not only in CI.
+- **2026-10-12 — S4 — FINDING — what macOS 26 can enforce for the runner's limits** — measured on this
+  Mac (macOS 26.3.1, arm64): a bare Python process maps about 415 GiB of virtual address space, so
+  `RLIMIT_AS` and `RLIMIT_DATA` cannot be set below about 512 GiB and do not cap memory; `RLIMIT_RSS` is
+  not enforced by Darwin; `memorystatus_control` limits need privileges (EPERM). A fatal jetsam limit set
+  on the spawn attributes (`posix_spawnattr_setjetsam_ext`) is kernel-enforced without privileges: a child
+  with a 256 MiB limit was killed by SIGKILL after about 192 MiB. A size-capped disk image gives a
+  kernel-enforced scratch cap (ENOSPC at 62 MiB of a 64 MiB image; about 2.4 s to create, attach and
+  detach). The macOS adapter uses both; no limit the skill requires is left unenforced.
+- **2026-10-12 — S4 — DEVIATION — ComputeBinding 0.6.0, the app's successor of suite 0.5.0 (4.1)** — carries
+  the owner's 2026-10-01 runner decision into the contract: `generated_code_policy` gains
+  `restricted_os_sandbox`, `isolation.trust_model` gains `customer_os_sandbox_single_user`,
+  `resource_requirements.os` gains `darwin`, and a required `assurance` (`none`, `dedicated_vm`,
+  `os_sandbox_single_user`) must match the policy (denied → none, VM → dedicated_vm, OS sandbox →
+  os_sandbox_single_user with the single-user trust model and process execution only). The suite file
+  stays vendored and unchanged; its 0.5.0 example still validates. The schema loader now picks the schema
+  by the instance's `schema_version` (an older app version keeps its file as `Name@x.y.z.schema.json`).
+- **2026-10-12 — S4 — DECISION — the stored local binding replaces `LOCAL_DRAFT` (4.1)** — `local_binding`
+  in `application/planning.py` is a full ComputeBinding 0.6.0 (`compute-local-native` 1.0.0) for this host:
+  OS and instruction set from the discovery adapter, data analysis only, one concurrent attempt, D01's two
+  hours, `restricted_os_sandbox` at `os_sandbox_single_user` assurance, limitations saying it is not VM
+  isolation. Admission stores it with the first request that pins it, as it stores the WorkloadSpec. It
+  stays `proposed` and its qualification `planned` until the owner reviews the containment evidence as
+  its qualification (no such owner action exists yet), so the plan still calls it unqualified and the
+  Sprint 3 deviation that admits an unqualified local option continues, now for sandboxed tasks too. The
+  profile ID stays `local-native-draft` because WorkloadSpec 1.0.0, which is immutable, targets it.
+- **2026-10-12 — S4 — ASSUMPTION — the local binding's data policy (4.1)** — it allows synthetic and the
+  owner's own confidential data (`customer_data_allowed: true`) for data analysis, because the data never
+  leaves the owner's machine; sealed data access is false. No rule reads the data policy yet.
+- **2026-10-12 — S4 — DECISION — CodeTask 0.1.0 and Job 0.2.0 (4.1)** — an app-owned CodeTask records the
+  source by digest, the parent revision, the requirement revision, named read-only inputs with digests,
+  output names, the runner environment's lock digest (null until 4.2 builds the locked environment),
+  limits (CPU seconds, memory, wall seconds, output bytes, scratch bytes, open files) and the permissions it
+  asks for (`network`, `process`; the binding grants none, so asking is refused). The caller supplies only
+  language, source digest, inputs, outputs, limits and permissions; every other field, the requirement
+  revision included, is derived, and naming one is refused. Limits default to, and may not exceed, the
+  workload revision's envelope (D01, D21). The ID is derived from the content. Every admitted request now
+  pins a stored CodeTask: a test-worker job's CodeTask has language `test_worker` and its cues' digest as
+  its source, and is never run by the runner. Job 0.2.0 lets a runner job carry no test-worker task and
+  records the submitted payload's digest, which an idempotent retry must repeat (D05); a Sprint 3 job's
+  payload was its task. Execution outcome fields are added to the CodeTask when 4.5 commits them.
+- **2026-10-12 — S4 — ASSUMPTION — what an undeclared input or output is at admission (4.1)** — an input is
+  undeclared unless its digest is data captured through a grant (a DataManifest in this tenant); two inputs
+  may not share a name; the source must already be in the content store; a Python or SQL task that declares
+  no output is malformed and refused before anything is written. Reads and writes beyond the declaration
+  at run time are the runner's and the sandbox's to stop (4.2 to 4.4).
+- **2026-10-12 — S4 — DECISION — the runner and its one channel (4.2)** — the sandbox adapter lays out
+  an attempt directory (`task.json`, the CodeTask; `source`; the declared inputs under `inputs/`; an empty
+  `scratch/`) and starts `<runner env>/bin/python -I -B -X utf8 -m dsp_runner <attempt>/task.json` by
+  `posix_spawn` in a new session, with a fixed argument vector and an environment of `HOME` and `TMPDIR`
+  set to scratch, nothing else. The runner checks the source and inputs against their digests, lowers its
+  own CPU-time (hard limit one second above the soft) and open-file limits, which an unprivileged process
+  cannot raise again, then runs the code in its own interpreter in scratch (a separate process would need
+  the process permission the binding withholds). It writes `result.json` (app RunnerResult 0.1.0: null or
+  a failure kind and a message of at most 500 characters) and, on success, the declared outputs to its
+  standard output as one tar stream; the task's own output goes to `/dev/null`. The adapter reads that
+  channel bounded by the output cap plus 64 KiB of framing (more kills the run), accepts only regular
+  entries with declared names, refuses outputs whose sum exceeds the cap, validates the result, hashes
+  each output itself, kills the process group at the wall-clock limit and again after the runner ends,
+  and names what it saw (`timeout`, `cpu_limit`, `output_limit`, `killed`, `crash`, `result_invalid`).
+  Memory and scratch limits, reads and network are the OS adapters' (4.3, 4.4). Alternatives: outputs
+  read from a host-visible scratch folder, which on Linux would leave scratch without a kernel-enforced
+  size; a JSON channel with encoded outputs, a third bigger.
+- **2026-10-12 — S4 — DECISION — an audit hook detects, the sandbox refuses (4.2)** — the runner adds a
+  Python audit hook that records every open outside the declaration (reads outside the runner
+  environment, the base Python and the attempt; writes outside scratch, symlinks and `..` resolved), so
+  the task fails as `undeclared_read` or `undeclared_write` even when its code swallows the error; a
+  recorded refusal outranks the crash it caused. SQL runs on a DuckDB connection that loads the inputs as
+  tables named as declared, then disables external access and extension loading and locks its
+  configuration; DuckDB's refusals are `undeclared_access`. Neither is the boundary: code can bypass
+  both, and the containment tests (4.6) show the OS refusing what they miss.
+- **2026-10-12 — S4 — DECISION — the runner environment (4.2)** — `make runner-env` runs `uv sync --frozen
+  --no-dev --no-editable --compile-bytecode --reinstall-package dsp` into `DSP_RUNNER_ENV` (default
+  `.runner-env`; `/tmp/runner-env` in the read-only Linux container): the lock's runtime set and the
+  project as a built wheel, byte-compiled so imports write nothing, in 0.4 s. `test-fast`, `sat` and
+  `verify` rebuild it, CI's verify job now runs `make verify`, and the `runner_env` fixture refuses an
+  environment whose runner or contracts differ from the source. Its lock digest goes on the CodeTask when
+  the harness dispatches (4.5).
+- **2026-10-12 — S4 — FINDING — the runner environment carries the whole runtime set (4.2)** — it holds
+  every runtime dependency of the project (FastAPI, uvicorn and httpx included), not only what the runner
+  imports (DuckDB, and the standard library). A narrower set needs its own lock group; nothing needs it
+  yet, and the sandbox, not the package list, is the boundary.
+- **2026-10-12 — S4 — FINDING — the runner validates nothing itself (4.2)** — importing jsonschema's format
+  checker costs 0.5 s (`rfc3987_syntax` alone), on every task. Validation inside the runner would prove
+  nothing, since that process also runs the untrusted code, so the trusted side validates: the CodeTask
+  at admission and the RunnerResult when the adapter reads the channel. Runner start-up fell from 0.65 s
+  to 0.07 s.
+- **2026-10-12 — S4 — DECISION — a SQL task has exactly one output (4.1 schema, amended in 4.2)** — its
+  last statement's rows are written as CSV to the one declared output; CodeTask 0.1.0 says so before
+  anything was released.
+- **2026-10-12 — S4 — DECISION — the macOS adapter (4.3)** — `adapters/seatbelt.py`. Profile, deny by
+  default: `file-read*` on the runner environment, the base Python, `/usr/lib`, `/System/Library` and the
+  attempt directory; `file-read-metadata` on those paths' ancestors and on every symlink from
+  `bin/python` to the interpreter; the root's listing (Python does not start without it); `file-write*`
+  on scratch; `/dev/null`; `sysctl-read` (without it `os.cpu_count()` is None). No network, process,
+  IPC or Mach-service rule, so all are denied. Paths are written as JSON strings. The spawn carries
+  `POSIX_SPAWN_CLOEXEC_DEFAULT`, so the task inherits only its standard descriptors, and a fatal jetsam
+  limit of the task's memory. Scratch is a sparse HFS+ disk image of the scratch size mounted on
+  `scratch/` (`-nobrowse`), detached and deleted after the run. CPU time: the runner's own limit sends
+  SIGXCPU, and the adapter polls the kernel's account of the process (`proc_pid_rusage`, Mach time
+  units) and kills it at the limit. A SIGKILL the adapter did not send is reported as `memory_limit`,
+  since jetsam is the only other sender.
+- **2026-10-12 — S4 — DECISION — Seatbelt applied in the process, not by `sandbox-exec` (4.3)** —
+  measured on this Mac: a jetsam limit set on the spawn kills a directly spawned Python at about 240 MiB
+  of 256 MiB, but `sandbox-exec`'s `execvp` drops it (1 GiB allocated, exit 0). So the adapter spawns
+  `python -m dsp.adapters.seatbelt_child <profile> <task.json>`, which calls `sandbox_init` on itself (the
+  call `sandbox-exec` makes) and then runs `dsp_runner` in the same process. Only that module and the
+  interpreter run unconfined; a profile that does not compile ends the process before any task code
+  exists, and, with no exec afterwards, the profile can deny `process-exec` outright. The skill's
+  `sandbox-exec -f <profile>` line is updated to say so. Alternative: polling memory from outside,
+  which is not kernel-enforced.
+- **2026-10-12 — S4 — FINDING — Darwin does not kill at the hard CPU limit (4.3)** — measured: with
+  `RLIMIT_CPU` at (1, 2) a busy Python ends by SIGXCPU after 1 s, but one that ignores SIGXCPU ran its
+  full 10 s. Hence the adapter's own poll on macOS; on Linux the kernel kills at the hard limit (4.4).
+  The mutation that removes the runner's limit survives on macOS for that reason and is checked on Linux.
+- **2026-10-12 — S4 — ASSUMPTION — private and deprecated macOS calls (4.3)** — `sandbox_init` is
+  deprecated and `posix_spawnattr_setjetsam_ext` is private (`spawn_private.h`); both work on macOS
+  26.3.1 without privileges, and they are the only unprivileged kernel controls for the profile and the
+  memory limit. A macOS that drops either fails closed: the profile is refused or the limit cannot be
+  set, the spawn raises, and the containment tests fail.
+- **2026-10-12 — S4 — FINDING — the cost of a capped scratch volume on macOS (4.3)** — creating,
+  attaching and detaching the sparse image takes about 1.7 s per task on this Mac (create 1.1 s, attach
+  0.25 s, detach 0.4 s); a 16 MiB image refuses writes with ENOSPC at 15,936 KiB. Accepted for now; a
+  cloned template image would cut it to about 0.7 s if tasks become short and many.
+- **2026-10-12 — S4 — FINDING — a scratch volume can outlive a crashed harness (4.3)** — the volume is
+  detached in the run's `finally`; a harness killed mid-run leaves it mounted until something detaches
+  it (found when a mutation check skipped the detach: pytest then renamed the folder under the mounted
+  volume and only `umount -f` on the new path released it). Reconciling stale attempts is 4.5's.
+- **2026-10-12 — S4 — DECISION — the Linux adapter (4.4)** — `adapters/bubblewrap.py`: `prlimit
+  --as=<memory> -- bwrap --unshare-all --as-pid-1 --die-with-parent --new-session`, read-only binds of
+  `/usr/lib`, `/usr/lib64`, `/lib*` (symlinks recreated as symlinks), `/etc/ld.so.cache` alone of `/etc`
+  (without it the loader cannot find `libpython`), the interpreter binary, its `lib`, the runner
+  environment and the attempt; a `--size`d tmpfs on scratch; `--dev` with `/dev` and `/` remounted
+  read-only; `--chdir` scratch; the seccomp filter on descriptor 3. The spawn's environment is the
+  scrubbed one (so no `--clearenv`), and inheritable descriptors other than 0–3 are closed by the
+  spawn's file actions. The filter (classic BPF built in Python, x86-64 and aarch64 tables) kills a
+  foreign architecture and the x32 ABI, answers `clone3` with ENOSYS (its flags are in memory, out of
+  reach, so glibc falls back to `clone`), allows `clone` only with `CLONE_THREAD`, allows only Unix
+  sockets, and refuses fork, vfork, ptrace, mount, namespaces, BPF, keys, io_uring, modules and
+  `process_vm_*`. It is a deny list in front of a default allow: an allowlist for Python with DuckDB
+  would be long and brittle, and the namespaces and mounts are the main boundary.
+- **2026-10-12 — S4 — DEVIATION — no `/tmp` and no `/proc` in the Linux sandbox (4.4)** — the skill
+  named `--tmpfs /tmp`; a second tmpfs would double the scratch cap, and `TMPDIR` is scratch, so there
+  is none. `/proc` is not mounted: bubblewrap cannot mount a fresh one inside Docker (its masked paths
+  forbid it), and neither the runner nor a task needs it; the same policy holds on every Linux host.
+- **2026-10-12 — S4 — DECISION — the runner is the namespace's first process (4.4)** — with bubblewrap's
+  own reaper as PID 1, a task killed at the hard CPU limit came back as an unexplained SIGKILL: the
+  outer bubblewrap never accounted for the inner runner's CPU time. With `--as-pid-1` the runner is
+  bubblewrap's own child, its CPU time returns with the exit status, and the core names the kill
+  `cpu_limit`. As PID 1 it ignores SIGXCPU by default, so the kernel's SIGKILL at the hard limit is
+  what stops a busy task on Linux. bubblewrap reports a signal as 128 plus its number, which the core
+  turns back into the signal (`relays_signals`).
+- **2026-10-12 — S4 — FINDING — `/dev` took writes (4.4)** — the first probe found `/dev` and
+  `/dev/shm` writable inside the sandbox: a memory-backed place outside scratch and its cap. `/dev` is
+  now remounted read-only (its device nodes are separate binds and still work); the write test covers
+  `/dev/shm` and `/`.
+- **2026-10-12 — S4 — FINDING — the network is refused twice on Linux (4.4)** — by the empty network
+  namespace and by the filter's socket rule. Removing the namespace alone is caught (an abstract Unix
+  socket, scoped to the namespace, becomes reachable); removing the socket rule alone is not
+  observable from inside, since the empty namespace still refuses every connection (ENETUNREACH
+  instead of EACCES). It stays as defence in depth.
+- **2026-10-12 — S4 — DECISION — bubblewrap in the local Linux gate (4.4)** — `make verify-linux` runs
+  `tools/verify_linux.sh` in the throwaway container: it installs Debian's `bubblewrap` (0.8.0) and
+  runs the gate as an unprivileged user (`setpriv`), with the container under
+  `--security-opt seccomp=unconfined` (the owner's 2026-10-12 approval). The Linux sandbox tests run
+  there and on CI's `ubuntu-24.04` (bubblewrap installed by apt in the verify job), so they are not
+  CI-only.
+- **2026-10-12 — S4 — FINDING — CI on the 4.4 push (run 38305340576)** — on `ubuntu-24.04` every
+  sandboxed task ended with status 1 before it ran (bubblewrap could not set up its namespaces; the
+  container run passed); on `macos-latest` the 2 GiB allocation at a 256 MiB limit was not stopped
+  (the jetsam limit held on this Mac, not on GitHub's macOS VM); the Linux desktop job's window showed
+  "Resources not observed" after discovery had finished (it passed at 4.2; cause not established from
+  the log). Each is fixed after 4.5, below.
+- **2026-10-12 — S4 — DECISION — CodeTasks run as fenced jobs (4.5)** — `application/jobs.py` gains
+  `execute` (lease to the harness's worker `runner-local`, run through the `Runner` port with a
+  callback that heartbeats every 15 s and, every quarter second, stops the task on a pause or cancel
+  request or when the lease is no longer this attempt's; report the outcome under the attempt's fence),
+  `reconcile` (the D03 tick: expire every lease that has run out, nobody touching the job) and `tidy`
+  (store a committed result's outputs still in staging; release and delete any other attempt's
+  folder). Outputs stay in the attempt's staging folder until the result that names them is
+  committed, then move into the content store: a refused result leaves nothing, and a crash between
+  commit and storage is finished by `tidy`. A sandboxed task's failure is final (not transient):
+  repairs are new tasks (D17, Sprint 5). The harness runs the tick every second and the dispatcher
+  every quarter second while its server runs; one lock serialises every sandboxed attempt (the
+  binding allows one), so a route running its own job and the dispatcher never race.
+- **2026-10-12 — S4 — DECISION — a RunRecord is a succeeded attempt's outcome (4.5)** — app RunRecord
+  0.1.0 (job, attempt, fence, CodeTask and binding by digest, `assurance: os_sandbox_single_user`, each
+  output by digest and size) is stored in the content store and its digest is the job's result. This
+  replaces the 4.1 plan to add outcome fields to the CodeTask, which stays the declaration; a failed
+  or stopped attempt has no record, and its job says why (`<kind>: <message>`, at most 200
+  characters).
+- **2026-10-12 — S4 — DECISION — profiling runs in the sandbox (4.5)** — Sprint 1's DuckDB profiling
+  moved unchanged into `src/dsp/recipes/profile_csv.py`, run as a Python CodeTask whose one input is
+  the captured file (`data.csv`) and whose one output is `profile.json`, now app Profile 0.1.0 (it gains
+  `schema_version` and `type`). The parser touches the owner's data, so it runs confined (C18); the
+  harness validates the profile and renders the report, escaping every value. `/v1/profiles` captures
+  the file, admits the recipe (observing the hardware first on a fresh profile, since nothing is
+  admitted blind), runs the job inline under the lock, and exports the pack once the job succeeded; a
+  recipe failure is the job's failure and nothing is exported. The trail shows the job and the export.
+  The recipe's source ships with the frozen harness (`--add-data`).
+- **2026-10-12 — S4 — DECISION — `dsp run-task` and task sources (4.5)** — `POST /v1/sources` (native
+  only, at most 1 MiB) stores a task's source and returns its digest; `dsp run-task <task.json>`
+  stores the named source, admits the task, waits for it and prints its end and reason (exit 2 unless
+  it succeeded). The harness finds the runner environment at `DSP_RUNNER_ENV`, else `.runner-env`
+  beside the source; without it, or without the OS's sandbox (bubblewrap and `prlimit` on Linux),
+  Python and SQL tasks and profiles are refused (DEPENDENCY_UNAVAILABLE), never run another way. Its
+  lock digest (each installed distribution's name and version) is recorded on every Python or SQL
+  CodeTask.
+- **2026-10-12 — S4 — DECISION — a quit drains a running task; a dead harness ends it (4.5)** — on a
+  graceful quit the dispatcher starts nothing new and a job already running finishes (D24: the drain
+  test lets a profile in progress export). If the harness dies, its task ends with it: on Linux by the
+  kernel (`--die-with-parent`); on macOS, which has no parent-death signal, by a watcher thread in the
+  task's own process that exits when it is orphaned, a mitigation a hostile task could starve. The
+  harness's wall and CPU limits would otherwise end with it.
+- **2026-10-12 — S4 — FINDING — what a quit costs while a task runs (4.5)** — a drain can last up to the
+  task's wall time (600 s by default), and a stopping harness accepts no new request, so the task
+  cannot be cancelled once Quit is pressed. Cancel first, then quit.
+- **2026-10-12 — S4 — FINDING — the built app needs the runner environment named (4.5)** — no runner
+  environment ships in the bundle; the frozen harness uses `DSP_RUNNER_ENV` (the built-app test sets
+  it through `make e2e`) and otherwise refuses sandboxed work. Shipping one is distribution work.
+- **2026-10-12 — S4 — DECISION — runner jobs in the activity trail (4.5)** — a job line carries the
+  reason the coordinator recorded: a failure's `<kind>: <message>`; a refused late result reads
+  "<outcome> result refused" with that report's own attempt and fence and the refusing code. Tested
+  once in Vitest and once in Playwright against a real harness running real sandboxed jobs.
+- **2026-10-12 — S4 — DEFECT — a stopped server left its background work running (4.5, fixed)** — the
+  reconcile tick and dispatcher threads are not daemons (a quit drains), and they run while the server
+  has not been asked to exit. A server that stopped any other way (in a test, `run` replaced by a stub
+  that returns at once) left them running, and the test process never exited after reporting its
+  results (seen twice as a gate that did not end). `serve` now marks the server as exiting whenever
+  `run` returns, so the background work ends with it however it ended.
+- **2026-10-12 — S4 — DECISION — macOS memory is also polled (after CI run 38305340576)** — the jetsam
+  limit did not stop a 2 GiB allocation at 256 MiB on GitHub's macOS VM. The adapter now also polls the
+  kernel's footprint account of the task (the figure jetsam uses) every 50 ms and kills it past its
+  limit (`memory_limit`); on this Mac jetsam usually stops it first. Checked here with jetsam set far
+  above the limit: the poll alone stopped the task; with neither, the test fails. Polling is not
+  kernel-enforced: a task can overshoot by what it allocates in 50 ms.
+- **2026-10-12 — S4 — DECISION — the OS's answer under a wrapper (after CI run 38305340576)** — a library
+  that wraps the OS's refusal (urllib's `URLError` has no errno) lost the code in the runner's message;
+  the runner now reports the innermost `OSError` with an errno ("URLError: [Errno 61] Connection
+  refused"), still without its path.
+- **2026-10-12 — S4 — DECISION — bubblewrap's user namespaces on CI's Ubuntu 24.04 (after CI run
+  38305340576)** — Ubuntu 24.04 restricts unprivileged user namespaces through AppArmor unless a profile
+  allows them, which would stop bubblewrap on that runner (every sandboxed task ended with status 1
+  there; the inferred cause is this restriction, to be confirmed by the next CI read). `tools/
+  bwrap_apparmor.sh` adds a profile that allows them to `/usr/bin/bwrap` alone, as Ubuntu's own
+  profiles do for the programs that need them, rather than lifting the restriction for every program,
+  and then builds the smallest sandbox bubblewrap can make, so a failure names its cause. It changes
+  only the throwaway CI runner. A user on Ubuntu 24.04 needs the same profile for the Linux sandbox to
+  work: a distribution matter, logged.
+- **2026-10-12 — S4 — DEFECT — a lost read left the window without its snapshot (after CI run
+  38305340576, fixed)** — the Linux built-app test saw "Environment observed" in the trail while the
+  window still said "Resources not observed": the window read the snapshot once when the discovery event
+  arrived and dropped a failed read. Why that read failed on that run is not established from the log.
+  The window now reads the snapshot and the plan the events name again on every poll until a read
+  succeeds.
+- **2026-10-12 — S4 — DECISION — the A28 containment suite (4.6)** — `tests/sat/test_sprint_04.py` runs
+  every item of the skill's list as real Python through admission, the dispatcher and this host's
+  sandbox, and writes one A28 evidence part per item (`make sat`), each at `os_sandbox_single_user`
+  assurance with the limit that this is not VM isolation: a planted host secret and a key under the
+  home's `.ssh`; an HTTP fetch from a listener on this host and a name lookup; starting pip and writing
+  into the runner environment; a file in the state folder standing for a sealed final partition; writing
+  the ledger and the task's own declaration; fork and a shell's spawn; CPU, memory, wall time, output
+  and scratch limits; the source and every attempt kept. Each part is PASS only when the run showed it.
+  The scenario as the suite words it also needs model-generated code and at most two repairs (Sprint 5)
+  and real sealed partitions (Sprint 9); the overall A28 record (4.7) says so.
+- **2026-10-13 — S4 — FINDING — one gate took 22 minutes for 7 of tests (4.6)** — a `make verify` on this
+  Mac reported 332 passed in 7 min 15 s and ended 22 min after it began. A rerun of the same pytest
+  command with a thread dump armed for a process that outlived its summary ended 7 s after its summary
+  (10 min 29 s of tests); the cause of the first is not established. The gate is longer than at Sprint 3
+  (about 7 to 10 minutes on this Mac, 6 in the Linux container) because some 60 tests now start a
+  sandboxed task, each about 1.7 s on macOS for its scratch volume.
+- **2026-10-13 — S4 — DEFECT — the built-app tests stopped a harness with a window still open (fixed)**
+  — on macOS both built-app tests sent the stop request while an app window was open; the shell then
+  starts a new harness, as designed, so the lock could be taken again before the test saw it free
+  (one run of the second test failed so), and the first test left a harness running after it. Sprint
+  4's harness releases the lock about a second later than before (its background threads end first),
+  which widened the race. The tests now close the remaining window before the stop request. That was
+  not all of it: every launch spawns a harness, which exits when the profile is already served, but
+  a frozen harness takes about 3 s to reach the profile lock (measured: 2.95 to 3.36 s, unpacking a
+  21 MB one-file binary), and the tests waited a fixed 3 s after a launch. A harness still starting
+  when the serving one stopped took the lock: the failing check and the harnesses left running. The
+  tests now wait until each launch made while another harness serves has spawned its own harness and
+  seen it exit (the first version checked before the shell had spawned it, and passed at once). Three
+  runs then passed. A one-directory bundle would start faster; that is packaging work, logged.
+- **2026-10-13 — S4 — FINDING — a harness sometimes outlives the built-app tests on macOS** — in two of
+  three passing runs one bundled harness was still running afterwards, on one test's profile, started
+  by a process that had exited; where it comes from is not established. The tests pass; the process
+  holds only its temporary profile and stops on SIGTERM.
+- **2026-10-13 — S4 — DECISION — the integrity review and what was done with it (4.7)** — the one
+  `integrity-reviewer` run (a general-purpose agent following the reviewer's file, since the project's
+  agent type is not in this session's registry; 249k tokens) returned REVIEW: PASS with six should-fix
+  findings and five notes. Fixed, each with a test and a mutation check: (1) promotion compared a digest
+  after moving the file, so one that stopped part-way blocked the dispatcher for good: it now checks
+  before moving, counts an output already stored under its digest as moved, and `tidy` sets a folder it
+  cannot finish aside once (`.held`); (2) on Linux a memfd or System V segment held memory `RLIMIT_AS`
+  does not count: the filter refuses `memfd_create` and `shmget`, and the memory test probes both (a
+  file-size limit was added too, then removed: every writable file system is the sized scratch, so no
+  test could fail without it); (3) a frozen harness guessed a runner environment under its unpack folder
+  (`/tmp/.runner-env` on Linux, which another user could plant): it now uses only `DSP_RUNNER_ENV`, and
+  an environment whose folders are not the owner's alone is refused; (4) A28 parts asserted only a prefix
+  the audit hook alone produces: each read and write part now requires the OS's answer and errno, and
+  the lookup must fail as `gaierror`; (5) an error while watching a task left it running unwatched: the
+  core now kills and reaps it first; (6) a failure message could carry the runner environment's path:
+  the runner names the attempt, runner and interpreter paths, in DuckDB's messages too. Of the notes,
+  (8) an outside worker could lease a sandboxed job and report a success no sandbox ran: the lease route
+  refuses it; (11) a request with no reply was called "not received" though it may have been: the trail
+  now says "no answer" (a refusal before reading stays "not received"). Note (7) is worse than the
+  review could tell from the code: see the next entry. Logged, not fixed: (9) the Linux filter allows
+  `execve`, so a task can replace itself with the interpreter (still confined, and `/bin/sh` is not
+  mounted); (10) admission accepts any captured DataManifest as an input and nothing reads the binding's
+  `sealed_data_access: false`: Sprint 9 must exclude sealed manifests there.
+- **2026-10-13 — S4 — DEFECT — on macOS a task can read every same-user process's environment (closed
+  the same day: see "both macOS containment gaps closed")** — measured on macOS 26.3.1: real task code reading `KERN_PROCARGS2` for its parent read the
+  harness's arguments and environment (a variable planted in the harness's environment was found). No
+  Seatbelt rule this sandbox can express stops it: with no `sysctl-read` allowed at all, with
+  `(deny process-info*)`, and with `kern.procargs2` denied by name, the read still succeeded. The same
+  call works for any process of the owner's by its ID, so environment variables of the owner's other
+  programs are readable too. On Linux the task cannot (no `/proc`, its own process IDs). The containment
+  test and the A28 host-secret part state the policy as the skill does and fail on macOS; the macOS A28
+  host-secret record is FAIL.
+- **2026-10-13 — S4 — DEFECT — on macOS Seatbelt does not mediate System V shared memory (closed the same
+  day: see "both macOS containment gaps closed")**
+  — measured: `shmget` succeeds under the profile, also with an explicit `(deny ipc-sysv*)`. A task can
+  hold memory its limit does not count, up to the kernel's System V quota (`kern.sysv.shmall` 1024 pages,
+  4 MiB, and 32 segments for the whole machine). A task cannot remove its own segment: inside the
+  sandbox `shmctl(IPC_RMID)` fails with EPERM, so every segment outlives its task and takes from that
+  shared quota until something outside removes it. Earlier probe runs had left six such segments
+  (3 MiB), which is why two gate runs saw `shmget` fail with ENOMEM rather than succeed; they were
+  removed with `ipcrm` (only segments the tests' tasks had made: the owner's own were not touched).
+  The memory test now removes its probe's segment from outside the sandbox (mutation-checked: without
+  that, a 1 MiB segment is left). It requires a refusal and fails on macOS.
+- **2026-10-13 — S4 — FINDING — a failure message is text the task chooses (4.7)** — up to 200
+  characters of it go into the `job.failed` event and the trail. Sprint 5 must treat it as customer
+  content before any of it reaches a prompt.
+- **2026-10-13 — S4 — DEFECT — Cmd+. in the built macOS app (still open; the owner's press)** — the
+  owner pressed each shortcut once in the built app (2026-10-13, a fresh profile, a queued job): Cmd+P
+  paused the job, and the ledger shows the window's own handler sent it (a `command-…` ID, the
+  renderer's form); Cmd+. produced nothing: no command reached the harness, from the window's handler
+  or from the native menu. In Playwright (Chromium) and on Linux both chords work. This is the evidence
+  the 2026-10-12 entry asked for before changing the chord: on macOS Cmd+. reaches neither the webview
+  nor the menu. Changing the chord is the owner's call (waiting on the owner).
+- **2026-10-13 — S4 — DECISION — the window says why it could not read the snapshot (after CI run
+  38322576233)** — the Linux built-app test failed again on that run, so the retry was not the cause:
+  the window's read of `/v1/hardware` fails there while Python's read and the window's read of the plan
+  succeed. The resource bar now shows "Resources not read: <reason>" instead of "Resources not
+  observed", which is more honest for the owner and puts the reason into the test's failure text.
+- **2026-10-13 — S4 — DEFECT — a sandbox that could not start stranded a job (fixed; cause open)** — in
+  one macOS gate run the dispatcher logged `dispatch failed: PermissionError` while starting the A28
+  bounds part's task, and the job sat on a lease no one held until it expired, so the part timed out.
+  The log has no traceback, so which call refused (the scratch image or the spawn) is not established;
+  the part passed alone twice afterwards. `execute` now reports any OS error or
+  refusal from the runner as a transient `sandbox_unavailable` failure, so the job is requeued at once
+  and given up after the usual retries (a test with a runner that refuses; mutation-checked twice).
+- **2026-10-13 — S4 — DECISION — the overall A28 record takes FAIL from a failed part** — the overall
+  record was INSUFFICIENT_EVIDENCE whatever its parts showed, which on macOS rounded up the failed
+  host-secret part. It is now FAIL when a part the same run recorded on that OS (same commit) failed,
+  and names the failed parts; otherwise it stays INSUFFICIENT_EVIDENCE for the parts that cannot exist
+  yet. On Linux the acceptance line's answer is ENOENT rather than EPERM: `/etc` is not mounted in the
+  sandbox, so the file does not exist for the task.
+- **2026-10-13 — S4 — DECISION — both macOS containment gaps closed (the HALT withdrawn)** — at the
+  owner's request ("run workflows or extra agents to get CI green") one workflow ran five investigators
+  on this Mac (every Seatbelt rule, the XNU source, the App Sandbox and built-in profiles, System V, and
+  separate-user or VM execution) and an adversarial verifier on each claimed closure (9 agents, 1.05M
+  tokens). Two closures held against every bypass tried, and were then reproduced here, mutation-checked
+  and gated. (1) **Other processes:** the profile's blanket `(allow sysctl-read)` granted the procargs
+  read before the process-info check; with it removed *and* `(deny process-info*)` stated, every route
+  (KERN_PROCARGS2, KERN_PROCARGS, kinfo_proc, listing, libproc) is refused with EPERM, for the parent,
+  an ancestor and an unrelated sibling (Mach task ports were refused already). The earlier measurement had tried each of the two
+  changes alone, never together, and denying `kern.procargs2` by name could never match: the kernel names
+  that read `kern.procargs2.<pid>`. Sysctl reads are now allowed by exact name only: the eleven that
+  libSystem, Python, `os.uname()` and DuckDB read, taken from the sandbox's denial log while every sandbox
+  test ran (`log stream`); afterwards only the probes' procargs reads and the network test's routing
+  table are denied. A library reading another sysctl gets EPERM; add it by name after checking it reveals
+  nothing of another process. (2) **System V:** creating an object passes no ipc rule in XNU (only reading
+  an existing key is hooked), so the profile denies every System V call by number with `syscall-unix`,
+  the `shmsys`, `msgsys` and `semsys` multiplexers included (a `shmget` rule alone is bypassed through
+  `shmsys`). The rule relies on a private SBPL feature and on the profile denying by default; the D21 test
+  is its regression test. Corrections to the defect entries above: under the old profile a task could not
+  attach a segment (`shmat` was refused), so it could hold no memory in one; the harm was exhausting the
+  machine-wide System V quota, and message queues and semaphores escaped as well. Linux now also refuses
+  `msgget` and `semget` (they would have died with the IPC namespace, but the policy is the same on both
+  OSes). Tests: C14 also reads an unrelated sibling's environment; D21 tries shared memory, queues,
+  semaphores and the multiplexer, and removes with `ipcrm` anything a task made. Mutation-checked (macOS
+  6, Linux 2, all caught): the blanket sysctl allowance back, no `(deny process-info*)`, no System V
+  rule, no multiplexers, no `msgget`, no `semget`; on Linux no `msgget`, no `semget`; and the sibling probe
+  alone catches the old profile. Left by the investigation: `~/Library/Containers/dsp.probe.appsandbox`
+  (28 KB, from the App Sandbox probe; the system refused its deletion), which the owner may remove; two
+  System V objects of the owner's that predate it (shared memory 131073, semaphore 4915207) were not
+  touched. Not adopted: running tasks as another user (needs admin setup and moves supervision into a
+  root helper), the App Sandbox (closes neither gap), and marking the harness `CS_RESTRICT` (hides only
+  the marking process's environment; arguments and every other process stay readable).
+- **2026-10-13 — S4 — DEFECT — the Linux built-app test raced the window's snapshot read (fixed in the
+  test)** — the test captured the window's text when the plan appeared and asserted the snapshot's CPU
+  line in that capture; the window reads the plan and the snapshot with separate requests, so the plan
+  can show first. Runs 38322576233 and 38379462014 failed this way (the plan shown, the trail's
+  "Environment observed", and "Resources not observed" with no read error), run 38367812467 passed. The
+  test now waits for the snapshot's line. The window was right throughout; the "Resources not read:
+  <reason>" line added for diagnosis stays, as it names a real read failure.

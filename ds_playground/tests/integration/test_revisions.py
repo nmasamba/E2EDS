@@ -13,14 +13,13 @@ import pytest
 
 from dsp.adapters.ledger_sqlite import SqliteLedger
 from dsp.application import controls
-from dsp.application.planning import LOCAL_DRAFT
 from dsp.application.workloads import base_workload, impact_of, patch_for
 from dsp.contracts.canonical import pin
 from dsp.contracts.errors import DspError, ErrorCode, TrustedContext
 from dsp.contracts.schemas import validate
 from dsp.harness import workspace
 from tests.conftest import Clock
-from tests.integration.test_admission import attempt, fixed_probes, ledger, observed
+from tests.integration.test_admission import BINDING, attempt, fixed_probes, ledger, observed
 from tests.integration.test_controls import control, say
 from tests.integration.test_jobs import job_of, submit, until
 
@@ -245,7 +244,7 @@ def test_a26_a_hold_that_can_no_longer_apply_does_not_undo_the_revision(
     counter = itertools.count()
     settings: dict[str, Any] = {"ledger": store, "clock": lambda: NOW}
     settings["new_id"] = lambda: f"x{next(counter)}"
-    settings |= {"workload": base_workload(CTX), "binding": LOCAL_DRAFT}
+    settings |= {"workload": base_workload(CTX), "binding": BINDING}
     answer = controls.command(
         CTX, "c", "m1", "exclude field region", "1.0.0", job_id=None, **settings
     )

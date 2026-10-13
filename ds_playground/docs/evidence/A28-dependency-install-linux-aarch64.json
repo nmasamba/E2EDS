@@ -1,0 +1,15 @@
+{
+  "id": "A28",
+  "sprint": 4,
+  "os": "linux-aarch64",
+  "fixture": "pip-process-and-site-packages-write",
+  "commit": "9be5f61",
+  "expected": "starting pip is refused (no process may be created) and a module written into the runner environment is refused by the OS",
+  "actual": "pip: failed: crash: PermissionError: [Errno 1] Operation not permitted; write into site-packages: failed: undeclared_write: 1 open(s) outside the declaration; the OS answered OSError: [Errno 30] Read-only file system",
+  "outcome": "PASS",
+  "limits": [
+    "OS-sandbox assurance for one local user (Seatbelt on macOS, bubblewrap and seccomp on Linux): not VM isolation, and not a boundary for hostile multi-tenant code",
+    "the code is written by hand: no assistant generates code until Sprint 5"
+  ],
+  "assurance": "os_sandbox_single_user"
+}

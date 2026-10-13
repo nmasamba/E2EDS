@@ -1,10 +1,12 @@
 import json
 import os
+import socket
 import stat
 from pathlib import Path
 
 import httpx
 import pytest
+import uvicorn
 from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
@@ -55,6 +57,26 @@ def test_non_loopback_binding_is_refused(tmp_path: Path) -> None:
         serve(tmp_path, host="0.0.0.0")
     assert raised.value.code is ErrorCode.FORBIDDEN
     assert not (tmp_path / "harness.json").exists()
+
+
+def test_the_published_port_already_listens(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """C23: a client that reads harness.json can connect at once, before the server loop runs.
+
+    Publishing a bound socket that does not listen yet left a reader's connection unanswered until
+    its connect timeout (10 s in Node on macOS).
+    """
+    accepted: list[int] = []
+
+    def run(server: uvicorn.Server, sockets: list[socket.socket]) -> None:
+        port = json.loads((tmp_path / "harness.json").read_text())["port"]
+        with socket.create_connection(("127.0.0.1", port), timeout=2):
+            accepted.append(port)
+
+    monkeypatch.setattr(uvicorn.Server, "run", run)
+    serve(tmp_path)
+    assert len(accepted) == 1
 
 
 def test_connect_starts_one_harness_and_then_reuses_it(state_dir: Path) -> None:
