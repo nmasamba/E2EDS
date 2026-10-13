@@ -7,12 +7,13 @@ report is recorded as rejected and refused.
 """
 
 import json
+import logging
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from dsp.application.admission import readmit, released
-from dsp.contracts.canonical import canonical_json, digest
+from dsp.contracts.canonical import canonical_json, digest, file_digest
 from dsp.contracts.errors import DspError, ErrorCode, TrustedContext
 from dsp.contracts.schemas import validate
 from dsp.domain import jobs as machine
@@ -309,7 +310,9 @@ def tidy(ctx: TrustedContext, *, ledger: Ledger, store: Store, runner: Runner) -
     """Finish or clear what a crash left in staging, between runs (never during one).
 
     A committed result whose outputs are still staged is moved into the content store; every
-    other attempt's folder is released (a mounted scratch volume, say) and deleted.
+    other attempt's folder is released (a mounted scratch volume, say) and deleted. A folder that
+    cannot be finished is set aside once, renamed ``.held`` and logged, so it never stops the work
+    behind it.
     """
     for work in store.attempts():
         job_id, _, number = work.name.rpartition(".")
@@ -317,22 +320,35 @@ def tidy(ctx: TrustedContext, *, ledger: Ledger, store: Store, runner: Runner) -
         if job is None:
             continue
         result = job["result"]
-        if (
-            job["state"] == "succeeded"
-            and result["key"] == work.name
-            and work.joinpath("run.json").exists()
-        ):
-            _promote(ctx, store, work)
-        else:
-            runner.release(work)
-            store.discard(work)
+        try:
+            if (
+                job["state"] == "succeeded"
+                and result["key"] == work.name
+                and work.joinpath("run.json").exists()
+            ):
+                _promote(ctx, store, work)
+            else:
+                runner.release(work)
+                store.discard(work)
+        except (DspError, OSError) as error:
+            work.rename(work.with_name(f"{work.name}.held"))
+            logging.getLogger(__name__).error("held %s: %s", work.name, type(error).__name__)
 
 
 def _promote(ctx: TrustedContext, store: Store, work: Path) -> None:
-    """Move a committed attempt's outputs and RunRecord into the content store; clear the rest."""
+    """Move a committed attempt's outputs and RunRecord into the content store; clear the rest.
+
+    Each output is checked against its digest before it moves; one already in the store under its
+    digest, moved by a promotion that stopped part-way, counts as moved.
+    """
     record = json.loads((work / "run.json").read_bytes())
     for output in record["outputs"]:
-        if store.commit(ctx, work / "out" / output["name"]) != output["sha256"]:
+        staged = work / "out" / output["name"]
+        if not staged.exists():
+            store.path(ctx, output["sha256"])  # moved before; NOT_FOUND if it is gone
+            continue
+        if file_digest(staged) != output["sha256"]:
             raise DspError(ErrorCode.INTERNAL_ERROR, "a staged output changed after it was hashed")
+        store.commit(ctx, staged)
     store.commit(ctx, work / "run.json")
     store.discard(work)

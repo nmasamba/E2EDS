@@ -2,12 +2,12 @@
 
 The sandbox adapter lays the attempt directory out before the runner starts: ``task.json`` (the
 CodeTask), ``source``, the declared inputs under ``inputs/`` and an empty ``scratch/``, where the
-code runs. Before any task code runs, the runner checks the source and inputs against their
-digests and lowers its own CPU-time and open-file limits, which an unprivileged process cannot
+code runs. Before any task code runs, the runner checks the source and inputs against their digests
+and lowers its own CPU-time and open-file limits, which an unprivileged process cannot
 raise again. It then runs the Python, or the DuckDB SQL against the inputs loaded as tables, and
 writes ``result.json`` and, on success, the declared outputs to standard output as one tar stream:
-the only result channel. Everything on it is untrusted: the adapter validates the result against
-its schema and bounds, checks and hashes the outputs, so the runner validates nothing itself.
+the only result channel. Everything on it is untrusted: the adapter validates the result against its
+schema and bounds, checks and hashes the outputs, so the runner validates nothing itself.
 
 An audit hook records every open outside the declaration, so such a task fails even when its code
 swallows the refusal. It is a detector, never the boundary: the OS sandbox is the boundary.
@@ -76,30 +76,41 @@ def run(task: dict[str, Any], work: Path) -> dict[str, str] | None:
     except SystemExit as stop:
         raised = stop if stop.code not in (None, 0) else None
     except duckdb.PermissionException as error:
-        return {"kind": "undeclared_access", "message": str(error)[:MESSAGE]}
+        return {"kind": "undeclared_access", "message": plain(str(error), work)}
     except BaseException as error:  # the task's own failure, whatever it raised
         raised = error
     answer = raised
     while isinstance(answer, OSError) and answer.errno is None and answer.__context__:
         answer = answer.__context__  # a wrapper (a URL error, say) around the OS's own answer
-    said = f"{type(raised).__name__}: {raised}".replace(str(work), "<attempt>")
+    said = plain(f"{type(raised).__name__}: {raised}", work)
     if isinstance(answer, OSError) and answer.errno is not None:  # keep the code, not the path
         said = f"{type(raised).__name__}: [Errno {answer.errno}] {answer.strerror}"
     if refused:
         answered = f"; the OS answered {said}" if isinstance(answer, OSError) else ""
         message = f"{len(refused)} open(s) outside the declaration{answered}"
-        return {"kind": refused[0], "message": message[:MESSAGE]}
+        return {"kind": refused[0], "message": plain(message, work)}
     if raised is not None:
         kind = "crash"
         if isinstance(raised, MemoryError):
             kind = "memory_limit"
         elif isinstance(answer, OSError) and answer.errno in (errno.ENOSPC, errno.EDQUOT):
             kind = "scratch_limit"
-        return {"kind": kind, "message": said[:MESSAGE]}
+        return {"kind": kind, "message": said}
     for name in task["outputs"]:
         if not (scratch / name).is_file() or (scratch / name).is_symlink():
             return {"kind": "missing_output", "message": f"{name} was not written"}
     return None
+
+
+def plain(text: str, work: Path) -> str:
+    """A message with no host path: the attempt's, the runner's and the interpreter's are named."""
+    for path, name in [
+        (str(work), "<attempt>"),
+        *((prefix, "<runner>") for prefix in (sys.prefix, os.path.realpath(sys.prefix))),
+        *((prefix, "<python>") for prefix in (sys.base_prefix, os.path.realpath(sys.base_prefix))),
+    ]:
+        text = text.replace(path, name)
+    return text[:MESSAGE]
 
 
 def query(task: dict[str, Any], work: Path, sql: str) -> None:

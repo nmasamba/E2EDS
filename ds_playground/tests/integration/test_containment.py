@@ -7,6 +7,7 @@ reports only whether an open succeeded and its errno.
 """
 
 import contextlib
+import errno
 import json
 import os
 import shutil
@@ -198,7 +199,22 @@ def test_c14_the_task_sees_only_its_scrubbed_environment_and_standard_descriptor
         "        fcntl.fcntl(fd, fcntl.F_GETFD); return True\n"
         "    except OSError:\n"
         "        return False\n"
-        "report(env=dict(os.environ), fds=[fd for fd in range(1024) if held(fd)])\n"
+        "def parents():  # the harness's own arguments and environment, through the process table\n"
+        "    if os.uname().sysname == 'Darwin':\n"
+        "        mib = (ctypes.c_int * 3)(1, 49, os.getppid())  # CTL_KERN, KERN_PROCARGS2\n"
+        "        size = ctypes.c_size_t(1 << 20)\n"
+        "        found = ctypes.create_string_buffer(size.value)\n"
+        "        if libc.sysctl(mib, 3, found, ctypes.byref(size), None, 0):\n"
+        "            return False\n"
+        "        return b'PATH=' in found.raw[: size.value]\n"
+        "    fd = libc.open(f'/proc/{os.getppid()}/environ'.encode(), os.O_RDONLY)\n"
+        "    if fd < 0:\n"
+        "        return False\n"
+        "    found = os.read(fd, 1 << 20)\n"
+        "    os.close(fd)\n"
+        "    return b'PATH=' in found\n"
+        "fds = [fd for fd in range(1024) if held(fd)]\n"
+        "report(env=dict(os.environ), fds=fds, parent=parents())\n"
     )
     observed = seen(tmp_path / "run", contained(tmp_path / "run", runner_env, code))
     leaked = held.fileno()
@@ -209,6 +225,7 @@ def test_c14_the_task_sees_only_its_scrubbed_environment_and_standard_descriptor
     assert observed["env"].get("PWD", scratch) == scratch  # bubblewrap sets it
     added_by_the_runtime = {"LC_CTYPE", "__CF_USER_TEXT_ENCODING", "PWD"}
     assert set(observed["env"]) <= {"HOME", "TMPDIR"} | added_by_the_runtime
+    assert observed["parent"] is False  # the harness's own environment is out of reach too
     assert leaked not in observed["fds"]
     assert observed["fds"] == [0, 1, 2, 3, 4]  # standard three, the runner's channel, /dev/null
 
@@ -242,12 +259,40 @@ def test_c14_no_process_can_be_started_a_shell_or_otherwise(
 def test_d21_memory_past_the_limit_stops_the_task_and_memory_within_it_is_allowed(
     tmp_path: Path, runner_env: Path
 ) -> None:
-    """D21, A28: allocating past the task's memory limit stops it; below the limit runs."""
+    """D21, A28: allocating past the memory limit stops a task; below it runs.
+
+    Memory a task could hold without mapping it (shared memory, on Linux a memfd) cannot be made.
+    """
     allocate = "chunks = [os.urandom(2**20) for _ in range({})]\nreport(mib=len(chunks))\n"
     within = contained(tmp_path / "within", runner_env, allocate.format(64), memory_mib=256)
     assert seen(tmp_path / "within", within) == {"mib": 64}
     over = contained(tmp_path / "over", runner_env, allocate.format(2048), memory_mib=256)
     assert (over["outcome"], over["failure"]["kind"]) == ("failed", "memory_limit")
+    unmapped = (
+        "from multiprocessing import shared_memory\n"
+        "def tried(attempt):\n"
+        "    try:\n"
+        "        attempt(); return 0\n"
+        "    except OSError as error:\n"
+        "        return error.errno or -1\n"
+        "def memfd():\n"
+        "    fd = os.memfd_create('held')\n"
+        "    os.write(fd, b'x' * 2**20)\n"
+        "def sysv():\n"
+        "    segment = libc.shmget(0, 2**20, 0o1600)  # IPC_PRIVATE, IPC_CREAT\n"
+        "    if segment < 0:\n"
+        "        raise OSError(ctypes.get_errno(), 'shmget')\n"
+        "    libc.shmctl(segment, 0, None)  # IPC_RMID: never left behind\n"
+        "seen = {'shared': tried(lambda: shared_memory.SharedMemory(create=True, size=2**30))}\n"
+        "seen['sysv'] = tried(sysv)\n"
+        "if hasattr(os, 'memfd_create'):\n"
+        "    seen['memfd'] = tried(memfd)\n"
+        "report(**seen)\n"
+    )
+    held = seen(tmp_path / "unmapped", contained(tmp_path / "unmapped", runner_env, unmapped))
+    assert all(held.values()), held  # memory held without being mapped cannot be made at all
+    refusals = {errno.EPERM, errno.EACCES, errno.ENOSYS}
+    assert held["sysv"] in refusals, held  # refused, not merely out of the system's quota
 
 
 def test_d21_cpu_time_past_the_limit_stops_the_task_even_when_it_ignores_sigxcpu(

@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import sys
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -78,17 +79,18 @@ def mount(
     the dispatcher, which runs queued sandboxed jobs one at a time; a quit lets a job already
     running finish (D24). ``clock`` is the one source
     of time for the ledger and the job coordinator. The runner environment is ``DSP_RUNNER_ENV``,
-    or ``.runner-env`` beside the source; without it, or without the OS's sandbox, sandboxed work
-    is refused, never run another way.
+    or ``.runner-env`` beside the source when the harness runs from source (a frozen harness has
+    only the variable); without it, or without the OS's sandbox, sandboxed work is refused, never
+    run another way.
     """
     ctx = TrustedContext.local()
     binding = local_binding(ctx, *host())
-    environment = Path(
-        os.environ.get("DSP_RUNNER_ENV") or Path(__file__).parents[3] / ".runner-env"
-    )
+    beside = None if getattr(sys, "frozen", False) else Path(__file__).parents[3] / ".runner-env"
+    named = os.environ.get("DSP_RUNNER_ENV")
+    environment = Path(named) if named else beside  # a frozen harness has no source beside it
     runner: sandbox.Confined | None = None
     lock, unavailable = None, "the runner environment is not built (make runner-env)"
-    if (environment / "bin" / "python").exists():
+    if environment and (environment / "bin" / "python").exists():
         try:
             runner, lock = sandbox.local(environment), sandbox.lock(environment)
         except DspError as error:
@@ -350,6 +352,10 @@ def mount(
 
     @app.post("/v1/jobs/{job_id}/lease", dependencies=[Depends(native)])
     def lease_job(job_id: str, worker: Annotated[str, Body(embed=True)]) -> dict[str, Any]:
+        if jobs.inspect(ctx, job_id, ledger=ledger(), clock=clock)["task"] is None:
+            raise DspError(
+                ErrorCode.FORBIDDEN, "a sandboxed job runs only in the harness's sandbox"
+            )
         return jobs.lease(ctx, job_id, worker, ledger=ledger(), clock=clock)
 
     @app.post("/v1/jobs/{job_id}/heartbeat", dependencies=[Depends(native)])

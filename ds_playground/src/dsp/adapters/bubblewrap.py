@@ -1,22 +1,22 @@
 """The Linux sandbox: bubblewrap namespaces, a seccomp filter and kernel limits (B26).
 
 Policy (the sandboxed-runner skill), as on macOS. The task's file system holds the runner
-environment, the interpreter it was made from (the binary, its standard library and every symlink
-on the way), system libraries and the attempt directory, all read-only, and a tmpfs of the scratch
-size on scratch, the only writable place; the root and ``/dev`` (whose ``shm`` would otherwise take
-writes) are remounted read-only. There is no ``/etc``,
-home, shell, ``/proc`` or ``/tmp`` (a second tmpfs would double the scratch size; ``TMPDIR`` is
-scratch).
-Every namespace is new, so no network, not even loopback, and only the task's own processes; the
-runner is the namespace's first process (``--as-pid-1``), so its CPU time returns with its exit
-status. The environment is ``HOME`` and ``TMPDIR`` alone, and only the standard descriptors (and
-the filter's, which bubblewrap reads and closes) are passed on.
+environment, the interpreter it was made from (the binary, its standard library and every symlink on
+the way), system libraries and the attempt directory, all read-only, and a tmpfs of the scratch size
+on scratch, the only writable place; the root and ``/dev`` (whose ``shm`` would otherwise take
+writes) are remounted read-only. There is no ``/etc``, home, shell, ``/proc`` or ``/tmp`` (a second
+tmpfs would double the scratch size; ``TMPDIR`` is scratch). Every namespace is new, so no network,
+not even loopback, and only the task's own processes; the runner is the namespace's first process
+(``--as-pid-1``), so its CPU time returns with its exit status. The environment is ``HOME`` and
+``TMPDIR`` alone, and only the standard descriptors (and the filter's, which bubblewrap reads and
+closes) are passed on.
 
 The seccomp filter refuses sockets other than Unix ones, every way of creating a process except a
-thread, and kernel interfaces a task never needs. Limits: memory by ``RLIMIT_AS`` (``prlimit``),
-scratch by the tmpfs size, CPU time by the runner's own limit (the kernel kills at the hard limit),
-wall time and output in the shared core. bubblewrap reports a signal that ended the task as
-128 plus its number.
+thread, memory a task could hold without mapping it (``memfd_create``, System V shared memory),
+which ``RLIMIT_AS`` would not count, and kernel interfaces a task never needs. Limits: memory by
+``RLIMIT_AS`` (``prlimit``), scratch by the tmpfs size, CPU time by the runner's own limit (the
+kernel kills at the hard limit), wall time and output in the shared core. bubblewrap reports a
+signal that ended the task as 128 plus its number.
 """
 
 import contextlib
@@ -62,6 +62,8 @@ SYSCALLS = {  # unistd.h of each architecture
         "io_uring_enter": 426,
         "io_uring_register": 427,
         "clone3": 435,
+        "shmget": 29,
+        "memfd_create": 319,
     },
     "aarch64": {
         "umount2": 39,
@@ -90,6 +92,8 @@ SYSCALLS = {  # unistd.h of each architecture
         "io_uring_enter": 426,
         "io_uring_register": 427,
         "clone3": 435,
+        "shmget": 194,
+        "memfd_create": 279,
     },
 }
 CLONE_THREAD = 0x00010000

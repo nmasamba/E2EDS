@@ -191,6 +191,9 @@ def test_b26_a_crash_a_missing_output_and_a_forged_channel_each_fail_with_their_
     assert kind(wrapped) == "crash"
     assert wrapped["failure"]["message"].startswith("URLError: [Errno ")  # the OS's own code
     assert kind(ran(tmp_path / "exit", runner_env, "import sys\nsys.exit(3)\n")) == "crash"
+    named = ran(tmp_path / "named", runner_env, "from duckdb import nothing\n")
+    assert "<runner>/lib/python3.12/site-packages/duckdb" in named["failure"]["message"]
+    assert str(runner_env) not in named["failure"]["message"]  # no host path in a message
     assert kind(ran(tmp_path / "missing", runner_env, "x = 1\n")) == "missing_output"
     silent = ran(tmp_path / "silent", runner_env, "import os\nos._exit(0)\n")
     assert kind(silent) == "result_invalid"
@@ -238,3 +241,28 @@ def test_d01_a_task_past_its_wall_time_is_stopped_with_what_it_started(
     assert result["failure"]["message"] == "stopped at the 2 s wall-clock limit"
     time.sleep(2)
     assert not late.exists()
+
+
+def test_d01_a_failure_while_a_task_runs_leaves_no_task_running(
+    tmp_path: Path, runner_env: Path
+) -> None:
+    """D01, C14: when watching a task fails (a locked ledger, say), the task is killed first."""
+    started: list[int] = []
+
+    class Watched(Unconfined):
+        def start(self, task: dict[str, Any], work: Path, channel: int) -> int:
+            """Start the task and remember its process."""
+            started.append(super().start(task, work, channel))
+            return started[-1]
+
+    def broken() -> bool:
+        raise RuntimeError("the ledger is locked")
+
+    source = tmp_path / "source"
+    source.write_text("import time\ntime.sleep(60)\n")
+    spec = {"language": "python", "source_sha256": file_digest(source), "outputs": ["out.json"]}
+    task = code_task(spec, base_workload(CTX))
+    with pytest.raises(RuntimeError, match="the ledger is locked"):
+        Watched(runner_env).run(task, source, {}, tmp_path / "attempt", broken)
+    with pytest.raises(ProcessLookupError):
+        os.kill(started[0], 0)  # killed and reaped, not left running

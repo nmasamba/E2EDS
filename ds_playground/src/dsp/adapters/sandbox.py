@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from dsp.contracts.canonical import canonical_json, digest, file_digest
-from dsp.contracts.errors import DspError
+from dsp.contracts.errors import DspError, ErrorCode
 from dsp.contracts.schemas import validate
 
 FRAMING = 64 * 1024  # the result file and the tar headers, beyond the outputs' own bytes
@@ -120,6 +120,7 @@ class Confined(ABC):
             None,
             False,
         )
+        watched = False
         try:
             while not (reaped := os.wait4(pid, os.WNOHANG))[0]:
                 late = time.monotonic() >= deadline
@@ -128,9 +129,13 @@ class Confined(ABC):
                     reaped = os.wait4(pid, 0)
                     break
                 time.sleep(0.05)
-            stop()  # a group outlives its reaped leader under the same ID: nothing it began stays
-            reader.join()
+            watched = True
         finally:
+            stop()  # a group outlives its reaped leader under the same ID: nothing it began stays
+            if not watched:  # something raised while the task ran: it must not run on unwatched
+                with contextlib.suppress(ChildProcessError):
+                    os.wait4(pid, 0)
+            reader.join()
             self.release(work)
         code, usage = os.waitstatus_to_exitcode(reaped[1]), reaped[2]
         if self.relays_signals and code > 128:
@@ -158,7 +163,21 @@ class Confined(ABC):
 
 
 def local(environment: Path) -> Confined:
-    """The runner confined by this host's OS; the one place the OS chooses the adapter."""
+    """The runner confined by this host's OS; the one place the OS chooses the adapter.
+
+    The environment must be the owner's alone: a folder another user could write into would decide
+    what every task runs as its interpreter and libraries.
+    """
+    for folder in [
+        environment,
+        environment / "bin",
+        *environment.glob("lib/python*/site-packages"),
+    ]:
+        status = folder.stat()
+        if status.st_uid != os.getuid() or status.st_mode & 0o022:
+            raise DspError(
+                ErrorCode.DEPENDENCY_UNAVAILABLE, "the runner environment is not the owner's alone"
+            )
     if sys.platform == "darwin":
         from dsp.adapters.seatbelt import Seatbelt  # it loads libSystem as it starts
 

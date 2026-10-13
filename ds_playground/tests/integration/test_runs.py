@@ -1,6 +1,8 @@
 """Sandboxed CodeTasks as fenced jobs, run for real by the harness's dispatcher and tick."""
 
 import json
+import shutil
+import sys
 import time
 import uuid
 from pathlib import Path
@@ -209,9 +211,10 @@ def test_d03_the_reconcile_tick_expires_a_dead_attempt_without_anything_touching
 def test_a03_a_crash_between_commit_and_promotion_is_finished_by_tidy(
     tmp_path: Path, runner_env: Path
 ) -> None:
-    """A03: a crash after a result's commit and before its storage is finished by tidy.
+    """A03: a crash after a result's commit and part-way through its storage is finished by tidy.
 
-    Tidy stores the outputs from the attempt's staging and clears a dead attempt's folder.
+    The output had moved and the record had not: tidy counts the stored output as moved, stores
+    the record, and clears a dead attempt's folder.
     """
     clock = Clock()
     store, content = (
@@ -222,10 +225,10 @@ def test_a03_a_crash_between_commit_and_promotion_is_finished_by_tidy(
     job_id = admitted(store, content, clock, WRITE)
 
     class Crashing(ContentStore):
-        """A store whose first output promotion fails, as a harness killed at that moment."""
+        """A store that fails once the outputs moved and before the record did: a power cut."""
 
         def commit(self, ctx: TrustedContext, path: Path) -> str:
-            if path.parent.name == "out":
+            if path.name == "run.json":
                 raise OSError("power cut")
             return super().commit(ctx, path)
 
@@ -305,7 +308,10 @@ def test_b26_without_a_runner_environment_sandboxed_work_is_refused_not_run_othe
 def test_a03_an_output_changed_between_its_hash_and_its_storage_is_never_stored(
     tmp_path: Path, runner_env: Path
 ) -> None:
-    """A03, D23: the bytes stored are the bytes hashed; staging changed after the run is refused."""
+    """A03, D23: the bytes stored are the bytes hashed; staging changed after the run is refused.
+
+    Tidy then sets the folder aside once instead of failing on it at every tick.
+    """
     clock = Clock()
     store, content = (
         SqliteLedger(tmp_path / "ledger.sqlite", clock),
@@ -322,6 +328,7 @@ def test_a03_an_output_changed_between_its_hash_and_its_storage_is_never_stored(
             (args[3] / "out" / "out.json").write_text("tampered")
             return result
 
+    before = stored(tmp_path)
     with pytest.raises(DspError) as raised:
         jobs.execute(
             CTX,
@@ -333,8 +340,56 @@ def test_a03_an_output_changed_between_its_hash_and_its_storage_is_never_stored(
             timer=time.monotonic,
         )
     assert raised.value.code is ErrorCode.INTERNAL_ERROR
-    job = store.latest(CTX, "Job", job_id)
-    assert job is not None
-    record = json.loads((tmp_path / "store" / "staging" / f"{job_id}.1" / "run.json").read_bytes())
-    with pytest.raises(DspError):
-        content.path(CTX, record["outputs"][0]["sha256"])
+    assert stored(tmp_path) == before  # neither the tampered bytes nor the record
+    jobs.tidy(CTX, ledger=store, store=content, runner=sandbox.local(runner_env))
+    jobs.tidy(CTX, ledger=store, store=content, runner=sandbox.local(runner_env))  # nothing left
+    assert [p.name for p in (tmp_path / "store" / "staging").glob("job-*")] == [f"{job_id}.1.held"]
+    assert stored(tmp_path) == before
+
+
+def test_b26_a_runner_environment_others_could_write_or_a_frozen_guess_is_refused(
+    tmp_path: Path, runner_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """B26, C14: only an environment the owner alone can write runs tasks; frozen, none is guessed.
+
+    A folder another user could write into would choose every task's interpreter; a frozen harness's
+    source folder is a temporary unpack folder, so it uses only `DSP_RUNNER_ENV`.
+    """
+    shared = tmp_path / "shared-env"
+    shutil.copytree(runner_env, shared, symlinks=True)
+    shared.chmod(0o777)
+    with pytest.raises(DspError) as raised:
+        sandbox.local(shared)
+    assert raised.value.message == "the runner environment is not the owner's alone"
+    shared.chmod(0o755)
+    sandbox.local(shared)  # the same environment, the owner's alone, is accepted
+
+    monkeypatch.delenv("DSP_RUNNER_ENV", raising=False)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    app = create_app("secret", 4100)
+    (tmp_path / "home").mkdir()
+    workspace.mount(app, tmp_path / "home")
+    api = TestClient(app, base_url="http://127.0.0.1:4100")
+    task = {"language": "python", "source_sha256": "sha256:" + "a" * 64, "outputs": ["out.json"]}
+    request = {"operation": "analyse", "idempotency_key": "k1", "task": task}
+    refused = api.post("/v1/jobs", headers={"Authorization": "Bearer secret"}, json=request)
+    assert (refused.status_code, refused.json()["code"]) == (503, "DEPENDENCY_UNAVAILABLE")
+
+
+def test_a04_no_outside_worker_can_lease_a_sandboxed_job(tmp_path: Path, runner_env: Path) -> None:
+    """A04, B26: a sandboxed job runs only in the harness's sandbox; an outside worker is refused.
+
+    Otherwise a process holding the token could lease it and report a success no sandbox ran.
+    """
+    app = create_app("secret", 4100)
+    workspace.mount(app, tmp_path)  # no server, so no dispatcher: the job stays queued
+    api = TestClient(app, base_url="http://127.0.0.1:4100")
+    headers = {"Authorization": "Bearer secret"}
+    api.post("/v1/hardware", headers=headers)
+    source = api.post("/v1/sources", headers=headers, json={"text": WRITE}).json()["sha256"]
+    task = {"language": "python", "source_sha256": source, "outputs": ["out.json"]}
+    request = {"operation": "analyse", "idempotency_key": "k1", "task": task}
+    job = api.post("/v1/jobs", headers=headers, json=request).json()["id"]
+    leased = api.post(f"/v1/jobs/{job}/lease", headers=headers, json={"worker": "outsider"})
+    assert (leased.status_code, leased.json()["code"]) == (403, "FORBIDDEN")
+    assert api.get(f"/v1/jobs/{job}", headers=headers).json()["state"] == "queued"

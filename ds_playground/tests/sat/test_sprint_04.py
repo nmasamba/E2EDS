@@ -6,6 +6,7 @@ is at OS-sandbox, single-user assurance, the owner's 2026-10-01 deviation from t
 """
 
 import hashlib
+import json
 import socket
 from collections.abc import Callable
 from pathlib import Path
@@ -49,32 +50,78 @@ def told(job: dict[str, Any]) -> str:
     return f"{job['state']}: {job['reason']}"
 
 
+def refused_by_the_os(job: dict[str, Any], kind: str) -> None:
+    """The job failed with ``kind`` and its reason carries the OS's own answer and errno.
+
+    The runner's audit hook alone would give the same kind; only the OS's answer shows the
+    sandbox refused the operation.
+    """
+    assert job["state"] == "failed"
+    assert job["reason"].startswith(f"{kind}: 1 open(s) outside the declaration; the OS answered ")
+    assert "[Errno " in job["reason"]
+
+
+PARENT = """
+import ctypes, json, os
+libc = ctypes.CDLL(None, use_errno=True)
+def readable():
+    if os.uname().sysname == "Darwin":
+        mib = (ctypes.c_int * 3)(1, 49, os.getppid())  # CTL_KERN, KERN_PROCARGS2
+        size = ctypes.c_size_t(1 << 20)
+        found = ctypes.create_string_buffer(size.value)
+        if libc.sysctl(mib, 3, found, ctypes.byref(size), None, 0):
+            return False
+        return b"PATH=" in found.raw[: size.value]
+    fd = libc.open(f"/proc/{os.getppid()}/environ".encode(), os.O_RDONLY)
+    if fd < 0:
+        return False
+    found = os.read(fd, 1 << 20)
+    os.close(fd)
+    return b"PATH=" in found
+json.dump({"readable": readable()}, open("out.json", "w"))
+"""
+
+
 def test_a28_a_host_secret_cannot_be_read(
-    harness: Harness, tmp_path: Path, evidence: Evidence
+    harness: Harness, tmp_path: Path, state_dir: Path, evidence: Evidence
 ) -> None:
-    """A28, C14: real code reading a planted host secret or the home's .ssh is refused by the OS."""
+    """A28, C14: a planted host secret, the home's .ssh and the harness's environment are unread.
+
+    The record is written with what the run showed before the assertions, so a failure on an OS
+    is recorded as FAIL there, not left out.
+    """
     client, _ = harness
     secret = tmp_path / "planted-secret.txt"
     secret.write_text("never to be read")
     planted = run(client, f"open({str(secret)!r}).read()\n")
     ssh = run(client, f"open({str(Path.home() / '.ssh' / 'id_ed25519')!r}).read()\n")
-    for job in (planted, ssh):
-        assert job["state"] == "failed"
-        assert job["reason"].startswith("undeclared_read: 1 open(s) outside the declaration")
-    assert "the OS answered" in planted["reason"]
+    probe = run(client, PARENT)
+    cas = state_dir / "store" / "cas" / "tenant-local"
+    record = json.loads((cas / probe["result"]["sha256"].removeprefix("sha256:")).read_bytes())
+    seen = json.loads((cas / record["outputs"][0]["sha256"].removeprefix("sha256:")).read_bytes())
+    refused = [
+        job["reason"].startswith("undeclared_read: 1 open(s) outside the declaration; the OS ")
+        for job in (planted, ssh)
+    ]
+    outcome = "PASS" if all(refused) and not seen["readable"] else "FAIL"
     evidence(
         "A28",
         "host-secret",
-        "PASS",
-        "planted-secret-and-home-ssh",
+        outcome,
+        "planted-secret-home-ssh-and-harness-environment",
         "real code opening a planted host secret and a key under the home's .ssh is refused by "
-        "the OS; the task fails and no result exists",
-        f"planted secret: {told(planted)}; home .ssh: {told(ssh)}",
+        "the OS, and the harness's own arguments and environment cannot be read through the "
+        "process table",
+        f"planted secret: {told(planted)}; home .ssh: {told(ssh)}; the harness's environment "
+        f"through the process table: {'read' if seen['readable'] else 'not readable'}",
         LIMIT,
         HAND_WRITTEN,
         sprint=4,
         assurance=ASSURANCE,
     )
+    for job in (planted, ssh):
+        refused_by_the_os(job, "undeclared_read")
+    assert seen["readable"] is False
 
 
 def test_a28_no_network_fetch_reaches_even_this_host(harness: Harness, evidence: Evidence) -> None:
@@ -91,6 +138,7 @@ def test_a28_no_network_fetch_reaches_even_this_host(harness: Harness, evidence:
             listener.accept()
     assert (fetch["state"], lookup["state"]) == ("failed", "failed")
     assert fetch["reason"].startswith("crash: URLError: [Errno ")
+    assert lookup["reason"].startswith("crash: gaierror: [Errno ")
     evidence(
         "A28",
         "network-fetch",
@@ -116,7 +164,7 @@ def test_a28_no_dependency_can_be_installed(
     planted = run(client, f"open({str(site / 'injected.py')!r}, 'w').write('x')\n")
     assert pip["state"] == "failed"
     assert pip["reason"].startswith("crash: PermissionError: [Errno ")
-    assert planted["reason"].startswith("undeclared_write: 1 open(s) outside the declaration")
+    refused_by_the_os(planted, "undeclared_write")
     assert not (site / "injected.py").exists()
     evidence(
         "A28",
@@ -142,8 +190,7 @@ def test_a28_a_file_standing_for_the_final_partition_cannot_be_read(
     sealed.parent.mkdir()
     sealed.write_text("label\n1\n")
     job = run(client, f"open({str(sealed)!r}).read()\n")
-    assert job["state"] == "failed"
-    assert job["reason"].startswith("undeclared_read: 1 open(s) outside the declaration")
+    refused_by_the_os(job, "undeclared_read")
     evidence(
         "A28",
         "final-set",
@@ -169,8 +216,7 @@ def test_a28_the_ledger_and_the_task_declaration_cannot_be_changed(
     ledger_write = run(client, f"open({str(ledger)!r}, 'r+b').write(b'corrupt')\n")
     task_write = run(client, "open('../task.json', 'w').write('{}')\n")
     for job in (ledger_write, task_write):
-        assert job["state"] == "failed"
-        assert job["reason"].startswith("undeclared_write: 1 open(s) outside the declaration")
+        refused_by_the_os(job, "undeclared_write")
     assert ledger.read_bytes().startswith(b"SQLite format 3\x00")
     assert client.get(f"/v1/jobs/{task_write['id']}").status_code == 200
     evidence(
@@ -297,7 +343,8 @@ def test_a28_the_acceptance_line_read_secret_is_denied_by_the_os(
     ran = CliRunner().invoke(app, ["run-task", str(task)])
     said = ran.output.strip().split(" ", 1)[1]
     assert ran.exit_code == 2, ran.output
-    assert said.startswith("failed: undeclared_read: 1 open(s) outside the declaration; the OS")
+    assert said.startswith("failed: undeclared_read: 1 open(s) outside the declaration; the OS ")
+    assert "[Errno " in said
     evidence(
         "A28",
         "acceptance-read-secret",
@@ -318,10 +365,10 @@ def test_a28_the_acceptance_line_read_secret_is_denied_by_the_os(
         "real generated Python attempting a host-secret read, a network fetch, a dependency "
         "install, final-set access and metadata mutation is denied at the enforced boundary; CPU, "
         "disk and output are bounded; code and attempts are preserved; at most two repairs",
-        "every part exercised passed on this OS, through the job path and the OS sandbox: "
-        "host-secret, network-fetch, dependency-install, final-set (a stand-in file), "
-        "metadata-mutation, process, bounds (CPU, memory, wall time, output, scratch), preserved, "
-        f"and the acceptance line ({said})",
+        "each part ran through the job path and the OS sandbox and records its own outcome on "
+        "this OS: host-secret, network-fetch, dependency-install, final-set (a stand-in file), "
+        "metadata-mutation, process, bounds (CPU, memory, wall time, output, scratch), preserved; "
+        f"the acceptance line: {said}",
         LIMIT,
         "the code was written by hand: model-generated code and its at most two repairs (D17) "
         "need the assistant of Sprint 5",
