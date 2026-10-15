@@ -483,7 +483,15 @@ Code commit `2c81168`; the evidence and this file were committed after it.
   observed binding). Vitest 11 (the assistant view from events only). Playwright status spec 17 (the
   header and trail say `assistant unavailable: model missing`). On macOS: `make test-fast` 304 passed,
   live gateway 6 passed.
-- Guards mutation-checked: see the 5.1 commit's note in `docs/decisions.md` (listed at the checkpoint).
+- Guards mutation-checked (16, all caught; decisions 2026-10-15 "guards mutation-checked (5.1)"): size,
+  hash, stale server only when ours, port held refused, deny default, `--unshare-all`, keychain replace,
+  fallback permissions, key as a file (flag and value), outbound denied, the probe decides readiness,
+  `--no-slots`, `--reasoning off`, quit stops the server, a readiness failure stops the server. Found by
+  the checks: a server that answered health but failed readiness was left running (fixed, with a test).
+- `make live-linux` (container, linux/arm64, CPU only): the first run failed on `ps` truncating the
+  command line and on the A30 probe's binds placed after the root was made read-only (both in the tests),
+  the second on the quit test's 90 s wait (a second CPU load beside the session's server); the rerun's
+  result is recorded below when it lands.
 
 ## D3 checkpoint — launch profile (2026-10-15, measured under the Seatbelt profile on this M1 Max)
 
@@ -550,9 +558,11 @@ health in 16.2 s, 3.1 prompt tok/s, 1.6 generation tok/s.
 
 ## Waiting on the owner
 
-1. At the Sprint 5 gate: in the built macOS app, start a job, press Cmd+P and Cmd+Shift+K, and say what
+1. **The D3 launch profile** (checkpoint above): A Metal full offload, B CPU 2 threads (the contract), C CPU
+   all cores. Nothing past 5.1 is built until the pick.
+2. At the Sprint 5 gate: in the built macOS app, start a job, press Cmd+P and Cmd+Shift+K, and say what
    happened.
-2. Optional: remove `~/Library/Containers/dsp.probe.appsandbox` (28 KB), left by the gap investigation's
+3. Optional: remove `~/Library/Containers/dsp.probe.appsandbox` (28 KB), left by the gap investigation's
    App Sandbox probe; the system refused its deletion from this session.
 
 ## Handoff note
