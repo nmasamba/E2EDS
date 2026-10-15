@@ -133,7 +133,7 @@ fn main() {
         .menu(|app| {
             let pause = MenuItem::with_id(app, "pause", "Pause", true, Some("CmdOrCtrl+P"))?;
             let cancel =
-                MenuItem::with_id(app, "cancel", "Cancel run", true, Some("CmdOrCtrl+."))?;
+                MenuItem::with_id(app, "cancel", "Cancel run", true, Some("CmdOrCtrl+Shift+K"))?;
             let quit =
                 MenuItem::with_id(app, "quit", "Quit DS Playground", true, Some("CmdOrCtrl+Q"))?;
             let menu = Submenu::with_items(app, "DS Playground", true, &[&pause, &cancel, &quit])?;

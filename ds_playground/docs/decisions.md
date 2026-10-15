@@ -540,6 +540,28 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   trail shows. Sprint 4's housekeeping makes the activity trail the one place every outcome appears,
   removes the inline notes, and tests the wording once.
 
+## Sprint 5
+
+- **2026-10-15 — S5 — DECISION — the owner's Sprint 5 choices (prompt 5.0)** — D1 = A: the Cancel run chord is
+  `CmdOrCtrl+Shift+K` on both OSes, a letter chord like the working Cmd+P. D2 = A: `make live-linux` builds
+  llama.cpp b11104 inside the verify container (a named Docker volume as its build cache), mounts the model
+  read-only and runs the `live_model` tests there. D3 = A: after 5.1 the build stops at a checkpoint with a
+  measured table (CPU 2 threads, CPU all cores, Metal full offload: load time, first-token latency, tokens/s,
+  peak memory) and waits for the owner's pick. D4 = B: 5.6 ships the OpenAI-compatible adapter only, tested
+  against a local OpenAI-compatible server (llama-server itself); no proprietary adapter, no keys, £0 spend,
+  only synthetic fixtures may leave the machine. D5 = A: before any technical HALT one bounded investigation
+  workflow may run (at most 9 agents, cost stated first); the `integrity-reviewer` runs once at 5.7.
+- **2026-10-15 — S5 — DECISION — Cancel run is CmdOrCtrl+Shift+K (5.0, D1)** — closes the 2026-10-13 defect
+  as far as code can: the renderer's chord table now keys on the chord without the platform modifier
+  (`p`, `shift+k`), so Shift is part of a chord rather than a reason to ignore it; the native menu item says
+  `CmdOrCtrl+Shift+K`; Playwright presses Meta+Shift+K on macOS and Ctrl+Shift+K on Linux against a real
+  harness, and the Linux built-app test presses the real Ctrl+Shift+K through xdotool. Mutation-checked:
+  with the old chord back in the renderer the Playwright spec fails. Whether the built macOS app delivers
+  Cmd+Shift+K is the owner's press at the gate (the Cmd+. failure was seen only there).
+- **2026-10-15 — S5 — ASSUMPTION — the sprint branch** — the work is on the branch the desktop app made for
+  this session, `claude/sprint-5-assistant-gateway-fc1f11`, from `main` at `73698be`, rather than a
+  branch named `sprint-5-assistant`; the pull request carries the sprint's title.
+
 ## Sprint 4
 
 - **2026-10-12 — S4 — DEFECT — the harness published its port before listening (housekeeping)** — `serve`

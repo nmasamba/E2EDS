@@ -65,7 +65,7 @@ uv run dsp stop
 The window and the harness now run durable jobs. The only workload is the deterministic test worker: queue
 it with "Start the hung test job" in the window (or `POST /v1/jobs` through the harness), then run the
 worker against your profile; pause, resume and cancel from the header, the keyboard (Cmd/Ctrl+P and
-Cmd/Ctrl+., handled by the window; the native menu has the same items) or by typing `pause now`, `resume`,
+Cmd/Ctrl+Shift+K, handled by the window; the native menu has the same items) or by typing `pause now`, `resume`,
 `cancel this run` or `status` in the composer;
 change a requirement with `exclude field region`. Every receipt and state appears in the activity trail.
 

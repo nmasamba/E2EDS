@@ -108,7 +108,7 @@ test("A24, A25, A26, R15: pause and cancel by shortcut, change, resume by keyboa
   await expect(activity(page)).toContainText(`Job ${job!.slice(-6)}: running (attempt 2, fence 1)`);
 
   await page.getByRole("textbox", { name: "Message" }).focus();
-  await page.keyboard.press("ControlOrMeta+.");
+  await page.keyboard.press("ControlOrMeta+Shift+K");
   await expect(activity(page)).toContainText("You: cancel this run · applied");
   await expect(develop(page)).toContainText("◇ Inconclusive · cancelled", { timeout: 30_000 });
   await expect.poll(() => second.exitCode, { timeout: 30_000 }).toBe(0);

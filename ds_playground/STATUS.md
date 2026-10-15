@@ -4,10 +4,10 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 
 ## Now
 
-- **Sprint:** 4 — M1 sandboxed native runner (B26; A28; R16; C14, C18; D01, D21).
-- **Claimed prompt:** 4.7 (Sprint 4 gate): done. The two macOS containment gaps that halted the first
-  gate runs are closed (decisions, 2026-10-13, "both macOS containment gaps closed").
-- **Branch:** `sprint-4-runner`, from `main` at `0cb7674` (PRs #1 to #7 merged).
+- **Sprint:** 5 — M1 assistant gateway, open model first (B24, B26, B27; A24, A29, A30; R16, R17, R18,
+  R22; D16, D17).
+- **Claimed prompt:** 5.1 (gateway, binding, supervisor, SecretPort). 5.0 housekeeping (D1) is done.
+- **Branch:** `claude/sprint-5-assistant-gateway-fc1f11`, from `main` at `73698be` (PRs #1 to #8 merged).
 
 ## Done
 
@@ -23,8 +23,9 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 | 1 | M0 foundations and thin slice | merged to `main` (PR #1) | PASS, see below |
 | 2 | M1 desktop, discovery, plan | merged to `main` (PR #5) | PASS for Sprint 2 scope, see below |
 | 3 | M1 jobs, admission, conversation, control | merged to `main` (PRs #6, #7) | PASS for Sprint 3 scope, see below |
-| 4 | M1 sandboxed native runner | on `sprint-4-runner`, pull request #8 open | PASS for Sprint 4 scope, see below |
-| 5–11 | M1 | not started | — |
+| 4 | M1 sandboxed native runner | merged to `main` (PR #8) | PASS for Sprint 4 scope, see below |
+| 5 | M1 assistant gateway, open model first | on `claude/sprint-5-assistant-gateway-fc1f11` | in progress |
+| 6–11 | M1 | not started | — |
 | 12–20 | M1B, M1C, M1R, M2, M3, M3Z, M4 | not started | — |
 
 ## Environment observed (2026-10-01, this Mac)
@@ -446,6 +447,13 @@ Code commit `2c81168`; the evidence and this file were committed after it.
 - Gate outcome: **PASS** on macOS and Linux for Sprint 4 scope. Scenario outcomes are as listed; none
   is rounded up.
 
+## Sprint 5 housekeeping (2026-10-15)
+
+- D1 = A: Cancel run is `CmdOrCtrl+Shift+K` in the renderer's chord table, the native menu, the Playwright
+  work spec (Meta+Shift+K on macOS) and the Linux built-app test (real Ctrl+Shift+K through xdotool).
+  Playwright work spec on macOS: 3 passed. Guard mutation-checked: the old chord back in the renderer
+  fails the spec. The built macOS app's press is the owner's, at the gate.
+
 ## Open defects and gaps
 
 - macOS sandbox: sysctl reads are allowed by name only, the eleven measured for the standard library and
@@ -479,11 +487,10 @@ Code commit `2c81168`; the evidence and this file were committed after it.
   a time; a test job still waits for the outside test worker. A checkpoint is recorded but nothing
   restores from it yet.
 - Controls: a phrase with several live jobs needs clarification; only the job's own controls (buttons)
-  name a job. There is no Resume menu item. **Open DEFECT:** in the built macOS app Cmd+. cancels
-  nothing. The owner's press on 2026-10-13: Cmd+P paused the job through the window's own handler;
-  Cmd+. reached neither the window nor the native menu (no command arrived at the harness). Both
-  chords work in Playwright and on Linux. Changing the chord is the owner's call (waiting on the
-  owner). Action outcomes are shown in the activity trail only, with one wording (closed in Sprint 4
+  name a job. There is no Resume menu item. The Sprint 4 defect (in the built macOS app Cmd+. reached
+  neither the window nor the native menu) is answered by D1: Cancel run is now CmdOrCtrl+Shift+K
+  everywhere; whether the built macOS app delivers it is the owner's press at the Sprint 5 gate
+  (open until then). Action outcomes are shown in the activity trail only, with one wording (closed in Sprint 4
   housekeeping). Resume and admission are serialised on one aggregate; a
   revision followed by a crash before the hold leaves a job on the old revision until its next resume.
 - Requirements: three change instructions are understood by a fixed grammar; a budget or evaluation
@@ -498,10 +505,9 @@ Code commit `2c81168`; the evidence and this file were committed after it.
 
 ## Waiting on the owner
 
-1. **Cmd+. in the built macOS app** reaches neither the window nor the native menu: choose another
-   chord for Cancel run (for example Cmd+Shift+K) or keep it and rely on the button.
-2. Merging the Sprint 4 pull request (#8).
-3. Optional: remove `~/Library/Containers/dsp.probe.appsandbox` (28 KB), left by the gap investigation's
+1. At the Sprint 5 gate: in the built macOS app, start a job, press Cmd+P and Cmd+Shift+K, and say what
+   happened.
+2. Optional: remove `~/Library/Containers/dsp.probe.appsandbox` (28 KB), left by the gap investigation's
    App Sandbox probe; the system refused its deletion from this session.
 
 ## Handoff note

@@ -40,7 +40,7 @@ type Plan = {
 const CONVERSATION = "conversation-local";
 const ENDED = new Set(["succeeded", "failed", "cancelled"]);
 /** The native menu's chords, handled here too, so they work wherever the window has focus. */
-const SHORTCUTS: Record<string, string> = { p: "pause", ".": "cancel" };
+const SHORTCUTS: Record<string, string> = { p: "pause", "shift+k": "cancel" };
 const LABELS: Record<string, string> = { pause: "Pause", resume: "Resume", cancel: "Cancel run" };
 /** Shows, in the activity trail, a request the harness never recorded. */
 type NotReceived = (what: string) => (error: unknown) => void;
@@ -258,7 +258,7 @@ function ProposedPlan({ plan }: { plan: Plan | null }) {
 /**
  * Pause, resume and cancel for the live job: each press is one command with its own ID, sent on
  * the fast path. The outcome is the command's committed state, shown in the activity trail.
- * Cmd+P and Cmd+. (Ctrl elsewhere) press Pause and Cancel run from anywhere in the window.
+ * Cmd+P and Cmd+Shift+K (Ctrl elsewhere) press Pause and Cancel run from anywhere in the window.
  */
 function Controls(props: { harness: Harness; job: JobView | null; notReceived: NotReceived }) {
   const { harness, job, notReceived } = props;
@@ -270,7 +270,8 @@ function Controls(props: { harness: Harness; job: JobView | null; notReceived: N
   useEffect(() => {
     const press = (event: KeyboardEvent) => {
       const command = /Mac/.test(navigator.platform) ? event.metaKey : event.ctrlKey;
-      const action = command && !event.shiftKey && !event.altKey && SHORTCUTS[event.key.toLowerCase()];
+      const chord = (event.shiftKey ? "shift+" : "") + event.key.toLowerCase();
+      const action = command && !event.altKey && SHORTCUTS[chord];
       if (!action || !job) return;
       event.preventDefault();
       send(action);

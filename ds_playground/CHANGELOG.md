@@ -1,5 +1,9 @@
 # Changelog
 
+## Sprint 5 — assistant gateway, open model first (in progress)
+
+- Cancel run is Cmd+Shift+K on macOS and Ctrl+Shift+K on Linux (in the window and in the native menu); Cmd+. reached nothing in the built macOS app.
+
 ## Sprint 4 — sandboxed native runner (2026-10-13)
 
 - The activity trail is the one place outcomes appear: command receipts and their states with one wording,
