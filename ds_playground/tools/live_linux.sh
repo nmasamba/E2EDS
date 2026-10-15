@@ -10,4 +10,5 @@ if [ ! -x /build/bin/llama-server ]; then
   cmake --build /build --target llama-server -j "$(nproc)" > /tmp/build.log 2>&1
 fi
 /build/bin/llama-server --version 2>&1 | tail -2
-DSP_LLAMA_SERVER=/build/bin/llama-server DSP_LIVE_MODEL_DIR=/models uv run pytest -m live_model
+DSP_LLAMA_SERVER=/build/bin/llama-server DSP_LIVE_MODEL_DIR=/models DSP_EVIDENCE=/tmp/evidence \
+  DSP_COMMIT="${DSP_COMMIT:-unrecorded}" uv run pytest -m live_model

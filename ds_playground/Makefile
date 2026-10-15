@@ -27,7 +27,7 @@ verify: runner-env     ## the sprint gate on this machine
 	sh tools/verify.sh
 
 live: runner-env       ## the local open model's tests: the real server, confined, on this machine
-	uv run pytest -m live_model
+	DSP_EVIDENCE=docs/evidence DSP_COMMIT=$$(git rev-parse --short HEAD) uv run pytest -m live_model
 
 # The same tests in the Linux container: llama.cpp b11104 built there once into a named volume from the
 # checkout beside the model (CPU only), the model mounted read-only, bubblewrap confining the server.
@@ -35,8 +35,8 @@ LLAMA_SRC ?= $(HOME)/.local/share/dsp/llama.cpp
 MODEL_DIR ?= $(HOME)/.local/share/dsp/models
 live-linux:            ## the live_model tests in the Linux container (D2)
 	docker volume create dsp-llama-build >/dev/null
-	$(MAKE) verify-linux LINUX_MOUNTS='-v "$(LLAMA_SRC)":/llama:ro -v dsp-llama-build:/build -v "$(MODEL_DIR)":/models:ro' \
-		LINUX_RUN='sh tools/live_linux.sh'
+	$(MAKE) verify-linux LINUX_MOUNTS='-v "$(LLAMA_SRC)":/llama:ro -v dsp-llama-build:/build -v "$(MODEL_DIR)":/models:ro -v "$(CURDIR)/docs/evidence":/evidence' \
+		LINUX_RUN='DSP_COMMIT=$(shell git rev-parse --short HEAD) sh tools/live_linux.sh'
 
 LINUX = docker run --rm --security-opt seccomp=unconfined -v "$(CURDIR)/..":/repo:ro -w /repo/ds_playground \
 	-e UV_PROJECT_ENVIRONMENT=/tmp/venv -e UV_CACHE_DIR=/tmp/uv -e RUFF_CACHE_DIR=/tmp/ruff \

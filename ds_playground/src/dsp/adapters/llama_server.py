@@ -381,18 +381,24 @@ class LlamaServer:
             if self.process is not None and self.failure is None:
                 self.failure = f"the model server exited with status {self.process.returncode}"
             return False
-        if sys.platform == "darwin":
-            from dsp.adapters.seatbelt import _Usage  # loads libSystem; macOS only
-
-            usage = _Usage()
-            system = ctypes.CDLL("/usr/lib/libSystem.B.dylib", use_errno=True)
-            if system.proc_pid_rusage(self.process.pid, 0, ctypes.byref(usage)) == 0:
-                limit = self.binding["limits"]["model_memory_gib"] * 2**30
-                if usage.footprint > limit:
-                    self.failure = "memory_limit: the model server exceeded its memory limit"
-                    self.stop()
-                    return False
+        limit = self.binding["limits"]["model_memory_gib"] * 2**30
+        if (self.footprint(self.process.pid) or 0) > limit:
+            self.failure = "memory_limit: the model server exceeded its memory limit"
+            self.stop()
+            return False
         return True
+
+    def footprint(self, pid: int) -> int | None:
+        """The kernel's footprint account of the process on macOS; None elsewhere or once ended."""
+        if sys.platform != "darwin":
+            return None  # Linux bounds memory with prlimit instead
+        from dsp.adapters.seatbelt import _Usage  # loads libSystem; macOS only
+
+        usage = _Usage()
+        system = ctypes.CDLL("/usr/lib/libSystem.B.dylib", use_errno=True)
+        if system.proc_pid_rusage(pid, 0, ctypes.byref(usage)):
+            return None
+        return int(usage.footprint)
 
     def stop(self) -> None:
         """Stop the server and its session; delete the key file."""

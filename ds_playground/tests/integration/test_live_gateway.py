@@ -6,7 +6,6 @@ import stat
 import subprocess
 import sys
 import time
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +20,7 @@ from dsp.contracts.canonical import pin
 from dsp.contracts.errors import DspError, ErrorCode, TrustedContext
 from dsp.contracts.schemas import validate
 from tests.conftest import Clock
+from tests.integration.conftest import Shared
 from tests.unit.test_llama_server import Memory
 
 pytestmark = pytest.mark.live_model
@@ -47,20 +47,11 @@ def make(state: Path, store: Any = None, **launch: int) -> LlamaServer:
 
 def unbound(adapter: LlamaServer) -> LlamaServer:
     """Point the adapter at a port nothing holds and at a server that exits at once."""
-    adapter.verify = lambda: ("sha256:" + "a" * 64, "sha256:" + "b" * 64)  # type: ignore[method-assign]
-    adapter.confined = lambda: ["/usr/bin/false"]  # type: ignore[method-assign]
+    adapter.verify = lambda: ("sha256:" + "a" * 64, "sha256:" + "b" * 64)
+    adapter.confined = lambda: ["/usr/bin/false"]
     adapter.binding["endpoint"]["port"] = 8099
     adapter.client = httpx.Client(base_url="http://127.0.0.1:8099", timeout=5)
     return adapter
-
-
-@pytest.fixture(scope="session")
-def model_server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[LlamaServer]:
-    """One started model server for the whole session: the load is measured once, here."""
-    adapter = make(tmp_path_factory.mktemp("assistant-home"))
-    adapter.observed = adapter.start()  # type: ignore[attr-defined]  # kept for the record
-    yield adapter
-    adapter.stop()
 
 
 def test_r16_the_server_is_ready_only_after_health_and_the_typed_probe(
@@ -72,7 +63,7 @@ def test_r16_the_server_is_ready_only_after_health_and_the_typed_probe(
     off; the key is in a 0600 file and in no process's arguments or environment; the slots,
     metrics and web UI endpoints are off; the log is not written.
     """
-    seen = model_server.observed  # type: ignore[attr-defined]
+    seen = model_server.observed
     assert seen["model_sha256"] == local_binding(CTX)["model"]["upstream_expected_sha256"]
     assert seen["template_sha256"].startswith("sha256:")
     binding = local_binding(CTX, threads=LAUNCH["threads"], observed=seen)
@@ -234,32 +225,6 @@ def test_a30_the_server_cannot_reach_out_and_the_denial_is_the_os_s(
     assert found["resolve"] != "ok", found
     assert model_server.client.get("/health").status_code == 200
     assert model_server.alive()
-
-
-class Shared:
-    """The session's started server lent to one harness: its lifecycle stays with the session."""
-
-    def __init__(self, server: LlamaServer) -> None:
-        self.server = server
-
-    def start(self, proceed: Any = None) -> dict[str, Any]:
-        """Already started: hand back what the session observed."""
-        return dict(self.server.observed)  # type: ignore[attr-defined]
-
-    def stop(self) -> None:
-        """The session stops it, not the harness."""
-
-    def alive(self) -> bool:
-        """As the real server is."""
-        return self.server.alive()
-
-    def complete(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
-        """The real server's completion."""
-        return self.server.complete(*args, **kwargs)
-
-    def count(self, text: str) -> int:
-        """The real server's tokenizer."""
-        return self.server.count(text)
 
 
 @pytest.fixture

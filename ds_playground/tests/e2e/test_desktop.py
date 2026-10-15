@@ -231,7 +231,7 @@ def test_the_built_app_works_and_survives_close_kill_crash_and_a_second_instance
     assert owner | {"pid": 0} == {"status": "ok", "pid": 0, "version": version("dsp")}
 
     def opened() -> None:
-        assert kinds(bundled) == ["discovery.finished", "plan.proposed"]
+        assert kinds(bundled) == ["assistant.unavailable", "discovery.finished", "plan.proposed"]
 
     eventually(opened)
     assert bundled.get("/v1/hardware").json()["evidence_source"] == "observed"

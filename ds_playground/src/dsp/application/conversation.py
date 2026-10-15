@@ -6,6 +6,7 @@ command's state are derived here. The exact control phrases are recognised deter
 other text is an instruction, and with no assistant bound an instruction is rejected as such.
 """
 
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -27,11 +28,33 @@ CONTROLS = {
 }
 
 
+LEADING = re.compile(
+    r"^\s*(?P<phrase>"
+    + "|".join(re.escape(p) for p in CONTROLS)
+    + r")\s*[;.,:\n]\s*(?P<rest>\S.*)$",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def leading(text: str) -> tuple[str, str] | None:
+    """A direct message opening with an exact control phrase, then more: the control and the rest.
+
+    "Pause now; exclude region before continuing" is a pause first, then an instruction. A phrase
+    quoted, embedded or followed by other words on the same clause is no control.
+    """
+    found = LEADING.match(text)
+    if found is None:
+        return None
+    return CONTROLS[found.group("phrase").lower()], found.group("rest").strip()
+
+
 def classify(text: str) -> str:
     """The operation the text asks for: a control phrase, a known change, else an instruction."""
     phrase = text.strip().lower().rstrip(".!")
     if phrase in CONTROLS:
         return CONTROLS[phrase]
+    if split := leading(text):
+        return split[0]
     return "change_requirements" if parse_change(text) else "instruction"
 
 

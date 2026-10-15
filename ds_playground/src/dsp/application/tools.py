@@ -15,8 +15,7 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 
-from dsp.application.workloads import current_workload, revise
-from dsp.contracts.canonical import canonical_json
+from dsp.application.workloads import apply_patch, complete, current_workload, describe, revise
 from dsp.contracts.errors import DspError, ErrorCode, TrustedContext
 from dsp.contracts.schemas import validate
 from dsp.ports import Ledger, Store
@@ -53,9 +52,21 @@ TOOLS: dict[str, dict[str, Any]] = {
         },
     },
     "propose_requirement_patch": {
-        "description": "Propose typed changes to the requirements (a JSON patch on the"
-        " WorkloadSpec) with where in the instruction each came from, or ask one question"
-        " when an ambiguity changes material work.",
+        "description": "Propose typed changes to the requirements as a JSON patch on the"
+        " WorkloadSpec shown in the workspace state (/intent_constraints/field_roles, a list of"
+        " {field, role: row_id|entity_id|split_group|predictor|target, data_type:"
+        " string|number|integer|boolean, nullable, public_output:"
+        " excluded|authorised_join_only|task_output}; /intent_constraints/features"
+        " {allowed_fields, excluded_fields, count_basis: source_fields|transformed_features,"
+        " hard_max_count, soft_objective: none|minimise_count_among_feasible};"
+        " /intent_constraints/split_group_fields; /intent_constraints/output_transforms, a list"
+        " of {operation: round_to_increment, output_field, increment, units, ties:"
+        " away_from_zero|to_even, raw_value_public: false, privacy_claim: precision_only};"
+        " /intent_constraints/privacy_status: not_requested|requires_review;"
+        " /requested_resources/max_external_charge_minor, which only the owner may change)."
+        " Every patched path needs a provenance entry quoting the exact words of the instruction"
+        " it comes from, with your extraction confidence and how material the change is. When"
+        " an ambiguity would change material work, ask one question instead of patching.",
         "parameters": {
             "type": "object",
             "additionalProperties": False,
@@ -90,7 +101,12 @@ TOOLS: dict[str, dict[str, Any]] = {
                         "required": ["field", "span", "confidence", "materiality"],
                     },
                 },
-                "question": {"type": ["string", "null"], "maxLength": 500},
+                "question": {
+                    "type": ["string", "null"],
+                    "maxLength": 500,
+                    "description": "Set this when an ambiguity changes material work: the owner"
+                    " is asked it; a patch in the same call applies first (the unambiguous part).",
+                },
             },
             "required": ["expected_revision", "patch", "provenance", "question"],
         },
@@ -207,6 +223,7 @@ class Dispatcher:
         self,
         ctx: TrustedContext,
         job: dict[str, Any],
+        command: dict[str, Any],
         *,
         ledger: Ledger,
         store: Store,
@@ -215,8 +232,9 @@ class Dispatcher:
         profile: Callable[[str, str, str], dict[str, Any]],
         clock: Callable[[], str],
     ) -> None:
-        self.ctx, self.job, self.ledger, self.store = ctx, job, ledger, store
-        self.admit, self.run_job, self.profile, self.clock = admit, run_job, profile, clock
+        self.ctx, self.job, self.command = ctx, job, command
+        self.ledger, self.store, self.clock = ledger, store, clock
+        self.admit, self.run_job, self.profile = admit, run_job, profile
 
     def revision_check(self, name: str, arguments: dict[str, Any]) -> None:
         """Revision: a patch names the current one; work stops on a revision the job predates."""
@@ -255,19 +273,43 @@ class Dispatcher:
             case "inspect_schema":
                 return self.profile(arguments["source"], arguments["path"], call_id)
             case "propose_requirement_patch":
-                if arguments["question"]:
-                    return {"asked": arguments["question"], "applied": False}
-                command = self.job["task"]["command"]  # revise refuses the owner's paths itself
-                successor, impact = revise(
+                asked = {"asked": arguments["question"]} if arguments["question"] else {}
+                proposed = arguments["patch"]
+                if asked and not proposed:
+                    return asked | {"applied": False}
+                current = current_workload(self.ctx, self.ledger)
+                self.grounded(proposed, current)
+                whole = complete(current, proposed)
+                derived = [
+                    {
+                        "field": operation["path"],
+                        "source_kind": "trusted_observation",
+                        "message_id": None,
+                        "source_span": None,
+                        "extraction_confidence": None,
+                        "materiality": "medium",
+                        "confirmation_status": "proposed",
+                        "confirmed_by": None,
+                    }
+                    for operation in whole[len(proposed) :]
+                ]
+                successor, impact = revise(  # revise refuses the owner's paths itself
                     self.ctx,
-                    arguments["patch"],
+                    whole,
                     arguments["expected_revision"],
-                    command,
-                    canonical_json(arguments["provenance"]).decode(),
+                    self.command["client_message_id"],
+                    self.command["text"],
                     ledger=self.ledger,
                     clock=self.clock,
+                    provenance=[*self.provenance(proposed, arguments["provenance"]), *derived],
                 )
-                return {"applied": True, "revision": successor["revision"], "impact": impact}
+                return asked | {  # the unambiguous part applies; the question still ends the task
+                    "applied": True,
+                    "revision": successor["revision"],
+                    "readback": describe(whole),
+                    "diff": whole,
+                    "impact": impact,
+                }
             case "write_code_artifact":
                 work = self.store.staging(f"artifact-{call_id}")
                 (work / "source").write_text(arguments["source"])
@@ -295,6 +337,94 @@ class Dispatcher:
                 return self.outcome(seen or {})
             case _:
                 raise DspError(ErrorCode.DEPENDENCY_UNAVAILABLE, NOT_YET)
+
+    def grounded(self, patch: list[dict[str, Any]], current: dict[str, Any]) -> None:
+        """A proposal says only what the instruction said: no invented number, no unnamed drop.
+
+        Under the intent constraints every number in a value must appear in the instruction (a
+        hard maximum or an increment the owner never gave is an invention); a field role may be
+        removed only when the instruction names that field; a patch that changes nothing is
+        refused, so the model asks instead of pretending.
+        """
+        text = self.command["text"]
+        if not patch:
+            raise DspError(ErrorCode.INPUT_INVALID, "the patch is empty: ask a question instead")
+
+        def numbers(value: Any) -> list[int | float]:
+            if isinstance(value, bool):
+                return []
+            if isinstance(value, int | float):
+                return [value]
+            if isinstance(value, dict):
+                return [n for item in value.values() for n in numbers(item)]
+            if isinstance(value, list):
+                return [n for item in value for n in numbers(item)]
+            return []
+
+        roles = current["intent_constraints"]["field_roles"]
+        for operation in patch:
+            path = operation["path"]
+            if path.startswith("/intent_constraints"):
+                for number in numbers(operation["value"]):
+                    if f"{number:g}" not in text:
+                        raise DspError(
+                            ErrorCode.INPUT_INVALID,
+                            f"the number {number:g} is not in the instruction",
+                        )
+            if operation["op"] == "remove" and path.startswith("/intent_constraints/field_roles/"):
+                index = path.rsplit("/", 1)[1]
+                named = (
+                    roles[int(index)]["field"]
+                    if index.isdigit() and int(index) < len(roles)
+                    else ""
+                )
+                if named and named not in text:
+                    raise DspError(
+                        ErrorCode.INPUT_INVALID,
+                        f"{named} is not named in the instruction, so its role stays: propose "
+                        "the patch again without the operation that removes it",
+                    )
+        if apply_patch(current, patch) == current:
+            raise DspError(
+                ErrorCode.INPUT_INVALID, "the patch changes nothing: ask a question instead"
+            )
+
+    def provenance(
+        self, patch: list[dict[str, Any]], given: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """The typed, proposed provenance of a patch: every path covered, every span verbatim.
+
+        A span must be the instruction's own words, so a reader can find it; a field must be a
+        path the patch changes (or a prefix of one); an uncovered change is refused. Nothing here
+        is confirmed: the owner's own action does that.
+        """
+        paths = [operation["path"] for operation in patch]
+        for entry in given:
+            if entry["span"] not in self.command["text"]:
+                raise DspError(
+                    ErrorCode.INPUT_INVALID, "a provenance span is not in the instruction"
+                )
+            if not any(path.startswith(entry["field"]) for path in paths):
+                raise DspError(
+                    ErrorCode.INPUT_INVALID,
+                    f"provenance names {entry['field']}, which is not patched",
+                )
+        for path in paths:
+            if not any(path.startswith(entry["field"]) for entry in given):
+                raise DspError(ErrorCode.INPUT_INVALID, f"no provenance for the change at {path}")
+        return [
+            {
+                "field": entry["field"],
+                "source_kind": "direct_user_message",
+                "message_id": self.command["client_message_id"],
+                "source_span": entry["span"],
+                "extraction_confidence": entry["confidence"],
+                "materiality": entry["materiality"],
+                "confirmation_status": "proposed",
+                "confirmed_by": None,
+            }
+            for entry in given
+        ]
 
     def outcome(self, job: dict[str, Any]) -> dict[str, Any]:
         """A job's redacted outcome: state, bounded failure text, outputs by name, size, digest."""

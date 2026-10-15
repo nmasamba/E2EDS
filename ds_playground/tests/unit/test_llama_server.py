@@ -162,11 +162,11 @@ def test_r16_a_port_held_by_another_process_is_refused_before_spawning(
     listener.listen()
     port = listener.getsockname()[1]
     adapter = server(tmp_path)
-    adapter.verify = lambda: ("sha256:" + "a" * 64, "sha256:" + "b" * 64)  # type: ignore[method-assign]
+    adapter.verify = lambda: ("sha256:" + "a" * 64, "sha256:" + "b" * 64)
     adapter.binding["endpoint"]["port"] = port
     adapter.client = httpx.Client(base_url=f"http://127.0.0.1:{port}", timeout=5)
     spawned: list[str] = []
-    adapter.confined = lambda: spawned.append("spawned") or ["/usr/bin/false"]  # type: ignore[method-assign]
+    adapter.confined = lambda: spawned.append("spawned") or ["/usr/bin/false"]
     import threading
 
     def answer() -> None:
@@ -218,7 +218,7 @@ def test_r16_a_server_that_answers_health_but_fails_readiness_is_stopped(
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
     adapter = server(tmp_path)
-    adapter.verify = lambda: ("sha256:" + "a" * 64, "sha256:" + "b" * 64)  # type: ignore[method-assign]
+    adapter.verify = lambda: ("sha256:" + "a" * 64, "sha256:" + "b" * 64)
     adapter.binding["endpoint"]["port"] = port
     adapter.client = httpx.Client(base_url=f"http://127.0.0.1:{port}", timeout=5)
     fake = (
@@ -231,7 +231,8 @@ def test_r16_a_server_that_answers_health_but_fails_readiness_is_stopped(
         "    def log_message(self, *a): pass\n"
         f"http.server.HTTPServer(('127.0.0.1', {port}), H).serve_forever()\n"
     )
-    adapter.confined = lambda: [sys.executable, "-c", fake]  # type: ignore[method-assign]
+    adapter.confined = lambda: [sys.executable, "-c", fake]
+    adapter.footprint = lambda pid: 0  # the macOS poll, which Linux has no library for
     with pytest.raises(DspError, match="the server answered 401"):
         adapter.start()
     assert adapter.process is not None

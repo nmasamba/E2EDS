@@ -12,7 +12,7 @@ from typing import Any
 from dsp.application import jobs
 from dsp.application.admission import admit
 from dsp.application.assistant import Assistant
-from dsp.application.conversation import receipt, receive, settle
+from dsp.application.conversation import leading, receipt, receive, settle
 from dsp.application.workloads import patch_for, revise
 from dsp.contracts.canonical import pin
 from dsp.contracts.errors import DspError, ErrorCode, TrustedContext
@@ -36,6 +36,53 @@ def live_jobs(ctx: TrustedContext, ledger: Ledger) -> list[dict[str, Any]]:
 
 
 def command(
+    ctx: TrustedContext,
+    conversation_id: str,
+    client_message_id: str,
+    text: str,
+    expected_revision: str,
+    *,
+    job_id: str | None,
+    ledger: Ledger,
+    clock: Callable[[], str],
+    new_id: Callable[[], str],
+    workload: dict[str, Any],
+    binding: dict[str, Any],
+    assistant: Assistant | None = None,
+    store: Store | None = None,
+) -> dict[str, Any]:
+    """One message: its control first; if it opened with a phrase, the rest is its own command.
+
+    "Pause now; exclude region before continuing": the pause is applied on the fast path and
+    settled before the model sees anything; the rest is a second command, ``<id>:then``, which the
+    assistant takes while the work stays paused (resume is explicit).
+    """
+
+    def one(message_id: str, said: str) -> dict[str, Any]:
+        return _command(
+            ctx,
+            conversation_id,
+            message_id,
+            said,
+            expected_revision,
+            job_id=job_id,
+            ledger=ledger,
+            clock=clock,
+            new_id=new_id,
+            workload=workload,
+            binding=binding,
+            assistant=assistant,
+            store=store,
+        )
+
+    answer = one(client_message_id, text)
+    split = leading(text)
+    if split is not None and answer["operation"] == split[0]:
+        answer["then"] = one(f"{client_message_id}:then", split[1])
+    return answer
+
+
+def _command(
     ctx: TrustedContext,
     conversation_id: str,
     client_message_id: str,

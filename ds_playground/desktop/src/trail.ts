@@ -175,7 +175,10 @@ export function activity(log: LedgerEvent[]): Activity[] {
       add(`Job ${tail(body.job)}: ${said}${attempt}`, String(input.reason ?? input.because ?? ""));
     } else if (type === "workload.revised") {
       const impact = body.impact as { stale: unknown[]; holds: unknown[] };
-      const changed = (body.patch as { path: string }[]).map((op) => op.path.split("/").at(-1)).join(", ");
+      const changed =
+        typeof body.readback === "string"
+          ? body.readback
+          : (body.patch as { path: string }[]).map((op) => op.path.split("/").at(-1)).join(", ");
       add(`Requirements ${body.from} → ${body.to}: ${changed}; ${impact.stale.length} stale, ${impact.holds.length} held`);
     } else if (type === "admission.rejected") add(`Admission refused: ${body.reason}`);
     else if (type === "discovery.finished") add(`Environment observed: ${body.evidence_source}`);

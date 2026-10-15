@@ -740,6 +740,81 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   unavailable (the first run of that one survived because the test's harness had observed no hardware,
   so admission refused before the assistant check could; the test now observes first). Found and
   removed by the checks: the tools module's own refusal of a budget patch duplicated `revise`'s.
+- **2026-10-15 — S5 — DECISION — intent extraction is a typed patch with per-field provenance (5.3)** —
+  the model's `propose_requirement_patch` is a JSON Patch on the WorkloadSpec (add, replace, remove;
+  lists by index or `-`; applied whole to a copy, a missing path refuses the whole patch) plus one
+  provenance entry per patched path: the exact words of the instruction (a span that is not a substring
+  of the message is refused, so a reader can always find it), the model's extraction confidence, and the
+  materiality; every change must be covered and no entry may name an unpatched path. The entries are
+  written on the new revision as `direct_user_message`, `confirmation_status: proposed`,
+  `confirmed_by: null`; the Sprint 3 grammar's own change stays one `confirmed` entry, since the owner
+  typed it. The `workload.revised` event carries the structured diff (the patch) and a plain readback
+  the application writes from it (each path and value, nothing invented), which the trail shows; the
+  model's final text stays a proposal. A question (`question` set) applies nothing and ends the command
+  `needs_clarification` with the question as its reason: the suite's "ask only about ambiguities that
+  change imminent material work" is the model's call, bounded to one question per task.
+- **2026-10-15 — S5 — DECISION — the owner's paths through the assistant (5.3)** — a proposal on
+  `/requested_resources/max_external_charge_minor` or the evaluation contract is refused by `revise`
+  (REQUIRES_CONFIRMATION, as in Sprint 3), the refusal is the model's data, the task ends with its
+  proposal recorded, and the command is settled `rejected` with REQUIRES_CONFIRMATION and the reason:
+  "spend another £100" changes nothing and says who must act. The grant itself (FIN) does not exist yet.
+- **2026-10-15 — S5 — DECISION — a leading control phrase (5.3)** — a direct message that opens with an
+  exact control phrase followed by `;`, `.`, `,`, `:` or a line break and more text is that control
+  first (the fast path, settled before the model sees anything) and then a second command,
+  `<message id>:then`, whose text is the rest and which the assistant takes as an instruction; a retry
+  of the message id repeats neither. "Pause now; exclude region before continuing" therefore pauses the
+  live job, then revises the requirements while it stays paused (resume is explicit). A phrase quoted,
+  embedded or followed by other words in the same clause ("pause the music") remains an instruction,
+  as Sprint 3 decided.
+- **2026-10-15 — S5 — DECISION — the requirements' own rules complete a patch (5.3)** — three rules the
+  schema cannot express run on every proposed patch (`workloads.complete`, the contract-change skill's
+  semantic validators): a predictor field left in neither feature list by the patch is excluded (the
+  derived operation is appended, recorded with `trusted_observation` provenance and shown in the
+  readback as the application's), a field in both lists refuses the whole patch, adding an output
+  transform while the privacy status is `not_requested` sets it to `requires_review` (rounding is a
+  precision change, not anonymity), and a patch that leaves no row identifier is refused. Found by the
+  live runs: the 8B model does one of a two-step edit (drops `region` from the allowed list but does
+  not add it to the excluded one; adds the rounding transform but not the review), and once removed
+  the row id's role while adding the entity id's. The rules make the record right whatever the model
+  managed, without inventing intent: nothing is added that the proposal did not imply.
+- **2026-10-15 — S5 — DECISION — a proposal is grounded in the instruction or refused (5.3)** — before
+  the completion rules, three checks on what the model proposed, each with the instruction's text:
+  every number in a value under the intent constraints must appear in the instruction (a hard maximum
+  of 2 for "keep the feature set minimal" is an invention; the increment 10 for "nearest 10" is not), a
+  field role may be removed only when the instruction names that field (the model dropped the row id
+  to make "the ID" the only identifier, three times, under three wordings), and a patch that changes
+  nothing or is empty without a question is refused with "ask a question instead". The owner's budget
+  path is exempt from the number rule (minor units are a conversion). Found by the live runs; each is a
+  general rule, not a case.
+- **2026-10-15 — S5 — DECISION — the interpretation policy is in the model's instructions (5.3)** — the
+  reference cases of `conversational_control.md` "From language to enforceable intent" are stated as
+  numbered procedures, path by path (a named field not yet in the roles is added, never another field's
+  role changed; "the ID" is an entity id, a string, excluded; "minimal" features asks a fixed question;
+  rounding adds the typed transform; excluding moves a field between the two lists; a spend change is
+  a patch on the owner's budget path). Without them the model repurposed the row id's role for "the
+  ID", set a hard maximum instead of asking, rounded with ties to even and answered the budget change
+  in prose; measured on 2026-10-15, seed 1 (STATUS, 5.3). This is the product's policy from the suite,
+  not an aid to the tests; the tests check the typed records, never the prose.
+- **2026-10-15 — S5 — DEVIATION — typed proposals at temperature 0 (5.3)** — the binding's decoding is
+  `temperature 0` (the suite's example says 0.7): tool calls and patches are structured output, and at
+  0.7 the same instruction gave a different wrong patch on each run. The seed stays 1. A later binding
+  may set its own decoding; the record says what was used.
+- **2026-10-15 — S5 — FINDING — what the model got wrong that the application let stand (5.3)** —
+  "spend another £100" was proposed as 1,100 minor units (£11) and refused anyway for the owner; the
+  ID case once added `order_id` to the excluded list twice (the schema allows duplicates in that list).
+  Neither changed a record's meaning; both are the model's arithmetic and tidiness, logged for the
+  qualification suite (Sprint 11).
+- **2026-10-15 — S5 — FINDING — guards mutation-checked (5.3)** — eighteen, each broken in turn and each
+  caught: a span must be verbatim, a provenance field must be patched, every change must be covered,
+  provenance is recorded as proposed, a missing path refuses the whole patch, a field in both lists,
+  the derived exclusion, the derived review, a row id must remain, a question ends in clarification,
+  an owner-only proposal ends rejected, the leading phrase, the `:then` command, the readback on the
+  event, a number not in the instruction, an unnamed removal, a no-op patch and an empty patch.
+- **2026-10-15 — S5 — ASSUMPTION — repeatable live runs (5.3)** — every generation uses seed 1 and the
+  binding's temperature (0.7), so a run can be repeated on the same server; llama.cpp is deterministic
+  for one build, one profile and one seed. The five reference instructions are one `live_model` test
+  that writes an A29 evidence record whose slug names the binding (`interpretation-assistant-local-
+  qwen`), so another binding's record is a separate file and never merged.
 - **2026-10-15 — S5 — ASSUMPTION — the sprint branch** — the work is on the branch the desktop app made for
   this session, `claude/sprint-5-assistant-gateway-fc1f11`, from `main` at `73698be`, rather than a
   branch named `sprint-5-assistant`; the pull request carries the sprint's title.

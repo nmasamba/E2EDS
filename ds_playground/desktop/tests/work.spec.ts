@@ -95,7 +95,7 @@ test("A24, A25, A26, R15: pause and cancel by shortcut, change, resume by keyboa
   await say(page, "exclude field region");
   await expect(activity(page)).toContainText("You: exclude field region · applied");
   await expect(activity(page)).toContainText(
-    "Requirements 1.0.0 → 2.0.0: allowed_fields, excluded_fields; 0 stale, 0 held",
+    'Requirements 1.0.0 → 2.0.0: /features/allowed_fields ← ["item_count"]; /features/excluded_fields ← ["order_id", "region"]; 0 stale, 0 held',
   );
   await expect(stage(page, "Goal and constraints")).toContainText("requirements at 2.0.0");
 

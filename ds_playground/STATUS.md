@@ -6,7 +6,8 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 
 - **Sprint:** 5 — M1 assistant gateway, open model first (B24, B26, B27; A24, A29, A30; R16, R17, R18,
   R22; D16, D17).
-- **Claimed prompt:** 5.2 (tool dispatcher and loop). D3 picked: A, Metal full offload (2026-10-15).
+- **Claimed prompt:** 5.3 done (pending its commit); next 5.4 (generate, run, repair). D3 picked: A,
+  Metal full offload (2026-10-15).
 - **Branch:** `claude/sprint-5-assistant-gateway-fc1f11`, from `main` at `73698be` (PRs #1 to #8 merged).
 
 ## Done
@@ -525,6 +526,44 @@ Code commit `2c81168`; the evidence and this file were committed after it.
 - Guards mutation-checked (17, all caught; decisions 2026-10-15 "guards mutation-checked (5.2)"). Found
   by the checks: a duplicate owner-path refusal (removed) and a test that could not tell the assistant
   check from admission's (fixed).
+
+## Prompt 5.3 — intent extraction (2026-10-15)
+
+- `propose_requirement_patch` is a JSON Patch applied whole (`workloads.apply_patch`: add, replace,
+  remove, lists by index or `-`) with one provenance entry per patched path: the exact words of the
+  instruction (a span that is not in the message is refused), the model's confidence and the
+  materiality, recorded on the revision as `proposed` (the grammar's own change stays `confirmed`);
+  the `workload.revised` event carries the diff and a plain readback the application writes, shown in
+  the trail. Grounding checks before anything applies: no number the instruction does not contain, no
+  removal of a field it does not name, no empty or no-op patch without a question. The requirements'
+  own rules then complete a patch: a predictor in neither feature list is excluded, an added output
+  transform puts privacy under review, a row identifier must remain, a field in both lists is refused.
+  A question (with or without a patch, which applies first) ends the command `needs_clarification`;
+  a proposal on the owner's budget path ends it `rejected` with REQUIRES_CONFIRMATION. A message that
+  opens with an exact control phrase is that control first, settled before the model sees anything,
+  then its own instruction command (`<id>:then`). The interpretation policy of the suite's reference
+  table is in the model's instructions as numbered procedures; typed proposals run at temperature 0,
+  seed 1 (a logged deviation from the example's 0.7).
+- Tests: `tests/unit/test_intent.py` (12: patches applied or refused whole, the readback, the leading
+  phrase, the completion rules); `test_assistant_loop.py` +4 scripted (provenance verbatim and
+  covering, recorded as proposed with the readback; a question needs clarification and a budget
+  proposal needs the owner; "Pause now; exclude region before continuing" pauses first and keeps the
+  work paused; an invented number, an unnamed drop and a no-op patch are refused);
+  `tests/integration/test_live_intent.py` (1, `live_model`): the five reference instructions against
+  the real model, one A29 evidence record per binding.
+- Guards mutation-checked (18, all caught; decisions 2026-10-15 "guards mutation-checked (5.3)").
+- **Live result, binding `assistant-local-qwen` (Metal, seed 1, temperature 0), 2026-10-15:** all five
+  as the suite describes on the final run: `use account_num as the ID` added an entity_id string role
+  excluded from predictors (one operation; the row id kept); `keep the feature set minimal` set the
+  soft objective and asked the counting question (`needs_clarification`); `anonymise regression
+  results by rounding to the nearest 10` added the typed transform (increment 10, ties away from zero)
+  and the privacy status went under review; `Pause now; exclude region before continuing` paused the
+  running job, then moved `region` from allowed to excluded with the job still paused;
+  `spend another £100` was proposed on the budget path and refused for the owner (the model wrote
+  110000 minor units, which is £1,100: its arithmetic, logged). Earlier runs, before the grounding
+  checks and the procedural rules, failed every case (decisions, 2026-10-15): the model repurposed
+  the row id, set a hard maximum of 2, rounded to even, deleted a role instead of excluding a field,
+  and answered the budget change in prose. Results are per binding and not merged.
 
 ## D3 checkpoint — launch profile (2026-10-15, measured under the Seatbelt profile on this M1 Max)
 
