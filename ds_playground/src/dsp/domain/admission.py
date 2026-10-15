@@ -44,9 +44,10 @@ def code_task(
 
     A task with ``language`` is Python or SQL: the caller supplies only the source digest, inputs,
     outputs, limits within the workload's envelope and permissions; the rest is derived, the runner
-    environment's lock digest (``environment``) included. Any other task is the test worker's cues,
-    recorded by their digest. The ID is derived from the content, so the same declaration under the
-    same revision and environment is the same CodeTask.
+    environment's lock digest (``environment``) included. A task naming a ``command`` is the
+    assistant's loop for that instruction; any other task is the test worker's cues. Both are
+    recorded by their digest and never run by the runner. The ID is derived from the content, so
+    the same declaration under the same revision and environment is the same CodeTask.
     """
     if "language" in task:
         if unknown := sorted(set(task) - set(SUPPLIED)):
@@ -55,10 +56,11 @@ def code_task(
             raise DspError(ErrorCode.INPUT_INVALID, "a task's language is python or sql")
         declared = {"inputs": [], "permissions": []} | task
     else:
-        declared = {"language": "test_worker", "source_sha256": digest(canonical_json(task))}
+        kind = "assistant" if "command" in task else "test_worker"
+        declared = {"language": kind, "source_sha256": digest(canonical_json(task))}
         declared |= {"inputs": [], "outputs": [], "permissions": []}
     body = {
-        "schema_version": "0.1.0",
+        "schema_version": "0.2.0",
         "type": "CodeTask",
         "revision": "1.0.0",
         "parent_ref": None,
@@ -107,7 +109,7 @@ def refusal(
         return ErrorCode.INPUT_INVALID, f"operation {operation} is not declared by the workload"
     if operation not in binding["capabilities"]["declared_operations"]:
         return ErrorCode.INPUT_INVALID, f"the compute option does not offer {operation}"
-    if task and task["seconds"] > asked["wall_time_seconds"]:
+    if task and task.get("seconds", 0) > asked["wall_time_seconds"]:
         allowed = asked["wall_time_seconds"]
         return (
             ErrorCode.INPUT_INVALID,

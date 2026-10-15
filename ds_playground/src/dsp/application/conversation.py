@@ -17,7 +17,6 @@ from dsp.contracts.schemas import validate
 from dsp.ports import Ledger
 
 MAX_BYTES = 16 * 1024  # D18
-NO_ASSISTANT = "no assistant is bound yet"
 CONTROLS = {
     "pause": "pause",
     "pause now": "pause",
@@ -82,7 +81,8 @@ def receive(
 
     The same client message ID again returns the same receipt (A27: a lost acknowledgement); the
     same ID with other text is an IDEMPOTENCY_CONFLICT. The first message of a conversation creates
-    it. An instruction is then rejected, honestly, because no assistant is bound yet.
+    it. An instruction is settled by the control path: accepted as an assistant job when the
+    assistant is ready, otherwise rejected with the assistant's actual state.
     """
     if len(text.encode()) > MAX_BYTES:
         raise DspError(ErrorCode.INPUT_INVALID, "the message is larger than 16 KiB")
@@ -147,16 +147,6 @@ def receive(
     }
     validate("ConversationCommand", command)
     _record(ctx, command, "message.received", body, [*objects, command], ledger)
-    if command["operation"] == "instruction":
-        command = settle(
-            ctx,
-            command,
-            "rejected",
-            because=ErrorCode.ASSISTANT_UNAVAILABLE,
-            reason=NO_ASSISTANT,
-            ledger=ledger,
-            clock=clock,
-        )
     return command
 
 

@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://dsplayground.dev/schemas/app/0.2.0/Job.schema.json",
-  "title": "Job — app-owned contract",
-  "description": "A durable job and its live attempt. Every transition is a new revision and one ledger event; the fence advances on lease expiry, pause and cancel, and a result is committed only under the fence its attempt was leased with. Version 0.2.0: a job that runs a CodeTask in the sandboxed runner has no test-worker task (null); its CodeTask is pinned by its ExecutionRequest. The payload digest is the submitted task's, which an idempotent retry must repeat (D05).",
+  "$id": "https://dsplayground.dev/schemas/app/0.3.0/Job.schema.json",
+  "title": "Job \u2014 app-owned contract",
+  "description": "A durable job and its live attempt. Every transition is a new revision and one ledger event; the fence advances on lease expiry, pause and cancel, and a result is committed only under the fence its attempt was leased with. Version 0.2.0: a job that runs a CodeTask in the sandboxed runner has no test-worker task (null); its CodeTask is pinned by its ExecutionRequest. The payload digest is the submitted task's, which an idempotent retry must repeat (D05). Version 0.3.0: a job that runs the assistant's loop for one instruction carries that command as its task ({command}); a job the assistant submitted names its parent job, so a pause or cancel of the parent reaches it and the fast controls address the parent.",
   "type": "object",
   "additionalProperties": false,
   "$defs": {
@@ -59,7 +59,7 @@
   },
   "properties": {
     "schema_version": {
-      "const": "0.2.0"
+      "const": "0.3.0"
     },
     "type": {
       "const": "Job"
@@ -117,6 +117,20 @@
           "required": [
             "cues",
             "seconds"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "command": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            }
+          },
+          "required": [
+            "command"
           ]
         },
         {
@@ -271,6 +285,14 @@
         "null"
       ],
       "maxLength": 200
+    },
+    "parent": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "maxLength": 160
     }
   },
   "required": [
@@ -295,6 +317,7 @@
     "charged_minor",
     "acknowledged_at",
     "stopped_at",
-    "reason"
+    "reason",
+    "parent"
   ]
 }

@@ -64,6 +64,9 @@ def admit(
     clock: Callable[[], str],
     new_id: Callable[[], str],
     environment: str | None = None,
+    parent: str | None = None,
+    conversation: dict[str, Any] | None = None,
+    assistant_binding: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Admit the request and return the queued job, or record the rejection and raise.
 
@@ -72,7 +75,8 @@ def admit(
     ExecutionRequest, pinning the CodeTask it declared, with its reason; no job and no reservation
     exist for it. Every input must be data captured through a grant, and the source must be in
     the content store. ``environment`` is the runner environment's lock digest, recorded on a
-    Python or SQL CodeTask.
+    Python or SQL CodeTask. A job the assistant submits names its ``parent`` job; the request
+    of an assistant job, or of its children, pins the ``conversation`` and the assistant binding.
     """
     if not SUBMIT & ctx.scopes:
         raise DspError(ErrorCode.FORBIDDEN, "this context may not submit work")
@@ -121,8 +125,8 @@ def admit(
             "idempotency_key": idempotency_key,
             "authorisation_context_ref": ctx.principal,
             "state": "admitted",
-            "conversation_ref": None,
-            "assistant_model_binding_ref": None,
+            "conversation_ref": pin(conversation) if conversation else None,
+            "assistant_model_binding_ref": pin(assistant_binding) if assistant_binding else None,
             "source_code_task_ref": pin(code),
             "requirement_revision": workload["revision"],
             "workflow_plan_ref": pin(plan) if plan else None,
@@ -170,6 +174,7 @@ def admit(
             reservation=reservation["id"],
             workload_ref=pin(workload),
             idempotency_key=idempotency_key,
+            parent=parent,
         )
         reservation["job_ref"] = job["id"]
         validate("Reservation", reservation)

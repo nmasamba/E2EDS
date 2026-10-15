@@ -477,7 +477,7 @@ def test_b26_admission_stores_and_pins_the_local_binding_and_the_code_task(tmp_p
     binding = store.get(CTX, "ComputeBinding", BINDING["id"], BINDING["revision"])
     assert (binding, request["compute_binding_ref"]) == (BINDING, pin(BINDING))
     assert binding["assurance"] == "os_sandbox_single_user"
-    assert (job["schema_version"], job["task"]) == ("0.2.0", None)
+    assert (job["schema_version"], job["task"], job["parent"]) == ("0.3.0", None, None)
     assert job["payload_sha256"] == digest(canonical_json(task))
     validate("Job", job)
     assert attempt(store, key="k1", task=task, content=content) == job

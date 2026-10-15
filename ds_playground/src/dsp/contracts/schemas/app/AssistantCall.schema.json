@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dsplayground.dev/schemas/app/0.1.0/AssistantCall.schema.json",
+  "title": "AssistantCall \u2014 app-owned contract",
+  "description": "One tool call the model proposed for one assistant job, as the application recorded it: validated and dispatched under the attempt's fence, then committed with the quoted result, or refused with the code. The record is written before the tool runs, so a restart never dispatches a committed call twice; the D17 counters are sums over a job's records.",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {
+    "time": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "properties": {
+    "schema_version": {
+      "const": "0.1.0"
+    },
+    "type": {
+      "const": "AssistantCall"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "revision": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "job": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "n": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 20
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3
+    },
+    "fence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "tool": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "arguments": {
+      "type": "object"
+    },
+    "state": {
+      "enum": [
+        "dispatched",
+        "committed",
+        "refused"
+      ]
+    },
+    "result": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "refusal": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string",
+              "maxLength": 300
+            }
+          },
+          "required": [
+            "code",
+            "reason"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "prompt_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "completion_tokens": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "prompt_tokens",
+        "completion_tokens"
+      ]
+    },
+    "generation_seconds": {
+      "type": "number",
+      "minimum": 0
+    },
+    "repair": {
+      "type": "boolean"
+    },
+    "at": {
+      "$ref": "#/$defs/time"
+    }
+  },
+  "required": [
+    "schema_version",
+    "type",
+    "id",
+    "revision",
+    "job",
+    "n",
+    "attempt",
+    "fence",
+    "tool",
+    "arguments",
+    "state",
+    "result",
+    "refusal",
+    "usage",
+    "generation_seconds",
+    "repair",
+    "at"
+  ]
+}

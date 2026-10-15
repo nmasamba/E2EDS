@@ -6,6 +6,7 @@ concurrent transition that wins the race is retried from the reloaded job; a wor
 report is recorded as rejected and refused.
 """
 
+import contextlib
 import json
 import logging
 from collections.abc import Callable
@@ -194,8 +195,9 @@ def control(
 ) -> tuple[dict[str, Any], bool]:
     """Apply an explicit control on the fast path and return the job and whether it changed.
 
-    Pause and cancel advance the fence at once; resume is a fresh admission under the current
-    workload revision; status reads. A finished job is left as it is.
+    Pause and cancel advance the fence at once, on the job and on any live job it is the parent
+    of; resume is a fresh admission under the current workload revision; status reads. A
+    finished job is left as it is.
     """
     if action == "resume":
         return readmit(
@@ -209,7 +211,13 @@ def control(
         )
     if action == "status":
         return inspect(ctx, job_id, ledger=ledger, clock=clock), False
-    return _apply(ctx, job_id, action, ledger=ledger, clock=clock)
+    job, changed = _apply(ctx, job_id, action, ledger=ledger, clock=clock)
+    for child in ledger.current(ctx, "Job"):
+        # A job the assistant submitted stops with the task that submitted it, best effort.
+        if child.get("parent") == job_id and child["state"] not in machine.RELEASES:
+            with contextlib.suppress(DspError):
+                _apply(ctx, child["id"], action, ledger=ledger, clock=clock)
+    return job, changed
 
 
 def reconcile(ctx: TrustedContext, *, ledger: Ledger, clock: Callable[[], str]) -> None:

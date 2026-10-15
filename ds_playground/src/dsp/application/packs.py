@@ -49,13 +49,14 @@ def submit_profile(
     environment: str | None,
     clock: Callable[[], str],
     new_id: Callable[[], str],
+    parent: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Capture a CSV named under a source grant and queue the profiling recipe on it (R11, D20).
 
     The grant is checked now, at use; a file outside the D20 size bound is refused before anything
     is captured. The capture is recorded as a DataManifest, the recipe's source is stored, and the
-    recipe is admitted as a sandboxed Python task with the capture as its one input. Return the
-    queued job and the DataManifest.
+    recipe is admitted as a sandboxed Python task with the capture as its one input, a child of
+    ``parent`` when the assistant asked for it. Return the queued job and the DataManifest.
     """
     source = resolve(ctx, source_handle, relative_path, "source_root", ledger=ledger)
     if not source.is_file():
@@ -103,6 +104,7 @@ def submit_profile(
         clock=clock,
         new_id=new_id,
         environment=environment,
+        parent=parent,
     )
     return job, data
 

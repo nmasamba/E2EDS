@@ -113,11 +113,13 @@ class ModelGateway(Protocol):
         deadline: float,
         seed: int,
         temperature: float,
+        stop: Callable[[], bool] | None = None,
     ) -> dict[str, Any]:
         """Return the model's next message (text or tool calls) and its token usage, or raise.
 
         ``deadline`` is seconds for this one call (D17: 300 s); past it the generation is
-        stopped and ASSISTANT_UNAVAILABLE is raised.
+        stopped and ASSISTANT_UNAVAILABLE is raised. ``stop`` is asked as tokens arrive; True
+        ends the generation and the answer says ``stopped``.
         """
 
     def count(self, text: str) -> int:

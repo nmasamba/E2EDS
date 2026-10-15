@@ -10,11 +10,13 @@ from collections.abc import Callable
 from typing import Any
 
 from dsp.application import jobs
-from dsp.application.conversation import NO_ASSISTANT, receipt, receive, settle
+from dsp.application.admission import admit
+from dsp.application.assistant import Assistant
+from dsp.application.conversation import receipt, receive, settle
 from dsp.application.workloads import patch_for, revise
 from dsp.contracts.canonical import pin
 from dsp.contracts.errors import DspError, ErrorCode, TrustedContext
-from dsp.ports import Ledger
+from dsp.ports import Ledger, Store
 
 CONVERSATION = "conversation-local"
 ACTIONS = {"pause", "resume", "cancel", "status"}
@@ -24,8 +26,13 @@ ENDED = {"succeeded", "failed", "cancelled"}
 
 
 def live_jobs(ctx: TrustedContext, ledger: Ledger) -> list[dict[str, Any]]:
-    """The jobs that have not ended; a paused job is live, it can resume."""
-    return [job for job in ledger.current(ctx, "Job") if job["state"] not in ENDED]
+    """The jobs that have not ended; a paused job is live, it can resume.
+
+    A job the assistant submitted is addressed through its parent while that parent is live.
+    """
+    live = [job for job in ledger.current(ctx, "Job") if job["state"] not in ENDED]
+    parents = {job["id"] for job in live}
+    return [job for job in live if job.get("parent") not in parents]
 
 
 def command(
@@ -41,6 +48,8 @@ def command(
     new_id: Callable[[], str],
     workload: dict[str, Any],
     binding: dict[str, Any],
+    assistant: Assistant | None = None,
+    store: Store | None = None,
 ) -> dict[str, Any]:
     """Receive the message; if it is a control, apply it to the job (the live one by default).
 
@@ -49,6 +58,9 @@ def command(
     ``rejected`` with the code when the job's state refuses it; a phrase with no live job is
     rejected and one with several live jobs needs clarification, since a phrase names no job; a
     repeated client message ID is not applied twice. The answer carries the job's actual state.
+    An instruction is admitted as an assistant job when the assistant is ready, and the command
+    is ``accepted`` with that job as its effect; otherwise it is rejected with the assistant's
+    state, and the conversation and the controls stay as they are.
     """
     if not INTERACT & ctx.scopes:
         raise DspError(ErrorCode.FORBIDDEN, "this context may not send commands")
@@ -63,8 +75,18 @@ def command(
         new_id=new_id,
     )
     answer = receipt(received)
-    if received["operation"] == "instruction":
-        answer["because"] = NO_ASSISTANT
+    if received["state"] == "received" and received["operation"] == "instruction":
+        return answer | instruct(
+            ctx,
+            received,
+            ledger=ledger,
+            clock=clock,
+            new_id=new_id,
+            workload=workload,
+            binding=binding,
+            assistant=assistant,
+            store=store,
+        )
     if received["state"] == "received" and received["operation"] == "change_requirements":
         return answer | change(
             ctx,
@@ -128,6 +150,62 @@ def command(
     state = "applied" if changed or received["operation"] == "status" else "superseded"
     settled = settle(ctx, received, state, effect=pin(job), ledger=ledger, clock=clock)
     return receipt(settled) | {"job": job, "changed": changed}
+
+
+def instruct(
+    ctx: TrustedContext,
+    received: dict[str, Any],
+    *,
+    ledger: Ledger,
+    clock: Callable[[], str],
+    new_id: Callable[[], str],
+    workload: dict[str, Any],
+    binding: dict[str, Any],
+    assistant: Assistant | None,
+    store: Store | None,
+) -> dict[str, Any]:
+    """Admit an instruction as an assistant job, or reject it with the assistant's state."""
+    reason = "no assistant is bound yet"
+    if assistant is not None and store is not None:
+        try:
+            assistant.gateway()
+            conversation = ledger.get(
+                ctx,
+                "Conversation",
+                received["conversation_ref"]["id"],
+                received["conversation_ref"]["revision"],
+            )
+            job = admit(
+                ctx,
+                "analyse",
+                received["id"],
+                {"command": received["id"]},
+                workload=workload,
+                binding=binding,
+                ledger=ledger,
+                store=store,
+                clock=clock,
+                new_id=new_id,
+                conversation=conversation,
+                assistant_binding=assistant.binding,
+            )
+        except DspError as error:
+            reason = error.message
+        else:
+            accepted = settle(
+                ctx, received, "accepted", effect=pin(job), ledger=ledger, clock=clock
+            )
+            return receipt(accepted) | {"job": job, "changed": True}
+    rejected = settle(
+        ctx,
+        received,
+        "rejected",
+        because=ErrorCode.ASSISTANT_UNAVAILABLE,
+        reason=reason,
+        ledger=ledger,
+        clock=clock,
+    )
+    return receipt(rejected) | {"job": None, "changed": False, "because": reason}
 
 
 def change(

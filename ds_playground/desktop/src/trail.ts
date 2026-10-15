@@ -120,9 +120,12 @@ export function freshness(observedAt: string | null, now: number) {
 /** Every job's latest state from its own events, the most recently queued first. */
 export function jobs(log: LedgerEvent[]): JobView[] {
   const seen = new Map<string, JobView>();
+  const parents = new Map<string, string>();
   for (const { type, body } of log) {
     const state = jobState(type, body);
     if (!state) continue;
+    const input = (body.input ?? {}) as Record<string, unknown>;
+    if (type === "job.queued" && typeof input.parent === "string") parents.set(String(body.job), input.parent);
     seen.set(String(body.job), {
       id: String(body.job),
       state,
@@ -130,7 +133,9 @@ export function jobs(log: LedgerEvent[]): JobView[] {
       fence: Number(body.fence),
     });
   }
-  return [...seen.values()].reverse();
+  // A job the assistant submitted is addressed through its parent while that parent is live.
+  const live = (id: string) => seen.has(id) && !ENDED.has(seen.get(id)!.state);
+  return [...seen.values()].filter((job) => !live(parents.get(job.id) ?? "")).reverse();
 }
 
 /** The job the header's controls act on: the most recent one that has not ended. */
@@ -180,6 +185,9 @@ export function activity(log: LedgerEvent[]): Activity[] {
     else if (type === "export.committed") add(`Export committed: ${body.version}`);
     else if (type === "assistant.ready") add(`Assistant ready: ${body.profile}`);
     else if (type === "assistant.unavailable") add(`Assistant unavailable: ${body.reason}`);
+    else if (type === "assistant.call_dispatched") add(`Assistant call ${body.n}: ${body.tool}`);
+    else if (type === "assistant.call_refused") add(`Assistant call ${body.n}: ${body.tool}`, `refused · ${body.reason}`);
+    else if (type === "assistant.answered") add(`Assistant (a proposal, not a result): ${body.text}`);
   }
   return items;
 }

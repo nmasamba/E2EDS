@@ -412,8 +412,14 @@ class LlamaServer:
         deadline: float,
         seed: int,
         temperature: float,
+        stop: Callable[[], bool] | None = None,
     ) -> dict[str, Any]:
-        """One chat completion within the deadline; past it the server is stopped (hung)."""
+        """One streamed chat completion within the deadline; past it the server is stopped (hung).
+
+        The stream is read token by token so ``stop`` can end the generation between chunks
+        (closing the stream cancels it on the server); a stop during prompt processing takes
+        effect at the first chunk.
+        """
         decoding = self.binding["decoding"]
         body: dict[str, Any] = {
             "messages": list(messages),
@@ -423,15 +429,51 @@ class LlamaServer:
             "top_p": decoding["top_p"],
             "top_k": decoding["top_k"],
             "min_p": decoding["min_p"],
+            "stream": True,
+            "stream_options": {"include_usage": True},
         }
         if tools:
             body["tools"] = list(tools)
         if not self.alive():
             raise DspError(ErrorCode.ASSISTANT_UNAVAILABLE, self.failure or "server not running")
+        content, reasoning, finish, halted = "", False, None, False
+        calls: dict[int, dict[str, Any]] = {}
+        usage: dict[str, Any] = {}
+        timings: dict[str, Any] = {}
         try:
-            answer = self.client.post(
-                "/v1/chat/completions", json=body, headers=self.headers(), timeout=deadline
-            )
+            with self.client.stream(
+                "POST", "/v1/chat/completions", json=body, headers=self.headers(), timeout=deadline
+            ) as answer:
+                if answer.status_code != 200:
+                    raise DspError(
+                        ErrorCode.ASSISTANT_UNAVAILABLE,
+                        f"the model server answered {answer.status_code}",
+                    )
+                for line in answer.iter_lines():
+                    if stop is not None and stop():
+                        halted = True
+                        break
+                    if not line.startswith("data: ") or line == "data: [DONE]":
+                        continue
+                    chunk = json.loads(line[6:])
+                    usage = chunk.get("usage") or usage
+                    timings = chunk.get("timings") or timings
+                    for choice in chunk.get("choices", []):
+                        delta = choice.get("delta", {})
+                        content += delta.get("content") or ""
+                        reasoning = reasoning or "reasoning_content" in delta
+                        for part in delta.get("tool_calls") or []:
+                            slot = calls.setdefault(
+                                part.get("index", 0),
+                                {"id": "", "type": "function", "function": {}},
+                            )
+                            slot["id"] = part.get("id") or slot["id"]
+                            function = slot["function"]
+                            for key in ("name", "arguments"):
+                                function[key] = function.get(key, "") + (
+                                    part.get("function", {}).get(key) or ""
+                                )
+                        finish = choice.get("finish_reason") or finish
         except httpx.TimeoutException:
             self.failure = f"no answer within the {deadline:g} s generation deadline"
             self.stop()
@@ -441,17 +483,17 @@ class LlamaServer:
                 ErrorCode.ASSISTANT_UNAVAILABLE,
                 f"the model server did not answer ({type(error).__name__})",
             ) from None
-        if answer.status_code != 200:
-            raise DspError(
-                ErrorCode.ASSISTANT_UNAVAILABLE, f"the model server answered {answer.status_code}"
-            )
-        found = answer.json()
-        choice = found["choices"][0]
+        message: dict[str, Any] = {"role": "assistant", "content": content}
+        if calls:
+            message["tool_calls"] = [calls[index] for index in sorted(calls)]
+        if reasoning:
+            message["reasoning_content"] = ""  # its presence is what the probe refuses
         return {
-            "message": choice["message"],
-            "finish_reason": choice.get("finish_reason"),
-            "usage": found.get("usage", {}),
-            "timings": found.get("timings", {}),
+            "message": message,
+            "finish_reason": finish,
+            "usage": usage,
+            "timings": timings,
+            "stopped": halted,
         }
 
     def count(self, text: str) -> int:

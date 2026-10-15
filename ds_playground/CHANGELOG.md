@@ -2,7 +2,19 @@
 
 ## Sprint 5 — assistant gateway, open model first (in progress)
 
-- Cancel run is Cmd+Shift+K on macOS and Ctrl+Shift+K on Linux (in the window and in the native menu); Cmd+. reached nothing in the built macOS app.
+- Cancel run is Cmd+Shift+K on macOS and Ctrl+Shift+K on Linux (in the window and in the native menu);
+  Cmd+. reached nothing in the built macOS app.
+- The local open model: the harness verifies the model's size and SHA-256, starts llama-server confined
+  by the OS (Seatbelt on macOS with Metal; bubblewrap on Linux, where it listens on a UNIX socket),
+  with its API key from the OS secret store in a 0600 file, and marks the assistant ready only after the
+  health endpoint and a typed tool-response probe. The workspace opens with the model absent and the
+  header and trail say `assistant unavailable: <reason>`. `make live` and `make live-linux` run the
+  model tests; `make verify` leaves them out.
+- An instruction becomes an assistant job: the assistant proposes typed tool calls (inspect a granted
+  CSV's schema, propose a requirement patch, write a code artifact, submit a code task, inspect its
+  results), the application validates and runs each one, and the trail shows every call, refusal and
+  the assistant's answer, marked as a proposal. Pause and cancel reach the jobs the assistant
+  submitted; the instruction's command is accepted, then applied, rejected or needs clarification.
 
 ## Sprint 4 — sandboxed native runner (2026-10-13)
 

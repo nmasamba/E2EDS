@@ -51,7 +51,7 @@ test("A27, R15: the composer's receipts, and a message the harness never had, ar
   await say(page, "status");
   await expect(activity(page)).toContainText("You: status · rejected · no job is live");
   await say(page, "please summarise the data");
-  await expect(activity(page)).toContainText("You: please summarise the data · rejected · no assistant is bound yet");
+  await expect(activity(page)).toContainText("You: please summarise the data · rejected · model missing");
   await expect(page.getByRole("textbox", { name: "Message" })).toHaveValue("");
   await page.route("**/v1/conversations/**", (route) => route.abort());
   await say(page, "hello");

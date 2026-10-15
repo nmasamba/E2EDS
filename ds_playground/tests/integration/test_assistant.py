@@ -33,6 +33,13 @@ def test_r18_the_workspace_opens_with_the_model_absent_and_shows_assistant_unava
     (unavailable,) = [e for e in events if e["type"] == "assistant.unavailable"]
     assert unavailable["body"]["reason"] == "model missing"
     assert not [e for e in events if e["type"] == "assistant.ready"]
+    assert client.post("/v1/hardware").status_code == 200  # admission would otherwise refuse first
     told = say(client, "summarise the data")
-    assert (told["operation"], told["state"]) == ("instruction", "rejected")
+    assert (told["operation"], told["state"], told["because"]) == (
+        "instruction",
+        "rejected",
+        "model missing",
+    )
+    assert client.get("/v1/events").json()["events"][-1]["body"]["reason"] == "model missing"
+    assert not [j for j in client.get("/v1/events").json()["events"] if j["type"] == "job.queued"]
     assert say(client, "status")["because"] == "no job is live"

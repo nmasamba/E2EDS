@@ -1,77 +1,238 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://dsplayground.dev/schemas/app/0.1.0/CodeTask.schema.json",
-  "title": "CodeTask — app-owned contract",
-  "description": "Declared work for one job (../contracts.md, CodeTask): the source by digest, the parent revision, the requirement revision, the scoped read-only inputs and the outputs it may write, the runner environment's lock, the resource caps and the permissions it asks for. Python and SQL run only in the sandboxed runner, and a SQL task's last statement is its one output; test_worker is the deterministic test worker's cues, never executed by the runner. The source is untrusted; the sandbox enforces the policy.",
+  "$id": "https://dsplayground.dev/schemas/app/0.2.0/CodeTask.schema.json",
+  "title": "CodeTask \u2014 app-owned contract",
+  "description": "Declared work for one job (../contracts.md, CodeTask): the source by digest, the parent revision, the requirement revision, the scoped read-only inputs and the outputs it may write, the runner environment's lock, the resource caps and the permissions it asks for. Python and SQL run only in the sandboxed runner, and a SQL task's last statement is its one output; test_worker is the deterministic test worker's cues, never executed by the runner. The source is untrusted; the sandbox enforces the policy. Version 0.2.0: `assistant` is the assistant's own loop for one instruction, never run by the runner; it declares no inputs or outputs.",
   "type": "object",
   "additionalProperties": false,
   "$defs": {
-    "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
-    "name": { "type": "string", "minLength": 1, "maxLength": 100, "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
-    "count": { "type": "integer", "minimum": 1 }
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 1
+    }
   },
   "properties": {
-    "schema_version": { "const": "0.1.0" },
-    "type": { "const": "CodeTask" },
-    "id": { "type": "string", "minLength": 1, "maxLength": 160, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$" },
-    "revision": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
-    "language": { "enum": ["python", "sql", "test_worker"] },
-    "source_sha256": { "$ref": "#/$defs/digest" },
+    "schema_version": {
+      "const": "0.2.0"
+    },
+    "type": {
+      "const": "CodeTask"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "revision": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "language": {
+      "enum": [
+        "python",
+        "sql",
+        "test_worker",
+        "assistant"
+      ]
+    },
+    "source_sha256": {
+      "$ref": "#/$defs/digest"
+    },
     "parent_ref": {
       "anyOf": [
         {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "id": { "type": "string", "minLength": 1, "maxLength": 160 },
-            "revision": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
-            "sha256": { "$ref": "#/$defs/digest" }
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            "revision": {
+              "type": "string",
+              "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+            },
+            "sha256": {
+              "$ref": "#/$defs/digest"
+            }
           },
-          "required": ["id", "revision", "sha256"]
+          "required": [
+            "id",
+            "revision",
+            "sha256"
+          ]
         },
-        { "type": "null" }
+        {
+          "type": "null"
+        }
       ]
     },
-    "requirement_revision": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "requirement_revision": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
     "inputs": {
       "type": "array",
       "maxItems": 16,
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "properties": { "name": { "$ref": "#/$defs/name" }, "sha256": { "$ref": "#/$defs/digest" } },
-        "required": ["name", "sha256"]
+        "properties": {
+          "name": {
+            "$ref": "#/$defs/name"
+          },
+          "sha256": {
+            "$ref": "#/$defs/digest"
+          }
+        },
+        "required": [
+          "name",
+          "sha256"
+        ]
       }
     },
-    "outputs": { "type": "array", "maxItems": 16, "uniqueItems": true, "items": { "$ref": "#/$defs/name" } },
-    "environment_lock_sha256": { "anyOf": [{ "$ref": "#/$defs/digest" }, { "type": "null" }] },
+    "outputs": {
+      "type": "array",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/name"
+      }
+    },
+    "environment_lock_sha256": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/digest"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "limits": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "cpu_seconds": { "$ref": "#/$defs/count" },
-        "memory_mib": { "$ref": "#/$defs/count" },
-        "wall_seconds": { "$ref": "#/$defs/count" },
-        "output_bytes": { "$ref": "#/$defs/count" },
-        "scratch_bytes": { "$ref": "#/$defs/count" },
-        "open_files": { "$ref": "#/$defs/count" }
+        "cpu_seconds": {
+          "$ref": "#/$defs/count"
+        },
+        "memory_mib": {
+          "$ref": "#/$defs/count"
+        },
+        "wall_seconds": {
+          "$ref": "#/$defs/count"
+        },
+        "output_bytes": {
+          "$ref": "#/$defs/count"
+        },
+        "scratch_bytes": {
+          "$ref": "#/$defs/count"
+        },
+        "open_files": {
+          "$ref": "#/$defs/count"
+        }
       },
-      "required": ["cpu_seconds", "memory_mib", "wall_seconds", "output_bytes", "scratch_bytes", "open_files"]
+      "required": [
+        "cpu_seconds",
+        "memory_mib",
+        "wall_seconds",
+        "output_bytes",
+        "scratch_bytes",
+        "open_files"
+      ]
     },
-    "permissions": { "type": "array", "uniqueItems": true, "items": { "enum": ["network", "process"] } }
+    "permissions": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "network",
+          "process"
+        ]
+      }
+    }
   },
   "required": [
-    "schema_version", "type", "id", "revision", "language", "source_sha256", "parent_ref",
-    "requirement_revision", "inputs", "outputs", "environment_lock_sha256", "limits", "permissions"
+    "schema_version",
+    "type",
+    "id",
+    "revision",
+    "language",
+    "source_sha256",
+    "parent_ref",
+    "requirement_revision",
+    "inputs",
+    "outputs",
+    "environment_lock_sha256",
+    "limits",
+    "permissions"
   ],
   "allOf": [
     {
-      "if": { "properties": { "language": { "enum": ["python", "sql"] } } },
-      "then": { "properties": { "outputs": { "minItems": 1 } } }
+      "if": {
+        "properties": {
+          "language": {
+            "enum": [
+              "python",
+              "sql"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outputs": {
+            "minItems": 1
+          }
+        }
+      }
     },
     {
-      "if": { "properties": { "language": { "const": "sql" } } },
-      "then": { "properties": { "outputs": { "maxItems": 1 } } }
+      "if": {
+        "properties": {
+          "language": {
+            "const": "sql"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outputs": {
+            "maxItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "language": {
+            "const": "assistant"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outputs": {
+            "maxItems": 0
+          },
+          "inputs": {
+            "maxItems": 0
+          }
+        }
+      }
     }
   ]
 }

@@ -496,6 +496,36 @@ Code commit `2c81168`; the evidence and this file were committed after it.
   file: 7 passed, three runs; one earlier full run failed the quit test while the container run shared
   the processors and its output was not kept (open defect below).
 
+## Prompt 5.2 — tool dispatcher and loop (2026-10-15)
+
+- An instruction the assistant can take is admitted as a Job (0.3.0: an assistant task names its
+  command; a child job names its parent) and the command is `accepted` with the job as its effect;
+  `application/assistant.py::run` is the application-owned loop (the harness's `attend` worker, one job
+  at a time): the context is rebuilt from canonical records on every generation, each generation is an
+  app AssistantCall 0.1.0 record (dispatched before the tool runs, committed with the quoted result, or
+  refused with its code), the checks run in order (schema, principal, revision, scope, budget, fence)
+  and D17's counters are sums over the records (20 model calls, 2 repairs, 1,800 s; 6,144 in and 2,048
+  out and 300 s per generation). `application/tools.py` is the skill's eight tools and nothing else;
+  `inspect_schema` and `submit_code_task` run as child jobs through Sprint 4's admission and sandbox
+  unchanged; pause and cancel cascade from a parent to its children and the phrases and the window's
+  controls address the parent; a call interrupted between dispatch and commit stays dispatched and runs
+  again on resume, resuming a paused child rather than starting it over. Generations stream so a pause
+  stops one between tokens; the job heartbeats from the loop's thread. CodeTask 0.2.0 adds `assistant`.
+- Tests: `tests/integration/test_assistant_loop.py` (8, the scripted gateway on a real harness): an
+  invalid call, an unknown tool, two calls in one turn and arguments that are not JSON are each
+  refused, quoted back and counted; the input-token and generation-second budgets stop the task and a
+  gateway fault fails it; the twenty-first model call is never made; a call proposed after a pause
+  never dispatches and resume replays the committed call once; revision, scope and repair-budget
+  refusals in order and a budget change refused for the owner; a principal without the scope refused
+  after the schema; injected "ignore the budget" text in a CSV header (tool output) and in a task's
+  failure message has no effect (`sandbox`); with a parent and its running child live, "pause now"
+  pauses both and resume resumes the child (`sandbox`). Contract tests: the three Job versions and
+  the assistant CodeTask. Vitest 12 (a child addressed through its live parent; assistant lines are
+  proposals). Playwright 21 passed (an instruction is rejected with the assistant's real reason).
+- Guards mutation-checked (17, all caught; decisions 2026-10-15 "guards mutation-checked (5.2)"). Found
+  by the checks: a duplicate owner-path refusal (removed) and a test that could not tell the assistant
+  check from admission's (fixed).
+
 ## D3 checkpoint — launch profile (2026-10-15, measured under the Seatbelt profile on this M1 Max)
 
 | Profile | Flags | Load to health | First token (cold / warm) | Prompt tok/s | Generation tok/s | Typed probe | Peak footprint | Resident |

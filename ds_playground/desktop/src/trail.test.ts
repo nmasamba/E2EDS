@@ -93,6 +93,27 @@ test("R18: the assistant is ready only by its own committed event, and unavailab
   ]);
 });
 
+test("B24, A24: a child job is addressed through its live parent; assistant lines are proposals", () => {
+  const parent = job(1, "job.queued", "job-p", "queued");
+  const child = job(3, "job.queued", "job-c", "queued", 0, 0, { input: { parent: "job-p" } });
+  const log = [parent, job(2, "job.started", "job-p", "running", 1), child, job(4, "job.started", "job-c", "running", 1)];
+  expect(liveJob(log)?.id).toBe("job-p");
+  expect(jobs(log).map((view) => view.id)).toEqual(["job-p"]);
+  const ended = [...log, job(5, "job.succeeded", "job-p", "succeeded", 1)];
+  expect(liveJob(ended)?.id).toBe("job-c");
+  const said = [
+    event(6, "assistant.call_dispatched", { job: "job-p", n: 1, tool: "inspect_schema" }),
+    event(7, "assistant.call_refused", { job: "job-p", n: 2, tool: "request_trial", code: "INPUT_INVALID", reason: "arguments" }),
+    event(8, "assistant.answered", { job: "job-p", n: 3, text: "The evaluation passed." }),
+  ];
+  expect(activity(said).map((item) => [item.text, item.state])).toEqual([
+    ["Assistant call 1: inspect_schema", ""],
+    ["Assistant call 2: request_trial", "refused · arguments"],
+    ["Assistant (a proposal, not a result): The evaluation passed.", ""],
+  ]);
+  expect(trail(said).find((stage) => stage.id === "evaluate")!.state).toBe("pending");
+});
+
 test("R20: prose or unknown events claiming completion change nothing", () => {
   const spoofed = [
     event(1, "stage.completed", { stage: "evaluate", outcome: "PASS" }),
