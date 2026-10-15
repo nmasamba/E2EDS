@@ -490,8 +490,11 @@ Code commit `2c81168`; the evidence and this file were committed after it.
   the checks: a server that answered health but failed readiness was left running (fixed, with a test).
 - `make live-linux` (container, linux/arm64, CPU only): the first run failed on `ps` truncating the
   command line and on the A30 probe's binds placed after the root was made read-only (both in the tests),
-  the second on the quit test's 90 s wait (a second CPU load beside the session's server); the rerun's
-  result is recorded below when it lands.
+  the second on the quit test's 90 s wait, the third and fourth on the kernel killing one of two servers
+  (the VM holds 7.75 GiB; decisions 2026-10-15 "one model server at a time"); with the quit test lending
+  the session's server: **7 passed** in 1 min 55 s (container, linux/arm64, CPU only). On macOS the same
+  file: 7 passed, three runs; one earlier full run failed the quit test while the container run shared
+  the processors and its output was not kept (open defect below).
 
 ## D3 checkpoint — launch profile (2026-10-15, measured under the Seatbelt profile on this M1 Max)
 
@@ -508,6 +511,10 @@ column (`ps`). Load times are with the file in the page cache. Linux (the contai
 health in 16.2 s, 3.1 prompt tok/s, 1.6 generation tok/s.
 
 ## Open defects and gaps
+
+- `make live`: the quit test (`test_d24_quitting_the_harness_stops_the_model_server_it_started`) failed
+  once in a full macOS run that overlapped a container run, and its output was not captured; it passed in
+  the three runs since. Not established whether the 30 s waits are too short under load.
 
 - macOS sandbox: sysctl reads are allowed by name only, the eleven measured for the standard library and
   DuckDB; a future library reading another one gets EPERM (add it by name after checking it reveals
