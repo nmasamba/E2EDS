@@ -138,6 +138,19 @@ export function jobs(log: LedgerEvent[]): JobView[] {
   return [...seen.values()].filter((job) => !live(parents.get(job.id) ?? "")).reverse();
 }
 
+export type Result = { job: string; sha256: string };
+
+/** Every committed result, newest first: the digest of the record the job's success names. */
+export function results(log: LedgerEvent[]): Result[] {
+  const found: Result[] = [];
+  for (const { type, body } of log) {
+    const input = (body.input ?? {}) as Record<string, unknown>;
+    if (type === "job.succeeded" && typeof body.job === "string" && typeof input.sha256 === "string")
+      found.push({ job: body.job, sha256: input.sha256 });
+  }
+  return found.reverse();
+}
+
 /** The job the header's controls act on: the most recent one that has not ended. */
 export const liveJob = (log: LedgerEvent[]) => jobs(log).find((job) => !ENDED.has(job.state)) ?? null;
 

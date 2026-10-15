@@ -8,6 +8,7 @@ import {
   freshness,
   liveJob,
   merge,
+  results,
   trail,
   type Activity,
   type JobView,
@@ -362,6 +363,99 @@ function Run({ harness, notReceived }: { harness: Harness; notReceived: NotRecei
   );
 }
 
+type Output = { name: string; sha256: string; bytes: number };
+type Opened = { job: string; name: string; rows: string[][] };
+
+/** Parse a CSV the way the harness wrote it: comma separated, quotes around cells that need them. */
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quoted) {
+      if (ch === '"' && text[i + 1] === '"') (cell += '"'), i++;
+      else if (ch === '"') quoted = false;
+      else cell += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === ",") (row.push(cell), (cell = ""));
+    else if (ch === "\n") (row.push(cell), rows.push(row), (row = []), (cell = ""));
+    else if (ch !== "\r") cell += ch;
+  }
+  if (cell || row.length) (row.push(cell), rows.push(row));
+  return rows;
+}
+
+/**
+ * The committed results: each succeeded job's outputs, read from the record its success names,
+ * and the one the owner opened, rendered as a table (inert text: every cell is data).
+ */
+function Results({ harness, log }: { harness: Harness; log: LedgerEvent[] }) {
+  const [records, setRecords] = useState<Record<string, Output[]>>({});
+  const [opened, setOpened] = useState<Opened | null>(null);
+  const committed = results(log);
+  useEffect(() => {
+    for (const result of committed) {
+      if (result.sha256 in records) continue;
+      void fetch(`${harness.base_url}/v1/artifacts/${result.sha256}`, {
+        headers: { Authorization: `Bearer ${harness.token}` },
+      })
+        .then((response) => (response.ok ? response.json() : null))
+        .then((record: { type?: string; outputs?: Output[] } | null) =>
+          setRecords((known) => ({ ...known, [result.sha256]: record?.type === "RunRecord" ? record.outputs ?? [] : [] })),
+        )
+        .catch(() => undefined);
+    }
+  }, [committed.length]);
+  const open = async (job: string, output: Output) => {
+    const response = await fetch(`${harness.base_url}/v1/artifacts/${output.sha256}`, {
+      headers: { Authorization: `Bearer ${harness.token}` },
+    });
+    const text = await response.text();
+    setOpened({ job, name: output.name, rows: parseCsv(text).slice(0, 101) });
+  };
+  const listed = committed.filter((result) => (records[result.sha256] ?? []).length);
+  return (
+    <section aria-labelledby="results">
+      <h2 id="results">Results</h2>
+      {listed.length === 0 && <p>No table yet.</p>}
+      <ul>
+        {listed.map((result) =>
+          (records[result.sha256] ?? []).map((output) => (
+            <li key={`${result.job}-${output.name}`}>
+              Job {result.job.slice(-6)}: {output.name} ({output.bytes} bytes){" "}
+              <button type="button" onClick={() => void open(result.job, output)}>
+                Open {output.name}
+              </button>
+            </li>
+          )),
+        )}
+      </ul>
+      {opened && (
+        <table aria-label={`${opened.name} of job ${opened.job.slice(-6)}`}>
+          <thead>
+            <tr>
+              {opened.rows[0]?.map((cell, index) => (
+                <th key={index}>{cell}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {opened.rows.slice(1).map((row, r) => (
+              <tr key={r}>
+                {row.map((cell, c) => (
+                  <td key={c}>{cell}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
+}
+
 /**
  * Every outcome, in one place: each committed event the owner would want to see with the state
  * each command reached, then any request this window sent that the harness never recorded.
@@ -497,6 +591,7 @@ function Workspace(props: { harness: Harness; version: string; pid: number }) {
             revision={log.filter((event) => event.type.startsWith("grant.")).length}
           />
           <Run harness={harness} notReceived={notReceived} />
+          <Results harness={harness} log={log} />
           <ActivityTrail items={activity(log)} unheard={unheard} />
         </div>
       </div>

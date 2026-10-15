@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 import sys
 import threading
 import time
@@ -11,7 +12,7 @@ from typing import Annotated, Any, Literal
 from uuid import uuid4
 
 import uvicorn
-from fastapi import Body, Depends, FastAPI, Query, Request
+from fastapi import Body, Depends, FastAPI, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 
@@ -507,6 +508,14 @@ def mount(
     @app.get("/v1/workload")
     def latest_workload() -> dict[str, Any]:
         return current_workload(ctx, ledger())
+
+    @app.get("/v1/artifacts/{sha256}")
+    def read_artifact(sha256: str) -> Response:
+        """A committed artifact's bytes, by digest: what the window opens as a table or a record."""
+        if not re.fullmatch(r"sha256:[a-f0-9]{64}", sha256):
+            raise DspError(ErrorCode.INPUT_INVALID, "an artifact is named by its sha256 digest")
+        path = ContentStore(state_dir / "store").path(ctx, sha256)
+        return Response(path.read_bytes(), media_type="application/octet-stream")
 
     @app.get("/v1/assistant")
     def assistant_state() -> dict[str, Any]:

@@ -6,8 +6,9 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 
 - **Sprint:** 5 — M1 assistant gateway, open model first (B24, B26, B27; A24, A29, A30; R16, R17, R18,
   R22; D16, D17).
-- **Claimed prompt:** 5.3 done (pending its commit); next 5.4 (generate, run, repair). D3 picked: A,
-  Metal full offload (2026-10-15).
+- **Claimed prompt:** 5.4 (generate, run, repair), in progress: code written, its tests written but
+  NOT run (the session's usage limit ended it); 5.3 is committed and pushed. D3 picked: A, Metal full
+  offload (2026-10-15).
 - **Branch:** `claude/sprint-5-assistant-gateway-fc1f11`, from `main` at `73698be` (PRs #1 to #8 merged).
 
 ## Done
@@ -565,6 +566,28 @@ Code commit `2c81168`; the evidence and this file were committed after it.
   the row id, set a hard maximum of 2, rounded to even, deleted a role instead of excluding a field,
   and answered the budget change in prose. Results are per binding and not merged.
 
+## Prompt 5.4 — generate, run, repair (2026-10-15, in progress, unverified)
+
+- Written, lint and types clean, boundaries clean, unit and contract suites green (57 passed):
+  "redacted" defined in `docs/decisions.md` before the code; `inspect_results` gives a bounded preview
+  of one named output (CSV header and 20 rows, cells cut at 200 characters, or 2,000 characters of a
+  JSON or text file); the model's instructions carry the data and repair procedure (at most two
+  repairs, already enforced); `GET /v1/artifacts/{sha256}` serves a committed artifact; the window's
+  Results section lists succeeded jobs' outputs from their RunRecords and opens a CSV as a table
+  (Vitest 13 passed). Tests written but **not yet run**: `test_assistant_loop.py` +1 (`sandbox`: a
+  failing SQL task repaired once, the preview bounded, a third repair refused, the committed table
+  equal to DuckDB's query, the artifact route's refusals), `tests/integration/test_live_generate.py`
+  (`live_model`, `sandbox`: the acceptance instruction on the orders fixture, the committed table equal
+  to DuckDB's mean per service level, an A28 part `generated-code-live-<binding>`). The Sprint 4 SAT's
+  wording that no generated code existed is updated; the overall A28 record's limits text in
+  `tests/sat/test_sprint_04.py` still says Sprint 5 is needed and must be reworded.
+- Not done for 5.4: running the two tests above (and `make live`), mutation checks, the Playwright
+  spec for the Results table, the `log stream` watch for sysctl denials under generated code, the
+  decisions and changelog entries, the commit and the push with the CI read.
+- The CI run on the 5.3 push (`2318055`) was being watched when the session ended; its result was
+  not read. The 5.2 push's run had failed on three jobs (a Linux-only unit test loading libSystem, and
+  the built-app test's exact event list on both OSes); the 5.3 push carries the fixes.
+
 ## D3 checkpoint — launch profile (2026-10-15, measured under the Seatbelt profile on this M1 Max)
 
 | Profile | Flags | Load to health | First token (cold / warm) | Prompt tok/s | Generation tok/s | Typed probe | Peak footprint | Resident |
@@ -641,10 +664,16 @@ health in 16.2 s, 3.1 prompt tok/s, 1.6 generation tok/s.
 
 ## Handoff note
 
-Sprint 4 (prompts 4.1 to 4.7) is on `sprint-4-runner`, pull request #8 against `main` titled "Sprint 4:
-sandboxed native runner"; merging is the owner's. The gate is PASS on macOS and Linux for Sprint 4 scope
-after the two macOS containment gaps were closed. **Next is Sprint 5, prompt 5.1**, on a new branch from
-`main` once the pull request is merged.
+Sprint 5 is on `claude/sprint-5-assistant-gateway-fc1f11` (from `main` at `73698be`). Committed and
+pushed: 5.0 (D1), 5.1, 5.2, 5.3 (the last at `2318055`, whose CI result is unread). 5.4 is committed
+locally as work in progress with its tests unrun (above); **resume at 5.4**: run
+`uv run pytest tests/integration/test_assistant_loop.py -k repaired` and `make live` (which writes the
+A28 and A29 records), then the mutation checks, the Results Playwright spec, the docs, the commit and
+the push with its CI read; then 5.5, 5.6 (D4 = B), 5.7. The `make live` suites were green on macOS and
+Linux at 5.3; `make test-fast` was 331 passed at 5.3. The D3 pick is Metal (applied).
+
+Sprint 4's handoff: the gate was PASS on macOS and Linux for Sprint 4 scope after the two macOS
+containment gaps were closed (PR #8, merged).
 
 Notes for the next session: the `harness` fixture serves the real app from the test process on a loopback
 socket with a clock the test moves (`clock.advance(61)` expires a lease); the `worker` fixture starts

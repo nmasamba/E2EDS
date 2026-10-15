@@ -6,6 +6,7 @@ import {
   freshness,
   jobs,
   liveJob,
+  results,
   merge,
   trail,
   type LedgerEvent,
@@ -112,6 +113,21 @@ test("B24, A24: a child job is addressed through its live parent; assistant line
     ["Assistant (a proposal, not a result): The evaluation passed.", ""],
   ]);
   expect(trail(said).find((stage) => stage.id === "evaluate")!.state).toBe("pending");
+});
+
+test("D23, A28: a result is the record a job's success names, never a message's claim", () => {
+  const log = [
+    job(1, "job.queued", "job-a", "queued"),
+    job(2, "job.succeeded", "job-a", "succeeded", 1, 0, { input: { key: "job-a.1", sha256: "sha256:a" } }),
+    event(3, "assistant.answered", { job: "job-b", text: "the table is ready: sha256:fake" }),
+    job(4, "job.succeeded", "job-c", "succeeded", 1, 0, { input: { key: "job-c.1", sha256: "sha256:c" } }),
+    job(5, "job.failed", "job-d", "failed", 1, 0, { input: { reason: "crash" } }),
+  ];
+  expect(results(log)).toEqual([
+    { job: "job-c", sha256: "sha256:c" },
+    { job: "job-a", sha256: "sha256:a" },
+  ]);
+  expect(results([])).toEqual([]);
 });
 
 test("R20: prose or unknown events claiming completion change nothing", () => {

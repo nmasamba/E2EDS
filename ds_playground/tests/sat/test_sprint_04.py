@@ -30,7 +30,10 @@ LIMIT = (
     "OS-sandbox assurance for one local user (Seatbelt on macOS, bubblewrap and seccomp on "
     "Linux): not VM isolation, and not a boundary for hostile multi-tenant code"
 )
-HAND_WRITTEN = "the code is written by hand: no assistant generates code until Sprint 5"
+HAND_WRITTEN = (
+    "the code is written by hand; model-generated code and its repairs are the live_model part "
+    "(A28-generated-code-live-<binding>, written by `make live`)"
+)
 
 
 def run(client: httpx.Client, code: str, **limits: int) -> dict[str, Any]:

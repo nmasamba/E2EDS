@@ -815,6 +815,19 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   for one build, one profile and one seed. The five reference instructions are one `live_model` test
   that writes an A29 evidence record whose slug names the binding (`interpretation-assistant-local-
   qwen`), so another binding's record is a separate file and never merged.
+- **2026-10-15 — S5 — DECISION — what "redacted" means for results the assistant sees (5.4, before the
+  code)** — of a job the assistant submitted, the model is shown: the job's state; a failure's kind
+  and at most 200 characters of its message, as quoted data (the message is text the task chose); each
+  declared output's name, size and digest; and, for one output it asks to see by name, a bounded
+  preview: for a CSV the header and the first 20 rows with each cell cut at 200 characters and the
+  total row count, for a JSON or text file its first 2,000 characters, for anything else nothing but
+  the size. Never: a file outside the job's declared outputs, the inputs themselves, the ledger, the
+  store, a path on this machine, a secret (none can reach an output: the sandbox refuses the reads),
+  or a sealed partition (none exists yet; Sprint 9 excludes sealed manifests at admission and the
+  binding's `sealed_data_access: false` will be read then). A remote binding (5.6) shows a preview only
+  when its data policy allows the data class; the local binding allows the owner's own data, which
+  never leaves the machine. The preview is a view of a committed artifact, built by the harness from
+  the content store; the model's context holds it only as quoted data.
 - **2026-10-15 — S5 — ASSUMPTION — the sprint branch** — the work is on the branch the desktop app made for
   this session, `claude/sprint-5-assistant-gateway-fc1f11`, from `main` at `73698be`, rather than a
   branch named `sprint-5-assistant`; the pull request carries the sprint's title.

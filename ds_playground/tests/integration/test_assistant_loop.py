@@ -935,3 +935,155 @@ def test_a29_a_proposal_may_not_invent_a_number_drop_an_unnamed_field_or_change_
         if e["type"].startswith("command.")
     ][-1]
     assert (last["state"], last["reason"]) == ("needs_clarification", "Is there a hard maximum?")
+
+
+@pytest.mark.sandbox
+def test_a28_a_failed_task_is_repaired_at_most_twice_and_the_table_matches_an_independent_query(
+    harness: Harness,
+    state_dir: Path,
+    script: list[Step],
+    gateway: Scripted,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    runner_env: Path,
+) -> None:
+    """A28, D17: generate, run, see the redacted failure, repair, run again; the preview is bounded.
+
+    The scripted model writes SQL with a wrong column, sees the quoted failure, repairs it naming
+    the failed artifact, and the committed table equals DuckDB's own answer on the fixture. The
+    preview holds the header and at most 20 rows; a third repair is refused.
+    """
+    import duckdb
+
+    from dsp.harness import workspace
+    from fixtures.operations import write_orders
+
+    monkeypatch.setattr(workspace, "probes", lambda state: fixed_probes(cpus=8, memory_gib=32))
+    client, _ = harness
+    data = tmp_path / "orders.csv"
+    write_orders(data, orders=300, accounts=30)
+    tail = ' AS mean_hours FROM "data.csv" GROUP BY 1 ORDER BY 1'
+    wrong = "SELECT service_level, avg(transit_hours)" + tail
+    right = "SELECT service_level, round(avg(actual_transit_hours), 2)" + tail
+    script += [call("inspect_schema", source="GRANT", path=".")]
+    script += [call("write_code_artifact", language="sql", source=wrong, repairs=None)]
+    script += [
+        call(
+            "submit_code_task",
+            artifact="A",
+            language="sql",
+            inputs=[{"name": "data.csv", "data": "D"}],
+            outputs=["table.csv"],
+        )
+    ]
+    script += [call("inspect_results", job="J", output="table.csv")]
+    script += [call("write_code_artifact", language="sql", source=right, repairs="A")]
+    script += [
+        call(
+            "submit_code_task",
+            artifact="B",
+            language="sql",
+            inputs=[{"name": "data.csv", "data": "D"}],
+            outputs=["table.csv"],
+        )
+    ]
+    script += [call("inspect_results", job="J2", output="table.csv")]
+    script += [call("write_code_artifact", language="sql", source=right + " ", repairs="B")]
+    script += [call("write_code_artifact", language="sql", source=right + "  ", repairs="B")]
+    script += [text("The table shows mean actual transit hours by service level.")]
+    ready(client)
+    granted = client.post("/v1/grants", json={"purpose": "source_root", "path": str(data)}).json()
+    script[0]["tool_calls"][0]["function"]["arguments"] = json.dumps(
+        {"source": granted["handle"], "path": "."}
+    )
+
+    def fill(n: int) -> None:
+        seen = calls(state_dir, job)
+        if n == 3:
+            script[0]["tool_calls"][0]["function"]["arguments"] = json.dumps(
+                {
+                    "artifact": seen[1]["result"]["artifact"],
+                    "language": "sql",
+                    "inputs": [{"name": "data.csv", "data": seen[0]["result"]["data"]}],
+                    "outputs": ["table.csv"],
+                }
+            )
+        if n == 4:
+            script[0]["tool_calls"][0]["function"]["arguments"] = json.dumps(
+                {"job": seen[2]["result"]["job"], "output": "table.csv"}
+            )
+        if n == 5:
+            script[0]["tool_calls"][0]["function"]["arguments"] = json.dumps(
+                {"language": "sql", "source": right, "repairs": seen[1]["result"]["artifact"]}
+            )
+        if n == 6:
+            script[0]["tool_calls"][0]["function"]["arguments"] = json.dumps(
+                {
+                    "artifact": seen[4]["result"]["artifact"],
+                    "language": "sql",
+                    "inputs": [{"name": "data.csv", "data": seen[0]["result"]["data"]}],
+                    "outputs": ["table.csv"],
+                }
+            )
+        if n == 7:
+            script[0]["tool_calls"][0]["function"]["arguments"] = json.dumps(
+                {"job": seen[5]["result"]["job"], "output": "table.csv"}
+            )
+        if n in (8, 9):
+            script[0]["tool_calls"][0]["function"]["arguments"] = json.dumps(
+                {
+                    "language": "sql",
+                    "source": right + " " * (n - 7),
+                    "repairs": seen[4]["result"]["artifact"],
+                }
+            )
+
+    gateway.before = fill
+    job, _ = instruct(client, "load this CSV and show transit hours by service level")
+    done = ended(client, job, 300)
+    assert done["state"] == "succeeded"
+    recorded = calls(state_dir, job)
+    assert [(c["tool"], c["state"], c["repair"]) for c in recorded] == [
+        ("inspect_schema", "committed", False),
+        ("write_code_artifact", "committed", False),
+        ("submit_code_task", "committed", False),
+        ("inspect_results", "committed", False),
+        ("write_code_artifact", "committed", True),
+        ("submit_code_task", "committed", False),
+        ("inspect_results", "committed", False),
+        ("write_code_artifact", "committed", True),
+        ("write_code_artifact", "refused", True),
+        ("answer", "committed", False),
+    ]
+    failed = recorded[2]["result"]
+    assert failed["state"] == "failed"
+    assert failed["failure"].startswith("crash:")
+    assert "transit_hours" in failed["failure"]
+    assert len(failed["failure"]) <= 200
+    assert recorded[3]["result"]["state"] == "failed"
+    assert "preview" not in recorded[3]["result"]
+    repaired = recorded[5]["result"]
+    assert repaired["state"] == "succeeded"
+    (output,) = repaired["outputs"]
+    preview = recorded[6]["result"]["preview"]
+    assert preview["kind"] == "csv"
+    assert preview["header_and_first_rows"][0] == ["service_level", "mean_hours"]
+    assert (preview["rows"], len(preview["header_and_first_rows"])) == (2, 3)
+    assert recorded[8]["refusal"]["reason"] == "2 code repairs is the most for one task"
+    stored = client.get(f"/v1/artifacts/{output['sha256']}").content.decode()
+    query = "SELECT service_level, round(avg(actual_transit_hours), 2) AS mean_hours"
+    expected = duckdb.sql(f"{query} FROM read_csv('{data}') GROUP BY 1 ORDER BY 1").fetchall()
+    rows = [line.split(",") for line in stored.strip().splitlines()[1:]]
+    assert [(r[0], float(r[1])) for r in rows] == [
+        (level, float(value)) for level, value in expected
+    ]
+    assert client.get("/v1/artifacts/not-a-digest").status_code == 400
+    assert client.get("/v1/artifacts/sha256:" + "0" * 64).status_code == 404
+    big = "x,y\\n" + "\\n".join(f"{i},{'v' * 500}" for i in range(50)) + "\\n"
+    from dsp.application.tools import preview as bounded
+
+    shown = bounded("big.csv", big.encode())
+    assert (shown["rows"], len(shown["header_and_first_rows"])) == (50, 21)
+    assert len(shown["header_and_first_rows"][1][1]) == 200
+    assert bounded("notes.json", b"{" + b"a" * 5000)["head"] == "{" + "a" * 1999
+    assert bounded("blob.bin", b"\\x00" * 10) == {"kind": "other", "bytes": 10}

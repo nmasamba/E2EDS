@@ -9,6 +9,8 @@ arguments never reach a process as a command string. Everything a tool returns e
 context as quoted data.
 """
 
+import csv
+import io
 import json
 from collections.abc import Callable
 from typing import Any
@@ -152,7 +154,9 @@ TOOLS: dict[str, dict[str, Any]] = {
         },
     },
     "inspect_results": {
-        "description": "See a job this task submitted: its state, why it failed, and its outputs.",
+        "description": "See a job this task submitted: its state, why it failed, its outputs, and,"
+        " for the output you name, a bounded preview (a CSV's header and first 20 rows, or the"
+        " first 2,000 characters of a JSON or text file).",
         "parameters": {
             "type": "object",
             "additionalProperties": False,
@@ -209,6 +213,24 @@ def check(ctx: TrustedContext, name: str, arguments: Any) -> dict[str, Any]:
     if needed and not {"*", needed} & ctx.scopes:
         raise DspError(ErrorCode.FORBIDDEN, f"this context may not {name}")
     return dict(arguments)
+
+
+PREVIEW_ROWS, PREVIEW_CELL, PREVIEW_CHARS = 20, 200, 2000
+
+
+def preview(name: str, content: bytes) -> dict[str, Any]:
+    """The bounded view of one committed output the model may see (decisions, 2026-10-15)."""
+    if name.endswith(".csv"):
+        rows = list(csv.reader(io.StringIO(content.decode("utf-8", "replace"))))
+        shown = [[cell[:PREVIEW_CELL] for cell in row] for row in rows[: PREVIEW_ROWS + 1]]
+        return {"kind": "csv", "rows": max(len(rows) - 1, 0), "header_and_first_rows": shown}
+    if name.endswith((".json", ".txt", ".md")):
+        return {
+            "kind": "text",
+            "chars": len(content),
+            "head": content.decode("utf-8", "replace")[:PREVIEW_CHARS],
+        }
+    return {"kind": "other", "bytes": len(content)}
 
 
 def quoted_failure(reason: str | None) -> str | None:
@@ -334,7 +356,13 @@ class Dispatcher:
                 return self.outcome(ended)
             case "inspect_results":
                 seen = self.ledger.latest(self.ctx, "Job", arguments["job"])
-                return self.outcome(seen or {})
+                shown = self.outcome(seen or {})
+                named = [o for o in shown["outputs"] if o["name"] == arguments["output"]]
+                if named:
+                    shown["preview"] = preview(
+                        named[0]["name"], self.store.path(self.ctx, named[0]["sha256"]).read_bytes()
+                    )
+                return shown
             case _:
                 raise DspError(ErrorCode.DEPENDENCY_UNAVAILABLE, NOT_YET)
 
