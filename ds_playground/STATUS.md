@@ -6,7 +6,7 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 
 - **Sprint:** 5 — M1 assistant gateway, open model first (B24, B26, B27; A24, A29, A30; R16, R17, R18,
   R22; D16, D17).
-- **Claimed prompt:** 5.1 done; at the D3 checkpoint (launch profile), then 5.2.
+- **Claimed prompt:** 5.2 (tool dispatcher and loop). D3 picked: A, Metal full offload (2026-10-15).
 - **Branch:** `claude/sprint-5-assistant-gateway-fc1f11`, from `main` at `73698be` (PRs #1 to #8 merged).
 
 ## Done
@@ -565,11 +565,9 @@ health in 16.2 s, 3.1 prompt tok/s, 1.6 generation tok/s.
 
 ## Waiting on the owner
 
-1. **The D3 launch profile** (checkpoint above): A Metal full offload, B CPU 2 threads (the contract), C CPU
-   all cores. Nothing past 5.1 is built until the pick.
-2. At the Sprint 5 gate: in the built macOS app, start a job, press Cmd+P and Cmd+Shift+K, and say what
+1. At the Sprint 5 gate: in the built macOS app, start a job, press Cmd+P and Cmd+Shift+K, and say what
    happened.
-3. Optional: remove `~/Library/Containers/dsp.probe.appsandbox` (28 KB), left by the gap investigation's
+2. Optional: remove `~/Library/Containers/dsp.probe.appsandbox` (28 KB), left by the gap investigation's
    App Sandbox probe; the system refused its deletion from this session.
 
 ## Handoff note

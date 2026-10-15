@@ -21,7 +21,7 @@ from dsp.ports import Ledger, ModelGateway, ModelServer
 BINDING_ID = "assistant-local-qwen"
 MODEL_BYTES = 5_027_783_488
 MODEL_SHA256 = "sha256:d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785"
-LAUNCH = {"threads": 2, "gpu_layers": 0}  # the launch profile; the owner's D3 pick replaces it
+LAUNCH = {"threads": 2, "gpu_layers": 99}  # the owner's D3 pick (2026-10-15): Metal full offload
 AGGREGATE = "assistant:local"
 RESTARTS = 3  # after a crash, a hang or a limit; never after a verification failure
 

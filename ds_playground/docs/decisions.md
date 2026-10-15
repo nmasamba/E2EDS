@@ -655,6 +655,12 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   second server does not fit and the kernel killed the first (`make live-linux`, status 137, twice). The
   live tests therefore start one server per session, and the quit test lends that server to its harness
   and runs last. A machine with the model on a local disk would map it instead; not measured here.
+- **2026-10-15 — S5 — DECISION — D3 pick: Metal full offload (owner, after 5.1)** — from the measured table
+  (STATUS, "D3 checkpoint"): `-ngl 99 -t 2`, profile `assistant-local-metal-v1`, 45 tokens/s against 11.5
+  on two CPU threads. Consequences: the binding's `cpu_threads` stays 2 and the Seatbelt profile keeps the
+  two IOKit classes and the Metal compiler lookup; on Linux the CPU-only build ignores `-ngl` with a
+  warning, so the same binding runs on the CPU there (the `live-linux` numbers in STATUS). The suite's
+  contract said CPU only; this is the owner's deviation from it for this host.
 - **2026-10-15 — S5 — ASSUMPTION — the sprint branch** — the work is on the branch the desktop app made for
   this session, `claude/sprint-5-assistant-gateway-fc1f11`, from `main` at `73698be`, rather than a
   branch named `sprint-5-assistant`; the pull request carries the sprint's title.
