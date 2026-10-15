@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   activity,
+  assistant,
   expectedRevision,
   freshness,
   liveJob,
@@ -462,6 +463,7 @@ function Workspace(props: { harness: Harness; version: string; pid: number }) {
 
   const age = freshness(snapshot?.observed_at ?? null, now);
   const live = liveJob(log);
+  const model = assistant(log);
   return (
     <>
       <p role="status">
@@ -470,6 +472,7 @@ function Workspace(props: { harness: Harness; version: string; pid: number }) {
       <p className="detail">
         version {version} · process {pid}
         {live && ` · job ${live.id.slice(-6)} ${live.state.replace("_", " ")}`}
+        {model.state === "ready" ? ` · assistant ready (${model.profile})` : ` · assistant unavailable: ${model.reason}`}
       </p>
       <Controls harness={harness} job={live} notReceived={notReceived} />
       <div className="workspace">

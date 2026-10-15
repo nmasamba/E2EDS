@@ -74,7 +74,8 @@ def launch(binary: Path, state_dir: Path) -> Iterator[Callable[[], subprocess.Po
     started: list[subprocess.Popen[bytes]] = []
 
     def start() -> subprocess.Popen[bytes]:
-        app = subprocess.Popen([binary], env={**os.environ, "DSP_HOME": str(state_dir)})
+        environment = {**os.environ, "DSP_HOME": str(state_dir), "DSP_MODEL_DIR": str(state_dir)}
+        app = subprocess.Popen([binary], env=environment)
         started.append(app)
         return app
 

@@ -172,6 +172,7 @@ mod tests {
         let folder = home.join("picked folder");
         fs::create_dir_all(&folder).unwrap();
         env::set_var("DSP_HOME", &home);
+        env::set_var("DSP_MODEL_DIR", &home); // no model: the shell test is not a model test
         let mut server = Command::new("../../.venv/bin/python")
             .args(["-m", "dsp.harness"])
             .spawn()

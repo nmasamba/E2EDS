@@ -117,7 +117,11 @@ def test_a27_a_dropped_acknowledgement_then_the_same_id_gives_one_command(
     )
     assert len(store.current(CTX, "ConversationCommand")) == 1
     events = client.get("/v1/events").json()["events"]
-    assert [event["type"] for event in events] == ["message.received", "command.rejected"]
+    assert [event["type"] for event in events] == [
+        "assistant.unavailable",  # the harness start: no model here
+        "message.received",
+        "command.rejected",
+    ]
 
 
 def test_a27_reconnect_with_a_cursor_replays_messages_in_order(api: TestClient) -> None:

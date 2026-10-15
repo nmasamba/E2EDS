@@ -6,7 +6,7 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 
 - **Sprint:** 5 — M1 assistant gateway, open model first (B24, B26, B27; A24, A29, A30; R16, R17, R18,
   R22; D16, D17).
-- **Claimed prompt:** 5.1 (gateway, binding, supervisor, SecretPort). 5.0 housekeeping (D1) is done.
+- **Claimed prompt:** 5.1 done; at the D3 checkpoint (launch profile), then 5.2.
 - **Branch:** `claude/sprint-5-assistant-gateway-fc1f11`, from `main` at `73698be` (PRs #1 to #8 merged).
 
 ## Done
@@ -453,6 +453,51 @@ Code commit `2c81168`; the evidence and this file were committed after it.
   work spec (Meta+Shift+K on macOS) and the Linux built-app test (real Ctrl+Shift+K through xdotool).
   Playwright work spec on macOS: 3 passed. Guard mutation-checked: the old chord back in the renderer
   fails the spec. The built macOS app's press is the owner's, at the gate.
+
+## Prompt 5.1 — gateway, binding, supervisor, SecretPort (2026-10-15)
+
+- `ports.py`: `SecretStore`, `ModelGateway`, `ModelServer`. `adapters/llama_server.py`: the launch contract
+  as this build's proven flags; the model's size and SHA-256 checked at every start (2.67 s for 5.03 GB);
+  the key from the secret store into a 0600 file (`--api-key-file`), never argv or environment; Seatbelt
+  deny-by-default profile through `sandbox-exec` on macOS (loopback listener only, Metal allowed by name),
+  bubblewrap with every namespace new on Linux (a UNIX socket: logged DEVIATION); memory polled on macOS,
+  `prlimit --as` on Linux; readiness is `/health` plus the typed `report_ready` probe; a hang, a crash, a
+  limit or a deadline ends in ASSISTANT_UNAVAILABLE. `adapters/secrets.py`: the keychain through the
+  Security framework's C API; `secret-tool` or an owner-only file on Linux. `application/assistant.py`:
+  the suite's AssistantModelBinding 0.3.0 for the local model, planning until observed; the harness starts
+  the assistant in a thread after the workspace is up, watches it (three restarts after a crash, none after
+  a verification failure) and stops it on quit; `GET /v1/assistant`; events `assistant.ready` (pins the
+  stored, observed binding) and `assistant.unavailable`. The window's header and trail show the state.
+  `make live` (macOS) and `make live-linux` (D2: llama.cpp b11104 built in the container into a named
+  volume, the model mounted read-only); `make verify` deselects `live_model`.
+- Tests: `tests/unit/test_llama_server.py` (5: the flags, the macOS profile, the Linux vector, size and
+  hash refusals, the binding record); `tests/integration/test_secrets.py` (3: get, put, replace, missing on
+  the OS's store — a throwaway keychain here; the file fallback's modes and a readable folder refused; the
+  OS's choice); `tests/integration/test_assistant.py` (1: the workspace opens with the model absent, says
+  `model missing`, rejects an instruction and still answers a control); `tests/integration/
+  test_live_gateway.py` (6, `live_model`: ready only after health and the typed probe, the key in no
+  process's arguments or environment, slots, metrics and web UI off, thinking off, the tokenizer; model
+  missing, wrong size and a right-sized sparse file refused before any load; the key reused from the store
+  and generated once; the real keychain holds it; A30: under the server's own profile an outbound connect
+  and a name lookup are refused while the server keeps answering; the harness reports ready and stores the
+  observed binding). Vitest 11 (the assistant view from events only). Playwright status spec 17 (the
+  header and trail say `assistant unavailable: model missing`). On macOS: `make test-fast` 304 passed,
+  live gateway 6 passed.
+- Guards mutation-checked: see the 5.1 commit's note in `docs/decisions.md` (listed at the checkpoint).
+
+## D3 checkpoint — launch profile (2026-10-15, measured under the Seatbelt profile on this M1 Max)
+
+| Profile | Flags | Load to health | First token (cold / warm) | Prompt tok/s | Generation tok/s | Typed probe | Peak footprint | Resident |
+|---|---|---|---|---|---|---|---|---|
+| CPU, 2 threads (the contract) | `-t 2 -ngl 0` | 28.1 s | 1.04 s / 0.96 s | 23.0 | 11.5 | 10.0 s | 5.62 GiB | 9.86 GiB |
+| CPU, all 10 cores | `-t 10 -ngl 0` | 30.6 s | 1.49 s / 0.94 s | 23.7 | 11.1 | 7.0 s | 5.62 GiB | — |
+| Metal, full offload | `-t 2 -ngl 99` | 23.6–25.5 s | 0.27 s / 0.09 s | 258 | 45.3–45.4 | 1.1 s | 1.24 GiB | 5.98 GiB |
+
+Each row passed the typed probe with thinking off. Generation is 164–175 tokens of prose at temperature
+0, seed 1; "cold" is the first request after load. Peak footprint is the kernel's `phys_footprint` (what
+the memory poll reads); Metal's weights live in GPU-mapped memory it does not count, hence the resident
+column (`ps`). Load times are with the file in the page cache. Linux (the container, CPU only, 2 threads):
+health in 16.2 s, 3.1 prompt tok/s, 1.6 generation tok/s.
 
 ## Open defects and gaps
 

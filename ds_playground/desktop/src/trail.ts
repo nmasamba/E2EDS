@@ -178,6 +178,20 @@ export function activity(log: LedgerEvent[]): Activity[] {
     else if (type === "grant.created") add(`Folder granted: ${body.label}`);
     else if (type === "grant.revoked") add("Folder removed");
     else if (type === "export.committed") add(`Export committed: ${body.version}`);
+    else if (type === "assistant.ready") add(`Assistant ready: ${body.profile}`);
+    else if (type === "assistant.unavailable") add(`Assistant unavailable: ${body.reason}`);
   }
   return items;
+}
+
+export type AssistantView = { state: string; reason: string; profile: string };
+
+/** The assistant as its last committed event left it: never ready on a message's say-so. */
+export function assistant(log: LedgerEvent[]): AssistantView {
+  let view: AssistantView = { state: "unavailable", reason: "not started", profile: "" };
+  for (const { type, body } of log) {
+    if (type === "assistant.ready") view = { state: "ready", reason: "", profile: String(body.profile) };
+    else if (type === "assistant.unavailable") view = { state: "unavailable", reason: String(body.reason), profile: "" };
+  }
+  return view;
 }

@@ -1,4 +1,4 @@
-.PHONY: install runner-env format test-fast sat sat-linux verify verify-linux harness-bin desktop-dev desktop-build e2e
+.PHONY: install runner-env format test-fast sat sat-linux verify verify-linux live live-linux harness-bin desktop-dev desktop-build e2e
 
 # rustup from Homebrew is keg-only on macOS; the extra entries are harmless elsewhere.
 export PATH := /opt/homebrew/opt/rustup/bin:$(HOME)/.cargo/bin:$(PATH)
@@ -25,6 +25,18 @@ sat: runner-env        ## sprint acceptance tests, cumulative; writes evidence r
 
 verify: runner-env     ## the sprint gate on this machine
 	sh tools/verify.sh
+
+live: runner-env       ## the local open model's tests: the real server, confined, on this machine
+	uv run pytest -m live_model
+
+# The same tests in the Linux container: llama.cpp b11104 built there once into a named volume from the
+# checkout beside the model (CPU only), the model mounted read-only, bubblewrap confining the server.
+LLAMA_SRC ?= $(HOME)/.local/share/dsp/llama.cpp
+MODEL_DIR ?= $(HOME)/.local/share/dsp/models
+live-linux:            ## the live_model tests in the Linux container (D2)
+	docker volume create dsp-llama-build >/dev/null
+	$(MAKE) verify-linux LINUX_MOUNTS='-v "$(LLAMA_SRC)":/llama:ro -v dsp-llama-build:/build -v "$(MODEL_DIR)":/models:ro' \
+		LINUX_RUN='sh tools/live_linux.sh'
 
 LINUX = docker run --rm --security-opt seccomp=unconfined -v "$(CURDIR)/..":/repo:ro -w /repo/ds_playground \
 	-e UV_PROJECT_ENVIRONMENT=/tmp/venv -e UV_CACHE_DIR=/tmp/uv -e RUFF_CACHE_DIR=/tmp/ruff \

@@ -86,3 +86,59 @@ class Exporter(Protocol):
 
     def commit_staged(self, root: Path, staging: Path, digests: Mapping[str, str]) -> str:
         """Verify the staged files and publish them as a new version; return its name."""
+
+
+class SecretStore(Protocol):
+    """The OS secret store behind ``secret://local/<account>``: never a file in the repo or argv."""
+
+    def get(self, account: str) -> str | None:
+        """Return the secret stored under this account, or None when there is none."""
+
+    def put(self, account: str, value: str) -> None:
+        """Store the secret under this account, replacing any earlier value."""
+
+
+class ModelGateway(Protocol):
+    """The one door to a model (B24): a bounded chat completion whose tools are typed schemas.
+
+    Nothing that comes back is trusted: the caller validates every tool call before it acts.
+    """
+
+    def complete(
+        self,
+        messages: Sequence[Mapping[str, Any]],
+        tools: Sequence[Mapping[str, Any]],
+        *,
+        max_tokens: int,
+        deadline: float,
+        seed: int,
+        temperature: float,
+    ) -> dict[str, Any]:
+        """Return the model's next message (text or tool calls) and its token usage, or raise.
+
+        ``deadline`` is seconds for this one call (D17: 300 s); past it the generation is
+        stopped and ASSISTANT_UNAVAILABLE is raised.
+        """
+
+    def count(self, text: str) -> int:
+        """Return how many tokens the text is for this model, to bound the input (D17)."""
+
+
+class ModelServer(ModelGateway, Protocol):
+    """A supervised local model server: verified, confined, started, watched and stopped."""
+
+    def start(self, proceed: Callable[[], bool] = lambda: True) -> dict[str, Any]:
+        """Verify the model, start the server confined and wait for readiness; raise if not.
+
+        ``proceed`` is asked while the model loads; False gives up (the harness is quitting).
+
+        Return what was observed: the model's and binary's digests, the chat template's
+        digest and the seconds the load took. Readiness is the health endpoint plus a typed
+        tool-response probe; an endpoint answering HTTP is not readiness.
+        """
+
+    def stop(self) -> None:
+        """Stop the server and release what ``start`` set up."""
+
+    def alive(self) -> bool:
+        """True while the server process runs and is within its memory limit."""

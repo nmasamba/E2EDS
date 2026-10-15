@@ -558,6 +558,97 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   harness, and the Linux built-app test presses the real Ctrl+Shift+K through xdotool. Mutation-checked:
   with the old chord back in the renderer the Playwright spec fails. Whether the built macOS app delivers
   Cmd+Shift+K is the owner's press at the gate (the Cmd+. failure was seen only there).
+- **2026-10-15 — S5 — DECISION — the launch contract as this build's flags (5.1)** — llama-server b11104
+  (0.4.1-dev) on this Mac, each flag proven by a run: `-m`, `--host 127.0.0.1 --port 8081`, `-c 8192`,
+  `-np 1`, `-t <threads>`, `-ngl <layers>`, `--offline`, `--no-webui` (`/` answers 404), `--no-agent` and
+  no `--tools`, `--no-slots` (`/slots` answers 501; it would show prompt content), `--log-disable` (the
+  server wrote 51 bytes of start-up text to its own stderr and nothing afterwards; no log file), `--reasoning
+  off` (an answer carries no `reasoning_content` and no `<think>`: proven; the chat-template kwargs route was
+  not needed), `--jinja` (tool calls come back as OpenAI-shaped `tool_calls` with `tool_choice: required`).
+  `/metrics` is off by default (501); `GET /props` answers with the server's settings and chat template (no
+  prompt content) and is used once at readiness to pin the template's digest; `POST /props` is off. The API
+  key is generated once (`secrets.token_urlsafe(32)`), kept in the OS secret store under
+  `secret://local/assistant-api-key`, written to a 0600 file under the state directory and passed with
+  `--api-key-file`; it is in no process's arguments or environment (checked through `ps`), and the file is
+  deleted when the server stops. The seed and temperature are per request, so the live tests fix them.
+- **2026-10-15 — S5 — DECISION — the model server is confined by the OS (5.1)** — macOS: a deny-by-default
+  Seatbelt profile applied by `sandbox-exec -f` (the binary is not ours, so the in-process `sandbox_init`
+  of Sprint 4 does not apply): `file-read*` on the binary's folder, the model file, the key file, `/usr/lib`,
+  `/System/Library` and the shared libraries the binary links outside those (read from `otool -L`: Homebrew's
+  OpenSSL), metadata on their ancestors; `process-exec` of the server binary alone; `network-bind` and
+  `network-inbound` on `localhost:8081` and no outbound rule, so egress is denied by the kernel, not by
+  `--offline`; `(deny process-info*)` with `(allow process-info* (target self))` (the server reads its own
+  process info and traps without it); sysctl reads by exact name only (36 names, taken from the denial log
+  while it started under CPU and under Metal; none is `kern.proc*`); the Sprint 4 System V denial; and for
+  Metal `iokit-open` on `IOSurfaceRootUserClient` and `AGXDeviceUserClient` plus `mach-lookup` of
+  `com.apple.MTLCompilerService` (the shader library is embedded as source and compiled at start through
+  that XPC service; without it Metal fails to create its library). Denials that remain and do not matter
+  (the server works): `com.apple.bsd.dirhelper`, `opendirectoryd`, `diagnosticd` (so os_log is off),
+  `windowserver`, `tccd`, metadata of `/etc`, `/var/db/timezone`, `/System/Cryptexes/App` and
+  `.GlobalPreferences.plist`. Memory on macOS is polled (the kernel's footprint, every check and before
+  every call) against the binding's `model_memory_gib` and the server killed past it: `sandbox-exec`'s exec
+  drops a jetsam limit (the Sprint 4 measurement), so the limit is not kernel-enforced there. Linux:
+  `prlimit --as` then bubblewrap with `--unshare-all --die-with-parent --new-session`, read-only binds of
+  the system libraries, `ld.so.cache`, the binary's folder, the model and the key file, `--dev`, the root
+  remounted read-only, no `/proc` (Docker forbids a fresh one) and the socket folder bound writable.
+- **2026-10-15 — S5 — DEVIATION — on Linux the listener is a UNIX socket (5.1)** — with every namespace new
+  the harness cannot reach `127.0.0.1:8081` inside the server's network namespace, so on Linux the server
+  listens on `<state>/assistant/socket/llama.sock` (`--host` takes a socket path in this build) and the
+  harness speaks HTTP over it; the binding record keeps the suite's `127.0.0.1:8081` (its schema allows no
+  other host). The alternative, sharing the network namespace and trusting `--offline`, is what the suite
+  says is not the boundary.
+- **2026-10-15 — S5 — DECISION — the model is verified at every server start (5.1)** — size first (the
+  Sprint 0 truncations), then SHA-256: hashing the 5.03 GB file takes 2.67 s on this Mac (1.89 GB/s); the
+  binary (50 KB) is hashed too. A verification failure (missing, size, hash) is final until the harness
+  restarts (the file does not change by itself); a crash, hang or limit is retried up to three times by the
+  harness's watch tick, each restart re-verifying. The alternative, caching by size and mtime, saves under
+  3 s per start and would trust a timestamp.
+- **2026-10-15 — S5 — DECISION — readiness and the binding record (5.1)** — readiness is `/health` 200 plus
+  a chat completion with one tool (`report_ready`, `tool_choice: required`) whose call must validate
+  against the tool's JSON Schema, and whose answer must carry no reasoning. The suite's
+  AssistantModelBinding 0.3.0 is written as a planning record (null digests) and, once ready, stored in the
+  ledger with the measured model, binary and chat-template digests (`planning_only: false`) and pinned by
+  the `assistant.ready` event; `assistant.unavailable` carries the reason. The workspace starts the
+  assistant in a thread after it is up and stops the server on quit; `GET /v1/assistant` shows the state
+  and the binding (no secret, no path). Model and server paths come from `DSP_MODEL_DIR` and
+  `DSP_LLAMA_SERVER`, defaulting to `~/.local/share/dsp`; a port held by another process is refused before
+  spawning, and a server a crashed harness left is killed by its pid file only if its command line is ours.
+- **2026-10-15 — S5 — DECISION — the secret store (5.1)** — macOS: the Security framework's generic-password
+  C API through ctypes (`SecKeychainAddGenericPassword`, `SecKeychainFindGenericPassword`,
+  `SecKeychainItemModifyAttributesAndData`; deprecated since 10.10, working on 26.3.1, proven here), never
+  the `security` command with `-w`, which would put the secret in a process's arguments; the login keychain
+  by default, a keychain file with its password for tests (`security create-keychain` under tmp). Linux:
+  `secret-tool` (the value on its standard input) when present, else a 0600 file under a 0700
+  `<state>/secrets/` (the container and CI); a folder others can read is refused. Service name
+  `dev.dsp.assistant`, account the last part of the `secret://local/<account>` reference. Not tested:
+  `secret-tool` present without a Secret Service (no such host here).
+- **2026-10-15 — S5 — ASSUMPTION — no test loads the model by accident (5.1)** — every pytest harness runs
+  with `DSP_MODEL_DIR` pointed at an empty folder (an autouse fixture), as do Playwright's harnesses, the
+  shell's Rust test and the built-app tests; `live_model` tests start one real server per session and lend
+  it to each harness. A harness start therefore records `assistant.unavailable: model missing` as its
+  first event, and four tests that asserted exact event lists now expect it.
+- **2026-10-15 — S5 — FINDING — what the D3 measurement shows (5.1)** — see the checkpoint table in
+  `STATUS.md`: under the Seatbelt profile on this M1 Max, CPU with 2 threads generates 11.5 tokens/s, CPU
+  with all 10 cores 11.1 tokens/s (the efficiency cores slow the whole), Metal full offload 45 tokens/s with
+  prompt processing at 258 tokens/s and the typed probe in 1.1 s against 10 s on 2 CPU threads. The
+  footprint the kernel accounts (what the memory poll reads) is 5.6 GiB on CPU and 1.2 GiB on Metal, whose
+  weights live in GPU-mapped memory the footprint does not count; resident size is 9.9 GiB and 6.0 GiB.
+- **2026-10-15 — S5 — DEFECT — a server that answered health but failed readiness was left running
+  (5.1, fixed)** — found by a mutation run that put the key in the arguments: the server started, health
+  answered, the authenticated probe got 401, the adapter raised without stopping the process and the
+  port stayed held. Readiness after health is now one step whose failure stops the server; a unit test
+  runs a real process that answers health and refuses everything else and checks it is gone afterwards
+  (mutation-checked). On Linux `ps -o command=` cuts the command line at the terminal's width, which hid
+  `--api-key-file` from the live test and would have stopped the stale-server check from recognising its
+  own server: both use `ps -ww` now.
+- **2026-10-15 — S5 — FINDING — guards mutation-checked (5.1)** — each broken in turn, each caught by a test:
+  the size check, the hash check, a stale server killed only when its command line is ours, a port held by
+  another process refused before spawning, `(deny default)` in the profile, `--unshare-all` on Linux, the
+  keychain's replace path, the fallback folder's permissions, the key as a file rather than an argument
+  (both the flag and the value), outbound network denied in the profile (the A30 probe connects when it is
+  allowed), the typed probe deciding readiness (made stricter: the real model cannot be made to fail it, so
+  the check was shown to run), `--no-slots`, `--reasoning off` (with reasoning on the answer carries
+  `reasoning_content`), the quit stopping the server, and a readiness failure stopping the server.
 - **2026-10-15 — S5 — ASSUMPTION — the sprint branch** — the work is on the branch the desktop app made for
   this session, `claude/sprint-5-assistant-gateway-fc1f11`, from `main` at `73698be`, rather than a
   branch named `sprint-5-assistant`; the pull request carries the sprint's title.

@@ -15,11 +15,14 @@ from fastapi import Body, Depends, FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from dsp.adapters import export_fs, sandbox
+from dsp.adapters import export_fs, sandbox, secrets
 from dsp.adapters.discovery import host, probes
 from dsp.adapters.ledger_sqlite import SqliteLedger
+from dsp.adapters.llama_server import LlamaServer
 from dsp.adapters.store_fs import ContentStore
 from dsp.application import admission, controls, conversation, jobs
+from dsp.application.assistant import LAUNCH, MODEL_BYTES, Assistant
+from dsp.application.assistant import local_binding as assistant_binding
 from dsp.application.discovery import discover
 from dsp.application.grants import grant_folder, resolve, revoke, summary
 from dsp.application.packs import export_profile, submit_profile
@@ -55,6 +58,8 @@ STATUS = (
 MESSAGE_FIELDS = {"client_message_id", "text", "expected_revision"}
 MAX_SOURCE = 2**20  # a task's source text
 ENDED = ("succeeded", "failed", "cancelled")
+MODELS = Path.home() / ".local" / "share" / "dsp" / "models"
+LLAMA = Path.home() / ".local" / "share" / "dsp" / "llama.cpp" / "build" / "bin" / "llama-server"
 
 
 def _now() -> str:
@@ -70,6 +75,7 @@ def mount(
     state_dir: Path,
     server: uvicorn.Server | None = None,
     clock: Callable[[], str] = _now,
+    assistant: Assistant | None = None,
 ) -> None:
     """Add the workspace routes: grants, profiling, discovery, planning, events and jobs.
 
@@ -81,10 +87,26 @@ def mount(
     of time for the ledger and the job coordinator. The runner environment is ``DSP_RUNNER_ENV``,
     or ``.runner-env`` beside the source when the harness runs from source (a frozen harness has
     only the variable); without it, or without the OS's sandbox, sandboxed work is refused, never
-    run another way.
+    run another way. The assistant's model server (``DSP_LLAMA_SERVER``) and model
+    (``DSP_MODEL_DIR``) default to ``~/.local/share/dsp``; the assistant starts after the
+    workspace is up and stops with the harness, and the workspace opens whether or not the model
+    is there (R18). A test may pass a started ``assistant``.
     """
     ctx = TrustedContext.local()
     binding = local_binding(ctx, *host())
+    if assistant is None:
+        model = Path(os.environ.get("DSP_MODEL_DIR") or MODELS) / "Qwen3-8B-Q4_K_M.gguf"
+        llama = LlamaServer(
+            assistant_binding(ctx, threads=LAUNCH["threads"]),
+            model=model,
+            model_bytes=MODEL_BYTES,
+            server=Path(os.environ.get("DSP_LLAMA_SERVER") or LLAMA),
+            state=state_dir,
+            secrets=secrets.local(state_dir),
+            threads=LAUNCH["threads"],
+            gpu_layers=LAUNCH["gpu_layers"],
+        )
+        assistant = Assistant(ctx, llama, ledger=lambda: ledger(), clock=clock)
     beside = None if getattr(sys, "frozen", False) else Path(__file__).parents[3] / ".runner-env"
     named = os.environ.get("DSP_RUNNER_ENV")
     environment = Path(named) if named else beside  # a frozen harness has no source beside it
@@ -157,10 +179,19 @@ def mount(
 
         threading.Thread(target=loop).start()  # not a daemon: a quit drains what it is doing
 
+    def supervise() -> None:
+        """Start the assistant once the workspace is up; watch it; stop it with the harness."""
+        assistant.start(running)
+        while running():
+            assistant.watch()
+            time.sleep(1)
+        assistant.stop()
+
     if server is not None:
         every(1.0, lambda: jobs.reconcile(ctx, ledger=ledger(), clock=clock))
         if runner is not None:
             every(0.25, dispatch)
+        threading.Thread(target=supervise).start()  # not a daemon: a quit stops the model server
 
     def native(request: Request) -> None:
         """A lease, a heartbeat or a report comes from a worker process, never from the window."""
@@ -388,6 +419,11 @@ def mount(
     @app.get("/v1/workload")
     def latest_workload() -> dict[str, Any]:
         return current_workload(ctx, ledger())
+
+    @app.get("/v1/assistant")
+    def assistant_state() -> dict[str, Any]:
+        """Whether the assistant is ready, and its binding; never a secret or a path."""
+        return assistant.shown()
 
     @app.post("/v1/conversations/{conversation_id}/messages")
     async def post_message(conversation_id: str, request: Request) -> dict[str, Any]:

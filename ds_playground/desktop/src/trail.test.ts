@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import {
   activity,
+  assistant,
   expectedRevision,
   freshness,
   jobs,
@@ -75,6 +76,20 @@ test("R20: a job that starts again is running again, and a revoked source is not
   expect(states([...rerun, event(12, "job.failed", { code: "FORBIDDEN" })]).develop).toEqual([
     "failed",
     "FORBIDDEN",
+  ]);
+});
+
+test("R18: the assistant is ready only by its own committed event, and unavailable says why", () => {
+  expect(assistant([])).toEqual({ state: "unavailable", reason: "not started", profile: "" });
+  const down = [event(1, "assistant.unavailable", { reason: "model missing" })];
+  expect(assistant(down)).toEqual({ state: "unavailable", reason: "model missing", profile: "" });
+  const up = [...down, event(2, "assistant.ready", { profile: "assistant-local-cpu-v1", model_sha256: "sha256:d9" })];
+  expect(assistant(up)).toMatchObject({ state: "ready", profile: "assistant-local-cpu-v1" });
+  const said = [...up, event(3, "assistant.message", { text: "I am ready" }), event(4, "assistant.unavailable", { reason: "the model server stopped" })];
+  expect(assistant(said)).toMatchObject({ state: "unavailable", reason: "the model server stopped" });
+  expect(activity(up).map((item) => item.text)).toEqual([
+    "Assistant unavailable: model missing",
+    "Assistant ready: assistant-local-cpu-v1",
   ]);
 });
 

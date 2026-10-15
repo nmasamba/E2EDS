@@ -8,9 +8,12 @@ import { expect, type Page } from "@playwright/test";
 export type Harness = { base_url: string; token: string; pid: number; home: string };
 
 /** Start a real harness on a DSP_HOME, a new temporary one by default, and wait for its answer. */
-export async function startHarness(home = mkdtempSync(join(tmpdir(), "dsp-renderer-"))): Promise<Harness> {
+export async function startHarness(
+  home = mkdtempSync(join(tmpdir(), "dsp-renderer-")),
+  models = home, // no model unless a spec names the folder that holds it
+): Promise<Harness> {
   spawn("uv", ["run", "--frozen", "--project", "..", "python", "-m", "dsp.harness", "--dev"], {
-    env: { ...process.env, DSP_HOME: home },
+    env: { ...process.env, DSP_HOME: home, DSP_MODEL_DIR: models },
     stdio: "ignore",
   });
   for (let attempt = 0; attempt < 300; attempt++) {
