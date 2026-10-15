@@ -649,6 +649,12 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   allowed), the typed probe deciding readiness (made stricter: the real model cannot be made to fail it, so
   the check was shown to run), `--no-slots`, `--reasoning off` (with reasoning on the answer carries
   `reasoning_content`), the quit stopping the server, and a readiness failure stopping the server.
+- **2026-10-15 — S5 — FINDING — one model server at a time in the Linux container (5.1)** — Docker
+  Desktop's VM has 7.75 GiB; inside it llama-server holds the model as 5.7 GiB of anonymous memory
+  (`anon-rss` in the kernel's out-of-memory record; the bind-mounted file is not kept as file pages), so a
+  second server does not fit and the kernel killed the first (`make live-linux`, status 137, twice). The
+  live tests therefore start one server per session, and the quit test lends that server to its harness
+  and runs last. A machine with the model on a local disk would map it instead; not measured here.
 - **2026-10-15 — S5 — ASSUMPTION — the sprint branch** — the work is on the branch the desktop app made for
   this session, `claude/sprint-5-assistant-gateway-fc1f11`, from `main` at `73698be`, rather than a
   branch named `sprint-5-assistant`; the pull request carries the sprint's title.

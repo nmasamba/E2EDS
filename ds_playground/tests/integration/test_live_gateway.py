@@ -299,9 +299,13 @@ def test_r18_the_harness_reports_the_assistant_ready_and_stores_its_observed_bin
 
 
 def test_d24_quitting_the_harness_stops_the_model_server_it_started(
-    state_dir: Path, tmp_path: Path
+    model_server: LlamaServer, state_dir: Path
 ) -> None:
-    """D24, A44: the harness's own server (its own port here) ends with the harness's quit."""
+    """D24, A44: the model server ends with the harness's quit; the key file goes with it.
+
+    The session's server is lent to this harness with its real ``stop``, so this is the last
+    test: one server at a time is all the Linux container's memory holds (decisions, 2026-10-15).
+    """
     import socket
     import threading
 
@@ -310,12 +314,14 @@ def test_d24_quitting_the_harness_stops_the_model_server_it_started(
     from dsp.harness import workspace
     from dsp.harness.app import create_app
 
-    adapter = make(state_dir)
-    adapter.binding["endpoint"]["port"] = 8082  # beside the session's server on 8081
-    adapter.client = httpx.Client(base_url="http://127.0.0.1:8082", timeout=30)
+    class Lent(Shared):
+        def stop(self) -> None:
+            """The harness's quit stops the real server."""
+            self.server.stop()
+
     assistant = Assistant(
         CTX,
-        adapter,
+        Lent(model_server),
         ledger=lambda: SqliteLedger(state_dir / "ledger.sqlite", Clock()),
         clock=Clock(),
     )
@@ -330,7 +336,7 @@ def test_d24_quitting_the_harness_stops_the_model_server_it_started(
     client = httpx.Client(
         base_url=f"http://127.0.0.1:{port}", headers={"Authorization": "Bearer token"}, timeout=30
     )
-    for _ in range(4000):  # a second load beside the session's server, slow on CPU in the container
+    for _ in range(300):
         try:
             if client.get("/v1/assistant").json()["state"] == "ready":
                 break
@@ -338,14 +344,15 @@ def test_d24_quitting_the_harness_stops_the_model_server_it_started(
             pass
         time.sleep(0.1)
     assert client.get("/v1/assistant").json()["state"] == "ready"
-    assert adapter.process is not None
-    pid = adapter.process.pid
+    assert model_server.process is not None
+    pid = model_server.process.pid
+    assert model_server.alive()
     assert client.post("/v1/shutdown").json() == {"status": "stopping"}
     thread.join(30)
     for _ in range(100):
-        if adapter.process.poll() is not None:
+        if model_server.process.poll() is not None:
             break
         time.sleep(0.1)
-    assert adapter.process.poll() is not None, f"the model server {pid} outlived the harness"
-    assert not (state_dir / "assistant" / "api-key").exists()
+    assert model_server.process.poll() is not None, f"the model server {pid} outlived the harness"
+    assert not (model_server.state / "api-key").exists()
     (state_dir / "harness.json").unlink(missing_ok=True)
