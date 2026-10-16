@@ -210,9 +210,11 @@ class LlamaServer:
         threads: int,
         gpu_layers: int,
     ) -> None:
-        self.binding, self.model, self.server = dict(binding), model, server
+        self.binding, self.model, self.server = dict(binding), model.resolve(), server.resolve()
         self.model_bytes = model_bytes
-        self.state, self.secrets = state / "assistant", secrets
+        # Real paths only: the OS sandbox matches the path the kernel sees, so a profile naming a
+        # symlinked folder (/var for /private/var on macOS) would deny the server its own key file.
+        self.state, self.secrets = (state / "assistant").resolve(), secrets
         self.threads, self.gpu_layers = threads, gpu_layers
         self.process: subprocess.Popen[bytes] | None = None
         self.failure: str | None = None

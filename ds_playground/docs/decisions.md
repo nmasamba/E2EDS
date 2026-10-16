@@ -871,6 +871,33 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   `live_model` part `A28-generated-code-live-<binding>` (written by `make live`, PASS only when the
   committed table equals DuckDB's); the overall record stays INSUFFICIENT_EVIDENCE for sealed
   partitions (Sprint 9) and VM isolation (the owner's deviation), not rounded up.
+- **2026-10-16 — S5 — DEFECT — the confinement named the state folder by an unresolved path (5.7, fixed)** —
+  the first `make live` of the gate failed its Playwright acceptance spec before the first keystroke:
+  the harness it started reported "the model server exited with status 1" four times (the initial
+  start and the watch's three). The `log stream` watch kept beside the run shows why: Seatbelt
+  denied `file-read-data` on the key file at `/private/var/folders/…/dsp-renderer-…/assistant/api-key`;
+  the profile had named it as `/var/folders/…`, the path Node's temp directory gives, and the OS
+  sandbox matches the real path. pytest's temp paths are already real, so no Python test saw it;
+  an owner whose profile folder sits behind a symlink would have. The adapter now resolves the
+  model, the binary and the state folder before any path reaches a profile, an argv or a bind
+  (unit test with a symlinked folder on both OSes). The watch found no other denial of ours beyond
+  the known benign ones (`com.apple.diagnosticd`, `com.apple.bsd.dirhelper`, `/System/Cryptexes/App`
+  metadata, `/etc` metadata); no sysctl was asked for.
+- **2026-10-16 — S5 — DEFECT — `make sat-linux` lost the marker expression's quotes (5.7, fixed)** — the
+  5.5 change that leaves `live_model` out of the acceptance runs wrote `-m "not live_model"` into the
+  target's `LINUX_RUN`, which the Linux recipe passes to the container inside a double-quoted
+  string, so pytest received `-m not` and refused ("expected not OR left parenthesis OR
+  identifier; got end of input"); the first gate run of `make sat-linux` failed at once. The quotes
+  are now escaped (`\"not live_model\"`) and the dry run shows them reaching the container.
+  `make sat` on macOS, which runs pytest directly, was never affected.
+- **2026-10-16 — S5 — DEFECT — `killpg` refused with EPERM in the sandbox's stop, intermittent (open)** —
+  the final `make verify` on macOS failed the Sprint 4 CPU-time containment test once:
+  `sandbox.py:104` `os.killpg(pid, signal.SIGKILL)` → `PermissionError: [Errno 1]` while stopping
+  a task past its CPU limit; the test passed three times alone right after and in the two earlier
+  full runs of the day. The same refusal was logged without a traceback at the Sprint 4 gate. Not
+  touched by this sprint; recorded with the traceback, open for Sprint 6 housekeeping (the kill
+  should check the group is still the task's, or signal the known pids), and the gate's record
+  below keeps the failed run beside the rerun.
 - **2026-10-16 — S5 — FINDING — the integrity review at 5.7: PASS, two should-fix, six notes** — run once
   as a general-purpose agent carrying the reviewer's definition (the project agent is not in the
   session's registry), on `73698be..4eef69d`. Should-fix, both fixed: (1) authority — a model

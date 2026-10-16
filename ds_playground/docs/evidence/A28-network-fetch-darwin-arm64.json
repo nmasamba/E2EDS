@@ -3,13 +3,13 @@
   "sprint": 4,
   "os": "darwin-arm64",
   "fixture": "loopback-listener-and-lookup",
-  "commit": "9be5f61",
+  "commit": "f4c6690",
   "expected": "an HTTP fetch from a listener on this host's loopback and a name lookup both fail inside the sandbox; the listener receives nothing",
   "actual": "fetch: failed: crash: URLError: [Errno 1] Operation not permitted; lookup: failed: crash: gaierror: [Errno 8] nodename nor servname provided, or not known; the listener accepted nothing",
   "outcome": "PASS",
   "limits": [
     "OS-sandbox assurance for one local user (Seatbelt on macOS, bubblewrap and seccomp on Linux): not VM isolation, and not a boundary for hostile multi-tenant code",
-    "the code is written by hand: no assistant generates code until Sprint 5"
+    "the code is written by hand; model-generated code and its repairs are the live_model part (A28-generated-code-live-<binding>, written by `make live`)"
   ],
   "assurance": "os_sandbox_single_user"
 }

@@ -51,7 +51,7 @@ verify-linux:   ## the same gate in a Linux container: repo read-only, bubblewra
 
 sat-linux:      ## every sprint's acceptance tests in the Linux container; evidence copied to docs/evidence
 	$(MAKE) verify-linux LINUX_MOUNTS='-v "$(CURDIR)/docs/evidence":/evidence' \
-		LINUX_RUN='DSP_EVIDENCE=/tmp/evidence DSP_COMMIT=$(shell git rev-parse --short HEAD) uv run pytest -m "not live_model" tests/sat'
+		LINUX_RUN='DSP_EVIDENCE=/tmp/evidence DSP_COMMIT=$(shell git rev-parse --short HEAD) uv run pytest -m \"not live_model\" tests/sat'
 
 
 harness-bin:    ## freeze the harness into one executable, named for the target triple, for the bundle

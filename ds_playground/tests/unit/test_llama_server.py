@@ -258,3 +258,17 @@ def test_r16_a_generation_that_keeps_streaming_past_the_deadline_is_stopped_as_a
         llama_server.assemble(slow(), None, time.monotonic() + 0.1)
     whole = llama_server.assemble(slow(), None, time.monotonic() + 60)
     assert (whole["message"]["content"], whole["stopped"]) == ("x" * 50, False)
+
+
+def test_r16_the_confinement_names_real_paths_so_a_symlinked_profile_folder_still_works(
+    tmp_path: Path,
+) -> None:
+    """R16, B26: the sandbox matches the kernel's path, so a symlinked folder is resolved first."""
+    real = tmp_path / "real"
+    real.mkdir()
+    (tmp_path / "link").symlink_to(real)
+    adapter = server(tmp_path / "link")
+    assert adapter.state == real / "home" / "assistant"
+    assert (adapter.model, adapter.server) == (real / "model.gguf", real / "llama-server")
+    assert str(real / "home" / "assistant") in adapter.profile()
+    assert str(tmp_path / "link") not in adapter.profile()
