@@ -871,6 +871,19 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   `live_model` part `A28-generated-code-live-<binding>` (written by `make live`, PASS only when the
   committed table equals DuckDB's); the overall record stays INSUFFICIENT_EVIDENCE for sealed
   partitions (Sprint 9) and VM isolation (the owner's deviation), not rounded up.
+- **2026-10-16 — S5 — FINDING — the Linux container cannot meet D17's deadline for the assistant's prompts (5.7, open as a fact)** —
+  `make live-linux` at the gate: 12 passed, 4 failed. The gateway's readiness, verification, key
+  and A30 offline tests, the hung-generation A24, out of memory and the remote refusals pass; A28
+  and A29 fail with "no answer within the 300 s generation deadline" and no generation, because
+  the container (CPU only, 2 threads, no Metal) processes prompts at 3.1 tokens per second and one
+  call's context is about 2,700 tokens: some 15 minutes of prompt processing against a 300 s
+  deadline. The next two tests then wait behind the abandoned generations, which keep the single
+  slot (`-np 1`) until their deadline, and time out. The harness's answers were right at every
+  step (the deadline fired, the task failed with that reason, the controls answered). Nothing is
+  tuned for it: the binding's limits are D17's; the container is the Linux verification stand-in,
+  not a target machine. Recorded as a measured fact per OS, open as such. The Linux evidence files
+  of that run were not copied out because `tools/live_linux.sh` copied after a failing pytest; it
+  now copies whatever was written and then exits with pytest's status.
 - **2026-10-16 — S5 — DECISION — the feature-count question is the application's own (5.7)** — the fifth
   live run had four of the five reference instructions as described; for "keep features minimal"
   the model set the soft objective and answered instead of asking about a hard maximum, as it had

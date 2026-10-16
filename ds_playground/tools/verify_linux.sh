@@ -10,6 +10,9 @@ if [ -d /llama ]; then
   apt-get install -y -qq --no-install-recommends build-essential cmake >/dev/null
   chown -R dsp:dsp /build
 fi
-setpriv --reuid=dsp --regid=dsp --init-groups env HOME=/home/dsp sh -c "$1"
-# `make sat-linux`: the evidence the run wrote, copied out through the one writable mount.
+status=0
+setpriv --reuid=dsp --regid=dsp --init-groups env HOME=/home/dsp sh -c "$1" || status=$?
+# `make sat-linux` and `make live-linux`: the evidence the run wrote, copied out through the one
+# writable mount whatever the run's outcome (a failed run's records are the ones to read).
 if [ -d /evidence ] && [ -d /tmp/evidence ]; then cp /tmp/evidence/*.json /evidence/; fi
+exit $status

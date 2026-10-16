@@ -792,9 +792,54 @@ GATE_PENDING_VERIFY_RERUN
     FAILED tests/integration/test_live_intent.py::test_a29_the_five_reference_instructions
     2 failed, 14 passed, 393 deselected, 6 warnings in 425.72s (0:07:05)
     ```
-GATE_PENDING_LIVE_SIXTH
-GATE_PENDING_REVIEW
-GATE_PENDING_FACTS
+- `make live-linux` (linux/arm64 container, CPU only, 2 threads) at `77420d8`: **12 passed, 4 failed**
+  in 28 min 38 s. Passed: the seven gateway tests (readiness, verification, the key, A30 offline), the
+  hung-generation A24 and the out-of-memory tests, the three remote refusals. Failed: A28 and A29,
+  each "no answer within the 300 s generation deadline" with 0 generations — the container processes
+  prompts at 3.1 tokens per second (D3), so the 2,700-token system context of one call needs about
+  15 minutes against D17's 300 s; then the remote readiness and the deadline tests timed out behind
+  the abandoned generations, which hold the server's single slot until their deadline. A fact of
+  this container's speed, not a product defect: the harness said so truthfully at each step. The
+  run's evidence files were not copied out (the copy follows a failing pytest; fixed below). Tail:
+  ```
+  FAILED tests/integration/test_live_generate.py::test_a28_the_acceptance_instruction_yields_a_committed_table_equal_to_duckdb
+  FAILED tests/integration/test_live_intent.py::test_a29_the_five_reference_instructions
+  FAILED tests/integration/test_live_remote.py::test_r17_the_remote_binding_is_ready_with_its_policy_shown_and_answers_from_llama_server
+  FAILED tests/integration/test_live_failure.py::test_r16_a_hung_server_is_killed_at_the_deadline_and_the_assistant_recovers_on_the_same_binding
+  4 failed, 12 passed, 394 deselected, 1 warning in 1718.71s (0:28:38)
+  ```
+  - sixth run at `77420d8` (the two product rules): the acceptance spec **passed in 72 s**; Python
+    **15 passed, 1 failed** in 7 min 9 s. **A29 PASS**: the five reference instructions as described
+    ("keep features minimal" now ends with the application's question). **A28 FAIL** on the known
+    over-grouping only (8 rows by region and service level, values equal to DuckDB's for that
+    grouping; 5 generations, 42 s, 0 repairs). **A24 PASS** (p95 pause 0.019 s, cancel 0.036 s;
+    third run) and **A30 PASS** (the offline part). Tail:
+    ```
+    ✓  1 tests/live.spec.ts:23:1 › @live_model A28, A24: type the instruction, see real progress, pause mid-run, resume, open the table (1.2m)
+    FAILED tests/integration/test_live_generate.py::test_a28_the_acceptance_instruction_yields_a_committed_table_equal_to_duckdb
+    1 failed, 15 passed, 394 deselected, 6 warnings in 429.59s (0:07:09)
+    ```
+- Integrity review (one run, general-purpose agent with the reviewer's definition; 259k tokens):
+  **REVIEW: PASS**, two should-fix and six notes, all answered (decisions 2026-10-16): the model's
+  patch could set the derived privacy status or name an unlisted field, and a bare-prefix provenance
+  covered every path (fixed: refused, parent-or-exact provenance); the generation deadline was a
+  per-read timeout (fixed: the whole generation); the tool catalogue is counted in the input bound
+  and the Metal memory poll counts resident memory (notes taken); replay idempotency of two tools, a
+  text answer settling `applied` without effect, Linux live coverage and the in-memory spend sum
+  (notes recorded, the first two open for Sprint 6). Every fix mutation-caught.
+- **Measured facts** (facts, not claims of adequacy; the local binding `assistant-local-qwen`,
+  llama.cpp b11104, Qwen3-8B Q4_K_M, seed 1, temperature 0; the acceptance instruction on the
+  500-row orders fixture, from the A28 generated-code record's `measured` field; the D3 rows are the
+  5.1 checkpoint above):
+
+  | Fact | macOS arm64 (Metal, `-t 2 -ngl 99`) | Linux arm64 container (CPU, `-t 2`) |
+  |---|---|---|
+  | First useful response (the first tool call, from the instruction) | 8.5–9.7 s (two runs) | none: the first call ran past the 300 s deadline (the 2,700-token prompt at 3.1 tok/s needs ~15 min) |
+  | Step latency (mean seconds per generation, prompt and answer) | 6.8–7.7 s over 5 generations | not reached: no generation completed within D17 |
+  | Tokens per second | 45.3 generation / 258 prompt (D3, prose); 14.4–16.1 completion tokens per second of generation time in the task (prompt processing included) | 1.6 generation / 3.1 prompt (D3); none completed in the task |
+  | Peak memory of the model server | 6.39 GiB `phys_footprint`, sampled every 0.5 s during the task (D3: 1.24 GiB at readiness; resident 5.98 GiB, the mapped weights) | not sampled (no task ran); the server loaded within the `prlimit` address-space bound |
+  | Repairs per task | 0 of at most 2 (one task submitted) | no task submitted |
+  | Load to health | 23.6–25.5 s (D3) | 16.2 s (D3) |
 
 ## D3 checkpoint — launch profile (2026-10-15, measured under the Seatbelt profile on this M1 Max)
 

@@ -3,7 +3,7 @@
   "sprint": 5,
   "os": "darwin-arm64",
   "fixture": "the real model server under its own confinement, a loopback listener on another port",
-  "commit": "5f2cec9",
+  "commit": "77420d8",
   "expected": "the assistant starts and answers with third-party network denied by the OS, not by a flag",
   "actual": "under the server's profile a connect to this host answered PermissionError 1 and a name lookup gaierror 8; the server's own listener kept answering",
   "outcome": "PASS",
