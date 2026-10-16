@@ -723,7 +723,19 @@ Code commit `2c81168`; the evidence and this file were committed after it.
     Required test coverage of 85% reached. Total coverage: 89.15%
     392 passed, 18 deselected, 6 warnings in 494.78s (0:08:14)
     ```
-GATE_PENDING_VERIFY_LINUX_LAST
+  - `make verify-linux` at `937e42b`: 1 failed, 391 passed — the new symlink unit test read the macOS
+    profile text on Linux; the test now reads the confinement each OS builds (`2712b6b`, a test-only
+    change, 10 unit tests passing on macOS). Rerun at `2712b6b`: **392 passed, 18 deselected**,
+    coverage 88.36%, 7 min 2 s. Tail:
+    ```
+    Required test coverage of 85% reached. Total coverage: 88.36%
+    392 passed, 18 deselected, 1 warning in 422.97s (0:07:02)
+    ```
+- **Gate outcome:** macOS arm64 — verify, SAT, desktop build, end-to-end, the Playwright acceptance
+  spec, A24, A29 and A30 green; A28's generated-code part FAIL (the over-grouping). Linux arm64
+  (container) — verify and SAT green; the live suite red by the D17 deadline fact (four tests).
+  `tools/trace_ids.py 5`: every ID in scope is in a test docstring or an evidence record. The
+  `[s5] chore: sprint 5 complete` commit is not made: two live records are red.
 - `make sat` on macOS at `f4c6690`: **22 passed** in 3 min 47 s (every sprint's acceptance tests, the
   `live_model` ones left to `make live`); evidence rewritten under `docs/evidence/`. Tail:
   ```

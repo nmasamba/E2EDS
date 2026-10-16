@@ -1,6 +1,6 @@
 # Changelog
 
-## Sprint 5 — assistant gateway, open model first (in progress)
+## Sprint 5 — assistant gateway, open model first (2026-10-16; gate run on both OSes, two live records open)
 
 - Cancel run is Cmd+Shift+K on macOS and Ctrl+Shift+K on Linux (in the window and in the native menu);
   Cmd+. reached nothing in the built macOS app.
