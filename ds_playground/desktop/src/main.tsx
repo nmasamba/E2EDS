@@ -3,10 +3,12 @@ import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   activity,
+  assistant,
   expectedRevision,
   freshness,
   liveJob,
   merge,
+  results,
   trail,
   type Activity,
   type JobView,
@@ -40,7 +42,7 @@ type Plan = {
 const CONVERSATION = "conversation-local";
 const ENDED = new Set(["succeeded", "failed", "cancelled"]);
 /** The native menu's chords, handled here too, so they work wherever the window has focus. */
-const SHORTCUTS: Record<string, string> = { p: "pause", ".": "cancel" };
+const SHORTCUTS: Record<string, string> = { p: "pause", "shift+k": "cancel" };
 const LABELS: Record<string, string> = { pause: "Pause", resume: "Resume", cancel: "Cancel run" };
 /** Shows, in the activity trail, a request the harness never recorded. */
 type NotReceived = (what: string) => (error: unknown) => void;
@@ -258,7 +260,7 @@ function ProposedPlan({ plan }: { plan: Plan | null }) {
 /**
  * Pause, resume and cancel for the live job: each press is one command with its own ID, sent on
  * the fast path. The outcome is the command's committed state, shown in the activity trail.
- * Cmd+P and Cmd+. (Ctrl elsewhere) press Pause and Cancel run from anywhere in the window.
+ * Cmd+P and Cmd+Shift+K (Ctrl elsewhere) press Pause and Cancel run from anywhere in the window.
  */
 function Controls(props: { harness: Harness; job: JobView | null; notReceived: NotReceived }) {
   const { harness, job, notReceived } = props;
@@ -270,7 +272,8 @@ function Controls(props: { harness: Harness; job: JobView | null; notReceived: N
   useEffect(() => {
     const press = (event: KeyboardEvent) => {
       const command = /Mac/.test(navigator.platform) ? event.metaKey : event.ctrlKey;
-      const action = command && !event.shiftKey && !event.altKey && SHORTCUTS[event.key.toLowerCase()];
+      const chord = (event.shiftKey ? "shift+" : "") + event.key.toLowerCase();
+      const action = command && !event.altKey && SHORTCUTS[chord];
       if (!action || !job) return;
       event.preventDefault();
       send(action);
@@ -356,6 +359,100 @@ function Run({ harness, notReceived }: { harness: Harness; notReceived: NotRecei
           Start the hung test job
         </button>
       </p>
+    </section>
+  );
+}
+
+type Output = { name: string; sha256: string; bytes: number };
+type Opened = { job: string; name: string; rows: string[][] };
+
+/** Parse a CSV the way the harness wrote it: comma separated, quotes around cells that need them. */
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quoted) {
+      if (ch === '"' && text[i + 1] === '"') (cell += '"'), i++;
+      else if (ch === '"') quoted = false;
+      else cell += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === ",") (row.push(cell), (cell = ""));
+    else if (ch === "\n") (row.push(cell), rows.push(row), (row = []), (cell = ""));
+    else if (ch !== "\r") cell += ch;
+  }
+  if (cell || row.length) (row.push(cell), rows.push(row));
+  return rows;
+}
+
+/**
+ * The committed results: each succeeded job's outputs, read from the record its success names,
+ * and the one the owner opened, rendered as a table (inert text: every cell is data).
+ */
+function Results({ harness, log }: { harness: Harness; log: LedgerEvent[] }) {
+  const [records, setRecords] = useState<Record<string, Output[]>>({});
+  const [opened, setOpened] = useState<Opened | null>(null);
+  const committed = results(log);
+  useEffect(() => {
+    for (const result of committed) {
+      if (result.sha256 in records) continue;
+      void fetch(`${harness.base_url}/v1/artifacts/${result.sha256}`, {
+        headers: { Authorization: `Bearer ${harness.token}` },
+      })
+        .then((response) => (response.ok ? response.json() : null))
+        .then((record: { type?: string; outputs?: Output[] } | null) =>
+          setRecords((known) => ({ ...known, [result.sha256]: record?.type === "RunRecord" ? record.outputs ?? [] : [] })),
+        )
+        .catch(() => undefined);
+    }
+  }, [committed.length]);
+  const open = async (job: string, output: Output) => {
+    const response = await fetch(`${harness.base_url}/v1/artifacts/${output.sha256}`, {
+      headers: { Authorization: `Bearer ${harness.token}` },
+    });
+    const text = await response.text();
+    setOpened({ job, name: output.name, rows: parseCsv(text).slice(0, 101) });
+  };
+  const tables = (sha256: string) => (records[sha256] ?? []).filter((output) => output.name.endsWith(".csv"));
+  const listed = committed.filter((result) => tables(result.sha256).length);
+  return (
+    <section aria-labelledby="results">
+      <h2 id="results">Results</h2>
+      {listed.length === 0 && <p>No table yet.</p>}
+      <ul>
+        {listed.map((result) =>
+          tables(result.sha256).map((output) => (
+            <li key={`${result.job}-${output.name}`}>
+              Job {result.job.slice(-6)}: {output.name} ({output.bytes} bytes){" "}
+              <button type="button" onClick={() => void open(result.job, output)}>
+                Open {output.name}
+              </button>
+            </li>
+          )),
+        )}
+      </ul>
+      {opened && (
+        <table aria-label={`${opened.name} of job ${opened.job.slice(-6)}`}>
+          <thead>
+            <tr>
+              {opened.rows[0]?.map((cell, index) => (
+                <th key={index}>{cell}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {opened.rows.slice(1).map((row, r) => (
+              <tr key={r}>
+                {row.map((cell, c) => (
+                  <td key={c}>{cell}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </section>
   );
 }
@@ -461,6 +558,7 @@ function Workspace(props: { harness: Harness; version: string; pid: number }) {
 
   const age = freshness(snapshot?.observed_at ?? null, now);
   const live = liveJob(log);
+  const model = assistant(log);
   return (
     <>
       <p role="status">
@@ -469,6 +567,9 @@ function Workspace(props: { harness: Harness; version: string; pid: number }) {
       <p className="detail">
         version {version} · process {pid}
         {live && ` · job ${live.id.slice(-6)} ${live.state.replace("_", " ")}`}
+        {model.state === "ready"
+          ? ` · assistant ready (${model.profile}${model.shown ? ` · ${model.shown}` : ""})`
+          : ` · assistant unavailable: ${model.reason}`}
       </p>
       <Controls harness={harness} job={live} notReceived={notReceived} />
       <div className="workspace">
@@ -493,6 +594,7 @@ function Workspace(props: { harness: Harness; version: string; pid: number }) {
             revision={log.filter((event) => event.type.startsWith("grant.")).length}
           />
           <Run harness={harness} notReceived={notReceived} />
+          <Results harness={harness} log={log} />
           <ActivityTrail items={activity(log)} unheard={unheard} />
         </div>
       </div>

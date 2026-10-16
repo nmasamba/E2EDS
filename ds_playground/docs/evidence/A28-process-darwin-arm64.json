@@ -3,13 +3,13 @@
   "sprint": 4,
   "os": "darwin-arm64",
   "fixture": "fork-and-shell",
-  "commit": "9be5f61",
+  "commit": "f4c6690",
   "expected": "fork and spawning a shell are refused, so no process the task starts can outlive it",
   "actual": "fork: failed: crash: PermissionError: [Errno 1] Operation not permitted; shell: failed: crash: PermissionError: [Errno 1] Operation not permitted",
   "outcome": "PASS",
   "limits": [
     "OS-sandbox assurance for one local user (Seatbelt on macOS, bubblewrap and seccomp on Linux): not VM isolation, and not a boundary for hostile multi-tenant code",
-    "the code is written by hand: no assistant generates code until Sprint 5"
+    "the code is written by hand; model-generated code and its repairs are the live_model part (A28-generated-code-live-<binding>, written by `make live`)"
   ],
   "assurance": "os_sandbox_single_user"
 }

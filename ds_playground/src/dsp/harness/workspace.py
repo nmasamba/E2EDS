@@ -1,25 +1,32 @@
 import json
 import logging
 import os
+import re
 import sys
 import threading
 import time
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 from typing import Annotated, Any, Literal
 from uuid import uuid4
 
 import uvicorn
-from fastapi import Body, Depends, FastAPI, Query, Request
+from fastapi import Body, Depends, FastAPI, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from dsp.adapters import export_fs, sandbox
+from dsp.adapters import export_fs, sandbox, secrets
 from dsp.adapters.discovery import host, probes
 from dsp.adapters.ledger_sqlite import SqliteLedger
+from dsp.adapters.llama_server import LlamaServer
+from dsp.adapters.openai_compatible import OpenAICompatible
 from dsp.adapters.store_fs import ContentStore
 from dsp.application import admission, controls, conversation, jobs
+from dsp.application import assistant as assistant_loop
+from dsp.application.assistant import LAUNCH, MODEL_BYTES, Assistant, remote_binding
+from dsp.application.assistant import local_binding as assistant_binding
 from dsp.application.discovery import discover
 from dsp.application.grants import grant_folder, resolve, revoke, summary
 from dsp.application.packs import export_profile, submit_profile
@@ -55,6 +62,8 @@ STATUS = (
 MESSAGE_FIELDS = {"client_message_id", "text", "expected_revision"}
 MAX_SOURCE = 2**20  # a task's source text
 ENDED = ("succeeded", "failed", "cancelled")
+MODELS = Path.home() / ".local" / "share" / "dsp" / "models"
+LLAMA = Path.home() / ".local" / "share" / "dsp" / "llama.cpp" / "build" / "bin" / "llama-server"
 
 
 def _now() -> str:
@@ -70,6 +79,7 @@ def mount(
     state_dir: Path,
     server: uvicorn.Server | None = None,
     clock: Callable[[], str] = _now,
+    assistant: Assistant | None = None,
 ) -> None:
     """Add the workspace routes: grants, profiling, discovery, planning, events and jobs.
 
@@ -81,10 +91,39 @@ def mount(
     of time for the ledger and the job coordinator. The runner environment is ``DSP_RUNNER_ENV``,
     or ``.runner-env`` beside the source when the harness runs from source (a frozen harness has
     only the variable); without it, or without the OS's sandbox, sandboxed work is refused, never
-    run another way.
+    run another way. The assistant's model server (``DSP_LLAMA_SERVER``) and model
+    (``DSP_MODEL_DIR``) default to ``~/.local/share/dsp``; the assistant starts after the
+    workspace is up and stops with the harness, and the workspace opens whether or not the model
+    is there (R18). A test may pass a started ``assistant``.
     """
     ctx = TrustedContext.local()
     binding = local_binding(ctx, *host())
+    opted = state_dir / "assistant" / "binding.json"  # the owner's opt-in: a remote binding (D4)
+    if assistant is None and opted.is_file():
+        try:
+            record = json.loads(opted.read_text())
+            describe = partial(remote_binding, record)
+            describe(None)
+            remote = OpenAICompatible(record, secrets=secrets.local(state_dir))
+            assistant = Assistant(
+                ctx, remote, ledger=lambda: ledger(), clock=clock, describe=describe
+            )
+        except (ValueError, DspError, KeyError) as error:
+            assistant = Assistant(ctx, None, ledger=lambda: ledger(), clock=clock)
+            assistant.reason = f"the remote binding in {opted.name} is not valid: {error}"
+    if assistant is None:
+        model = Path(os.environ.get("DSP_MODEL_DIR") or MODELS) / "Qwen3-8B-Q4_K_M.gguf"
+        llama = LlamaServer(
+            assistant_binding(ctx, threads=LAUNCH["threads"]),
+            model=model,
+            model_bytes=MODEL_BYTES,
+            server=Path(os.environ.get("DSP_LLAMA_SERVER") or LLAMA),
+            state=state_dir,
+            secrets=secrets.local(state_dir),
+            threads=LAUNCH["threads"],
+            gpu_layers=LAUNCH["gpu_layers"],
+        )
+        assistant = Assistant(ctx, llama, ledger=lambda: ledger(), clock=clock)
     beside = None if getattr(sys, "frozen", False) else Path(__file__).parents[3] / ".runner-env"
     named = os.environ.get("DSP_RUNNER_ENV")
     environment = Path(named) if named else beside  # a frozen harness has no source beside it
@@ -109,9 +148,23 @@ def mount(
         return not (server and server.should_exit)
 
     def execute(job_id: str) -> dict[str, Any]:
-        """Run one queued sandboxed job here, or wait for whoever leased it first to finish it."""
+        """Run one queued sandboxed job here, or wait for whoever leased it first to finish it.
+
+        A paused job the assistant asks to run again (its own task resumed) is resumed first.
+        """
         with executing:
             store = ledger()
+            if jobs.inspect(ctx, job_id, ledger=store, clock=clock)["state"] == "paused":
+                jobs.control(
+                    ctx,
+                    job_id,
+                    "resume",
+                    ledger=store,
+                    clock=clock,
+                    new_id=_id,
+                    workload=current_workload(ctx, store),
+                    binding=binding,
+                )
             try:
                 return jobs.execute(
                     ctx,
@@ -143,6 +196,78 @@ def mount(
         if queued:
             execute(min(queued, key=lambda job: str(job["submitted_at"]))["id"])
 
+    def admit_child(task: dict[str, Any], key: str, parent: str) -> dict[str, Any]:
+        """Admit a task the assistant submitted, as a child of its job, on the same path."""
+        store = ledger()
+        sandboxed()
+        parent_job = jobs.inspect(ctx, parent, ledger=store, clock=clock)
+        request = parent_job["request_ref"]
+        pinned = store.get(ctx, "ExecutionRequest", request["id"], request["revision"])
+        conversation_ref = pinned["conversation_ref"]
+        return admission.admit(
+            ctx,
+            "analyse",
+            key,
+            task,
+            workload=current_workload(ctx, store),
+            binding=binding,
+            ledger=store,
+            store=ContentStore(state_dir / "store"),
+            clock=clock,
+            new_id=_id,
+            environment=lock,
+            parent=parent,
+            conversation=store.get(
+                ctx, "Conversation", conversation_ref["id"], conversation_ref["revision"]
+            ),
+            assistant_binding=assistant.binding,
+        )
+
+    def profile_source(source_handle: str, relative_path: str, key: str) -> dict[str, Any]:
+        """Profile a granted CSV in the sandbox for the assistant; return the profile as data."""
+        store, content = ledger(), ContentStore(state_dir / "store")
+        sandboxed()
+        job, data = submit_profile(
+            ctx,
+            source_handle,
+            relative_path,
+            ledger=store,
+            store=content,
+            workload=current_workload(ctx, store),
+            binding=binding,
+            environment=lock,
+            clock=clock,
+            new_id=_id,
+            parent=key.rsplit(":", 1)[0],  # the call id is <job>:<n>
+        )
+        job = execute(job["id"])
+        if job["state"] != "succeeded":
+            raise DspError(ErrorCode.INPUT_INVALID, str(job["reason"] or f"the job {job['state']}"))
+        record = json.loads(content.path(ctx, job["result"]["sha256"]).read_bytes())
+        found = json.loads(content.path(ctx, record["outputs"][0]["sha256"]).read_bytes())
+        return {"data": data["id"], "name": data["source_name"]} | {
+            key: found[key] for key in ("rows", "rows_rejected", "columns")
+        }
+
+    def attend() -> None:
+        """Run the oldest queued assistant job: the loop over its typed tool calls."""
+        store = ledger()
+        queued = [job for job in store.current(ctx, "Job") if job["state"] == "queued"]
+        queued = [job for job in queued if job["task"] and "command" in job["task"]]
+        if queued:
+            assistant_loop.run(
+                ctx,
+                min(queued, key=lambda job: str(job["submitted_at"]))["id"],
+                ledger=store,
+                store=ContentStore(state_dir / "store"),
+                assistant=assistant,
+                clock=clock,
+                timer=time.monotonic,
+                admit=admit_child,
+                run_job=execute,
+                profile=profile_source,
+            )
+
     def every(seconds: float, work: Callable[[], object]) -> None:
         """Run ``work`` every ``seconds`` while the server runs; a failure is logged, not fatal."""
 
@@ -157,10 +282,21 @@ def mount(
 
         threading.Thread(target=loop).start()  # not a daemon: a quit drains what it is doing
 
+    def supervise() -> None:
+        """Start the assistant once the workspace is up; watch it; stop it with the harness."""
+        assistant.start(running)
+        while running():
+            assistant.watch()
+            time.sleep(1)
+        assistant.stop()
+
     if server is not None:
         every(1.0, lambda: jobs.reconcile(ctx, ledger=ledger(), clock=clock))
         if runner is not None:
             every(0.25, dispatch)
+        every(0.5, attend)
+        app.state.supervisor = threading.Thread(target=supervise)
+        app.state.supervisor.start()  # not a daemon: a quit stops the model server
 
     def native(request: Request) -> None:
         """A lease, a heartbeat or a report comes from a worker process, never from the window."""
@@ -389,6 +525,19 @@ def mount(
     def latest_workload() -> dict[str, Any]:
         return current_workload(ctx, ledger())
 
+    @app.get("/v1/artifacts/{sha256}")
+    def read_artifact(sha256: str) -> Response:
+        """A committed artifact's bytes, by digest: what the window opens as a table or a record."""
+        if not re.fullmatch(r"sha256:[a-f0-9]{64}", sha256):
+            raise DspError(ErrorCode.INPUT_INVALID, "an artifact is named by its sha256 digest")
+        path = ContentStore(state_dir / "store").path(ctx, sha256)
+        return Response(path.read_bytes(), media_type="application/octet-stream")
+
+    @app.get("/v1/assistant")
+    def assistant_state() -> dict[str, Any]:
+        """Whether the assistant is ready, and its binding; never a secret or a path."""
+        return assistant.shown()
+
     @app.post("/v1/conversations/{conversation_id}/messages")
     async def post_message(conversation_id: str, request: Request) -> dict[str, Any]:
         """D18: the body is bounded in bytes as it arrives, before parsing; three fields only."""
@@ -432,6 +581,8 @@ def mount(
             new_id=_id,
             workload=current_workload(ctx, store),
             binding=binding,
+            assistant=assistant,
+            store=ContentStore(state_dir / "store"),
         )
 
     def controlled(job_id: str | None, command_id: str, action: str) -> dict[str, Any]:

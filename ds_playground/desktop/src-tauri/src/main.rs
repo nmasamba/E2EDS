@@ -133,7 +133,7 @@ fn main() {
         .menu(|app| {
             let pause = MenuItem::with_id(app, "pause", "Pause", true, Some("CmdOrCtrl+P"))?;
             let cancel =
-                MenuItem::with_id(app, "cancel", "Cancel run", true, Some("CmdOrCtrl+."))?;
+                MenuItem::with_id(app, "cancel", "Cancel run", true, Some("CmdOrCtrl+Shift+K"))?;
             let quit =
                 MenuItem::with_id(app, "quit", "Quit DS Playground", true, Some("CmdOrCtrl+Q"))?;
             let menu = Submenu::with_items(app, "DS Playground", true, &[&pause, &cancel, &quit])?;
@@ -172,6 +172,7 @@ mod tests {
         let folder = home.join("picked folder");
         fs::create_dir_all(&folder).unwrap();
         env::set_var("DSP_HOME", &home);
+        env::set_var("DSP_MODEL_DIR", &home); // no model: the shell test is not a model test
         let mut server = Command::new("../../.venv/bin/python")
             .args(["-m", "dsp.harness"])
             .spawn()

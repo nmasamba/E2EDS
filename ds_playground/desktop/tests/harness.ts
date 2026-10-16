@@ -8,9 +8,12 @@ import { expect, type Page } from "@playwright/test";
 export type Harness = { base_url: string; token: string; pid: number; home: string };
 
 /** Start a real harness on a DSP_HOME, a new temporary one by default, and wait for its answer. */
-export async function startHarness(home = mkdtempSync(join(tmpdir(), "dsp-renderer-"))): Promise<Harness> {
+export async function startHarness(
+  home = mkdtempSync(join(tmpdir(), "dsp-renderer-")),
+  models = home, // no model unless a spec names the folder that holds it
+): Promise<Harness> {
   spawn("uv", ["run", "--frozen", "--project", "..", "python", "-m", "dsp.harness", "--dev"], {
-    env: { ...process.env, DSP_HOME: home },
+    env: { ...process.env, DSP_HOME: home, DSP_MODEL_DIR: models },
     stdio: "ignore",
   });
   for (let attempt = 0; attempt < 300; attempt++) {
@@ -27,6 +30,23 @@ export async function startHarness(home = mkdtempSync(join(tmpdir(), "dsp-render
     }
   }
   throw new Error("the harness did not start");
+}
+
+/** The explicit Quit (D24): the harness finishes what is in progress, stops its model server and exits. */
+export async function quitHarness(harness: Harness): Promise<void> {
+  await fetch(`${harness.base_url}/v1/shutdown`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${harness.token}` },
+  }).catch(() => undefined);
+  for (let attempt = 0; attempt < 600; attempt++) {
+    try {
+      process.kill(harness.pid, 0); // still there
+    } catch {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  process.kill(harness.pid);
 }
 
 export type Pick = (purpose: string) => Promise<unknown>;

@@ -51,7 +51,7 @@ test("A27, R15: the composer's receipts, and a message the harness never had, ar
   await say(page, "status");
   await expect(activity(page)).toContainText("You: status · rejected · no job is live");
   await say(page, "please summarise the data");
-  await expect(activity(page)).toContainText("You: please summarise the data · rejected · no assistant is bound yet");
+  await expect(activity(page)).toContainText("You: please summarise the data · rejected · model missing");
   await expect(page.getByRole("textbox", { name: "Message" })).toHaveValue("");
   await page.route("**/v1/conversations/**", (route) => route.abort());
   await say(page, "hello");
@@ -95,7 +95,7 @@ test("A24, A25, A26, R15: pause and cancel by shortcut, change, resume by keyboa
   await say(page, "exclude field region");
   await expect(activity(page)).toContainText("You: exclude field region · applied");
   await expect(activity(page)).toContainText(
-    "Requirements 1.0.0 → 2.0.0: allowed_fields, excluded_fields; 0 stale, 0 held",
+    'Requirements 1.0.0 → 2.0.0: /features/allowed_fields ← ["item_count"]; /features/excluded_fields ← ["order_id", "region"]; 0 stale, 0 held',
   );
   await expect(stage(page, "Goal and constraints")).toContainText("requirements at 2.0.0");
 
@@ -108,7 +108,7 @@ test("A24, A25, A26, R15: pause and cancel by shortcut, change, resume by keyboa
   await expect(activity(page)).toContainText(`Job ${job!.slice(-6)}: running (attempt 2, fence 1)`);
 
   await page.getByRole("textbox", { name: "Message" }).focus();
-  await page.keyboard.press("ControlOrMeta+.");
+  await page.keyboard.press("ControlOrMeta+Shift+K");
   await expect(activity(page)).toContainText("You: cancel this run · applied");
   await expect(develop(page)).toContainText("◇ Inconclusive · cancelled", { timeout: 30_000 });
   await expect.poll(() => second.exitCode, { timeout: 30_000 }).toBe(0);

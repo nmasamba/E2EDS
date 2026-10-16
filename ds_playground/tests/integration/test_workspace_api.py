@@ -338,21 +338,22 @@ def test_the_stream_replays_then_follows_and_equals_polling(state_dir: Path) -> 
     client.post("/v1/hardware")
     with client.stream("GET", "/v1/events/stream", timeout=30) as live:
         lines = live.iter_lines()
-        replayed = frames(lines, 2)
+        replayed = frames(lines, 3)  # the assistant's start, the discovery and its plan
         client.post("/v1/plan")
         (followed,) = frames(lines, 1)
         assert live.headers["content-type"].startswith("text/event-stream")
     polled = client.get("/v1/events").json()["events"]
     assert [data for _, data in [*replayed, followed]] == polled
     assert [name for name, _ in [*replayed, followed]] == [
+        "assistant.unavailable",
         "discovery.finished",
         "plan.proposed",
         "plan.proposed",
     ]
-    with client.stream("GET", f"/v1/events/stream?after={polled[1]['seq']}", timeout=30) as live:
-        assert frames(live.iter_lines(), 1) == [("plan.proposed", polled[2])]
+    with client.stream("GET", f"/v1/events/stream?after={polled[2]['seq']}", timeout=30) as live:
+        assert frames(live.iter_lines(), 1) == [("plan.proposed", polled[3])]
     with client.stream("GET", "/v1/events/stream?after=999", timeout=30) as live:
-        resynchronised = frames(live.iter_lines(), 4)
+        resynchronised = frames(live.iter_lines(), 5)
     assert resynchronised[0] == ("stream.resynchronised", {})
     assert [data for _, data in resynchronised[1:]] == polled
     assert client.get("/v1/status").json()["status"] == "ok"
@@ -366,7 +367,8 @@ def test_an_open_stream_does_not_keep_a_stopping_harness_alive(
     pid = client.get("/v1/status").json()["pid"]
     with client.stream("GET", "/v1/events/stream", timeout=30) as live:
         os.kill(pid, signal.SIGTERM)
-        assert list(live.iter_lines()) == []
+        named = [line for line in live.iter_lines() if line.startswith("event: ")]
+        assert named == ["event: assistant.unavailable"]  # the history, then the stream ends
     assert harness_stopped(state_dir)
     (state_dir / "harness.json").unlink()
 
@@ -438,7 +440,12 @@ def test_dsp_stop_stops_the_harness_and_the_next_command_starts_a_new_one(
     again = connect(home)
     assert again.get("/v1/status").json()["pid"] != first
     kinds = [event["type"] for event in again.get("/v1/events").json()["events"]]
-    assert kinds == ["discovery.finished", "plan.proposed"]
+    assert kinds == [
+        "assistant.unavailable",  # each start records the assistant's state: no model here
+        "discovery.finished",
+        "plan.proposed",
+        "assistant.unavailable",
+    ]
 
 
 def run(*arguments: object) -> Any:

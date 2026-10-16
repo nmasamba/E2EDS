@@ -4,10 +4,13 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 
 ## Now
 
-- **Sprint:** 4 — M1 sandboxed native runner (B26; A28; R16; C14, C18; D01, D21).
-- **Claimed prompt:** 4.7 (Sprint 4 gate): done. The two macOS containment gaps that halted the first
-  gate runs are closed (decisions, 2026-10-13, "both macOS containment gaps closed").
-- **Branch:** `sprint-4-runner`, from `main` at `0cb7674` (PRs #1 to #7 merged).
+- **Sprint:** 5 — M1 assistant gateway, open model first (B24, B26, B27; A24, A29, A30; R16, R17, R18,
+  R22; D16, D17).
+- **Claimed prompt:** 5.7, the gate, run on both OSes (below). **Not called done**: the live
+  acceptance's generated-code part (A28) is FAIL on the known over-grouping, and on Linux the
+  container cannot meet D17's deadline for the assistant's prompts (a measured fact). Everything
+  else is green on both OSes. Next is Sprint 6, prompt 6.1. D3: A (Metal); D4: B; D5: A.
+- **Branch:** `claude/sprint-5-assistant-gateway-fc1f11`, from `main` at `73698be` (PRs #1 to #8 merged).
 
 ## Done
 
@@ -23,8 +26,9 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 | 1 | M0 foundations and thin slice | merged to `main` (PR #1) | PASS, see below |
 | 2 | M1 desktop, discovery, plan | merged to `main` (PR #5) | PASS for Sprint 2 scope, see below |
 | 3 | M1 jobs, admission, conversation, control | merged to `main` (PRs #6, #7) | PASS for Sprint 3 scope, see below |
-| 4 | M1 sandboxed native runner | on `sprint-4-runner`, pull request #8 open | PASS for Sprint 4 scope, see below |
-| 5–11 | M1 | not started | — |
+| 4 | M1 sandboxed native runner | merged to `main` (PR #8) | PASS for Sprint 4 scope, see below |
+| 5 | M1 assistant gateway, open model first | on `claude/sprint-5-assistant-gateway-fc1f11` | in progress |
+| 6–11 | M1 | not started | — |
 | 12–20 | M1B, M1C, M1R, M2, M3, M3Z, M4 | not started | — |
 
 ## Environment observed (2026-10-01, this Mac)
@@ -446,7 +450,461 @@ Code commit `2c81168`; the evidence and this file were committed after it.
 - Gate outcome: **PASS** on macOS and Linux for Sprint 4 scope. Scenario outcomes are as listed; none
   is rounded up.
 
+## Sprint 5 housekeeping (2026-10-15)
+
+- D1 = A: Cancel run is `CmdOrCtrl+Shift+K` in the renderer's chord table, the native menu, the Playwright
+  work spec (Meta+Shift+K on macOS) and the Linux built-app test (real Ctrl+Shift+K through xdotool).
+  Playwright work spec on macOS: 3 passed. Guard mutation-checked: the old chord back in the renderer
+  fails the spec. The built macOS app's press is the owner's, at the gate.
+
+## Prompt 5.1 — gateway, binding, supervisor, SecretPort (2026-10-15)
+
+- `ports.py`: `SecretStore`, `ModelGateway`, `ModelServer`. `adapters/llama_server.py`: the launch contract
+  as this build's proven flags; the model's size and SHA-256 checked at every start (2.67 s for 5.03 GB);
+  the key from the secret store into a 0600 file (`--api-key-file`), never argv or environment; Seatbelt
+  deny-by-default profile through `sandbox-exec` on macOS (loopback listener only, Metal allowed by name),
+  bubblewrap with every namespace new on Linux (a UNIX socket: logged DEVIATION); memory polled on macOS,
+  `prlimit --as` on Linux; readiness is `/health` plus the typed `report_ready` probe; a hang, a crash, a
+  limit or a deadline ends in ASSISTANT_UNAVAILABLE. `adapters/secrets.py`: the keychain through the
+  Security framework's C API; `secret-tool` or an owner-only file on Linux. `application/assistant.py`:
+  the suite's AssistantModelBinding 0.3.0 for the local model, planning until observed; the harness starts
+  the assistant in a thread after the workspace is up, watches it (three restarts after a crash, none after
+  a verification failure) and stops it on quit; `GET /v1/assistant`; events `assistant.ready` (pins the
+  stored, observed binding) and `assistant.unavailable`. The window's header and trail show the state.
+  `make live` (macOS) and `make live-linux` (D2: llama.cpp b11104 built in the container into a named
+  volume, the model mounted read-only); `make verify` deselects `live_model`.
+- Tests: `tests/unit/test_llama_server.py` (5: the flags, the macOS profile, the Linux vector, size and
+  hash refusals, the binding record); `tests/integration/test_secrets.py` (3: get, put, replace, missing on
+  the OS's store — a throwaway keychain here; the file fallback's modes and a readable folder refused; the
+  OS's choice); `tests/integration/test_assistant.py` (1: the workspace opens with the model absent, says
+  `model missing`, rejects an instruction and still answers a control); `tests/integration/
+  test_live_gateway.py` (6, `live_model`: ready only after health and the typed probe, the key in no
+  process's arguments or environment, slots, metrics and web UI off, thinking off, the tokenizer; model
+  missing, wrong size and a right-sized sparse file refused before any load; the key reused from the store
+  and generated once; the real keychain holds it; A30: under the server's own profile an outbound connect
+  and a name lookup are refused while the server keeps answering; the harness reports ready and stores the
+  observed binding). Vitest 11 (the assistant view from events only). Playwright status spec 17 (the
+  header and trail say `assistant unavailable: model missing`). On macOS: `make test-fast` 304 passed,
+  live gateway 6 passed.
+- Guards mutation-checked (16, all caught; decisions 2026-10-15 "guards mutation-checked (5.1)"): size,
+  hash, stale server only when ours, port held refused, deny default, `--unshare-all`, keychain replace,
+  fallback permissions, key as a file (flag and value), outbound denied, the probe decides readiness,
+  `--no-slots`, `--reasoning off`, quit stops the server, a readiness failure stops the server. Found by
+  the checks: a server that answered health but failed readiness was left running (fixed, with a test).
+- `make live-linux` (container, linux/arm64, CPU only): the first run failed on `ps` truncating the
+  command line and on the A30 probe's binds placed after the root was made read-only (both in the tests),
+  the second on the quit test's 90 s wait, the third and fourth on the kernel killing one of two servers
+  (the VM holds 7.75 GiB; decisions 2026-10-15 "one model server at a time"); with the quit test lending
+  the session's server: **7 passed** in 1 min 55 s (container, linux/arm64, CPU only). On macOS the same
+  file: 7 passed, three runs; one earlier full run failed the quit test while the container run shared
+  the processors and its output was not kept (open defect below).
+
+## Prompt 5.2 — tool dispatcher and loop (2026-10-15)
+
+- An instruction the assistant can take is admitted as a Job (0.3.0: an assistant task names its
+  command; a child job names its parent) and the command is `accepted` with the job as its effect;
+  `application/assistant.py::run` is the application-owned loop (the harness's `attend` worker, one job
+  at a time): the context is rebuilt from canonical records on every generation, each generation is an
+  app AssistantCall 0.1.0 record (dispatched before the tool runs, committed with the quoted result, or
+  refused with its code), the checks run in order (schema, principal, revision, scope, budget, fence)
+  and D17's counters are sums over the records (20 model calls, 2 repairs, 1,800 s; 6,144 in and 2,048
+  out and 300 s per generation). `application/tools.py` is the skill's eight tools and nothing else;
+  `inspect_schema` and `submit_code_task` run as child jobs through Sprint 4's admission and sandbox
+  unchanged; pause and cancel cascade from a parent to its children and the phrases and the window's
+  controls address the parent; a call interrupted between dispatch and commit stays dispatched and runs
+  again on resume, resuming a paused child rather than starting it over. Generations stream so a pause
+  stops one between tokens; the job heartbeats from the loop's thread. CodeTask 0.2.0 adds `assistant`.
+- Tests: `tests/integration/test_assistant_loop.py` (8, the scripted gateway on a real harness): an
+  invalid call, an unknown tool, two calls in one turn and arguments that are not JSON are each
+  refused, quoted back and counted; the input-token and generation-second budgets stop the task and a
+  gateway fault fails it; the twenty-first model call is never made; a call proposed after a pause
+  never dispatches and resume replays the committed call once; revision, scope and repair-budget
+  refusals in order and a budget change refused for the owner; a principal without the scope refused
+  after the schema; injected "ignore the budget" text in a CSV header (tool output) and in a task's
+  failure message has no effect (`sandbox`); with a parent and its running child live, "pause now"
+  pauses both and resume resumes the child (`sandbox`). Contract tests: the three Job versions and
+  the assistant CodeTask. Vitest 12 (a child addressed through its live parent; assistant lines are
+  proposals). Playwright 21 passed (an instruction is rejected with the assistant's real reason).
+- Guards mutation-checked (17, all caught; decisions 2026-10-15 "guards mutation-checked (5.2)"). Found
+  by the checks: a duplicate owner-path refusal (removed) and a test that could not tell the assistant
+  check from admission's (fixed).
+
+## Prompt 5.3 — intent extraction (2026-10-15)
+
+- `propose_requirement_patch` is a JSON Patch applied whole (`workloads.apply_patch`: add, replace,
+  remove, lists by index or `-`) with one provenance entry per patched path: the exact words of the
+  instruction (a span that is not in the message is refused), the model's confidence and the
+  materiality, recorded on the revision as `proposed` (the grammar's own change stays `confirmed`);
+  the `workload.revised` event carries the diff and a plain readback the application writes, shown in
+  the trail. Grounding checks before anything applies: no number the instruction does not contain, no
+  removal of a field it does not name, no empty or no-op patch without a question. The requirements'
+  own rules then complete a patch: a predictor in neither feature list is excluded, an added output
+  transform puts privacy under review, a row identifier must remain, a field in both lists is refused.
+  A question (with or without a patch, which applies first) ends the command `needs_clarification`;
+  a proposal on the owner's budget path ends it `rejected` with REQUIRES_CONFIRMATION. A message that
+  opens with an exact control phrase is that control first, settled before the model sees anything,
+  then its own instruction command (`<id>:then`). The interpretation policy of the suite's reference
+  table is in the model's instructions as numbered procedures; typed proposals run at temperature 0,
+  seed 1 (a logged deviation from the example's 0.7).
+- Tests: `tests/unit/test_intent.py` (12: patches applied or refused whole, the readback, the leading
+  phrase, the completion rules); `test_assistant_loop.py` +4 scripted (provenance verbatim and
+  covering, recorded as proposed with the readback; a question needs clarification and a budget
+  proposal needs the owner; "Pause now; exclude region before continuing" pauses first and keeps the
+  work paused; an invented number, an unnamed drop and a no-op patch are refused);
+  `tests/integration/test_live_intent.py` (1, `live_model`): the five reference instructions against
+  the real model, one A29 evidence record per binding.
+- Guards mutation-checked (18, all caught; decisions 2026-10-15 "guards mutation-checked (5.3)").
+- **Live result, binding `assistant-local-qwen` (Metal, seed 1, temperature 0), 2026-10-15:** all five
+  as the suite describes on the final run: `use account_num as the ID` added an entity_id string role
+  excluded from predictors (one operation; the row id kept); `keep the feature set minimal` set the
+  soft objective and asked the counting question (`needs_clarification`); `anonymise regression
+  results by rounding to the nearest 10` added the typed transform (increment 10, ties away from zero)
+  and the privacy status went under review; `Pause now; exclude region before continuing` paused the
+  running job, then moved `region` from allowed to excluded with the job still paused;
+  `spend another £100` was proposed on the budget path and refused for the owner (the model wrote
+  110000 minor units, which is £1,100: its arithmetic, logged). Earlier runs, before the grounding
+  checks and the procedural rules, failed every case (decisions, 2026-10-15): the model repurposed
+  the row id, set a hard maximum of 2, rounded to even, deleted a role instead of excluding a field,
+  and answered the budget change in prose. Results are per binding and not merged.
+
+## Prompt 5.4 — generate, run, repair (2026-10-16)
+
+- "Redacted" is defined in `docs/decisions.md` before the code: the job's state, a failure's kind and at
+  most 200 characters of its message as quoted data, each output's name, size and digest, and for one
+  named output a bounded preview (a CSV's header and first 20 rows with cells cut at 200 characters,
+  or the first 2,000 characters of a JSON or text file). `inspect_results` gives that preview; a repair
+  is a new artifact naming the failed one, at most two per task (5.2's counter); the model's
+  instructions carry the data procedure (name the input as the data's name, query it as a table, one
+  CSV output, read the failure, repair, resubmit) and that a data request is done only by a code task.
+  `GET /v1/artifacts/{sha256}` serves a committed artifact by digest; the window's Results section
+  lists each succeeded job's CSV outputs from its RunRecord and opens one as a table of cells; the
+  `data.captured` event carries the capture's digest; a granted file is named by its own label. The
+  5.2 check that refused a code task once the requirements moved past the job's revision is removed
+  (the task's own patch tripped it; an outside change holds the task anyway). The Sprint 4 SAT's
+  wording that no generated code existed is replaced.
+- Tests: `test_assistant_loop.py` +1 (`sandbox`: a failing SQL task repaired once, the quoted failure,
+  the bounded preview, a third repair refused, the committed table equal to DuckDB's, the artifact
+  route's refusals, the preview bounds); `tests/integration/test_live_generate.py` (1, `live_model`
+  and `sandbox`: the acceptance instruction on the orders fixture, an A28 part per binding);
+  `test_grants.py` +1 (a granted file by its own name); Playwright `runs.spec.ts` +1 (a committed table
+  opens from its record as cells; a profile's JSON is not listed). Vitest 13 passed, Playwright 2
+  passed on the runs spec.
+- **Live result, binding `assistant-local-qwen` (Metal, seed 1, temperature 0), 2026-10-16: FAIL as
+  asked, right for what it chose.** The model inspects the schema, writes SQL, runs it in the sandbox,
+  inspects the result and answers from it (5 generations, about 35 s, 0 repairs), but groups by
+  `region` and `service_level`: eight rows whose values are DuckDB's mean `actual_transit_hours` per
+  (region, service level), not the two rows per service level the independent query gives. Identical on
+  four runs under three wordings of a rule against added groupings; not tuned further (open DEFECT
+  below; decisions 2026-10-16). Each earlier failure was a product gap, fixed: prose instead of a task,
+  the granted file's label as a path, the input queried as a file, resubmissions refused as stale.
+
+## Prompt 5.5 — failure and independence (2026-10-16)
+
+- Every failure of the model ends in `assistant unavailable` with its reason, the conversation and the
+  controls untouched and no other model tried: a missing model or binary and a size or hash mismatch
+  are verification failures the watch never retries (final until the harness restarts); out of memory
+  is the footprint poll's kill on macOS (`prlimit` on Linux) before the server is ever ready; a hung
+  server is killed at the generation deadline, the task fails with "no answer within the N s generation
+  deadline", the command is rejected with it, `status` still answers, and the watch restarts the same
+  binding (at most three times); a harness restart expires the dead attempt's lease and the next
+  attempt rebuilds its context from the committed AssistantCall records, so no committed call is
+  dispatched twice. A tokenizer call that cannot reach the server fails the task with
+  `ASSISTANT_UNAVAILABLE` instead of leaving the job leased.
+- Tests: `test_assistant.py` +2 (`slow`: a right-sized file with other bytes, and a missing binary,
+  each refused with its reason, no server process, the instruction rejected, a control phrase
+  answered, one `assistant.unavailable`; a harness that dies mid-generation and its successor on the
+  same ledger: attempt 2 replays the committed call, dispatches nothing twice, and the first harness's
+  loop wakes fenced out); `test_live_failure.py` (3, `live_model`): A24 under a hung generation
+  (SIGSTOP on the real server, every processor busy, 20 pause and 20 cancel trials on hung jobs, the
+  hung assistant job's own pause durable at once, nothing dispatched afterwards, the generation ending
+  when the server resumes), the deadline (5 s: killed, failed, rejected, restarted on the same binding,
+  a new instruction succeeds), out of memory (a 0.5 GiB limit: never ready, nothing of it left). A30's
+  offline part is the 5.1 probe test's evidence. `make sat` and `make sat-linux` now leave `live_model`
+  out, as `make verify` does.
+- Live result on this Mac (2026-10-16): `uv run pytest tests/integration/test_live_failure.py` →
+  `3 passed in 268.06s (0:04:28)`, no server left running (A24 PASS: pause and cancel p95 within 2 s;
+  the measured values are the record `make live` writes at the gate). The two earlier runs found two
+  test defects, both fixed (decisions 2026-10-16): the harness fixture's quit was not joined, so one
+  test's stop could kill the server the next test had just been lent; and the deadline test read the
+  events before the watch's one-second tick.
+- Mutation checks (`mutate55.py`, scratch): 4/5 caught — the context rebuilt from records, the deadline
+  kill, the watch's restart, the memory poll; `verification-final` survived because the branch was
+  dead code (the watch never restarted from unavailable), fixed and caught in 5.6 (decisions
+  2026-10-16).
+- The 5.4 CI read (run 38895075855, cancelled after 37 min): the corrupt-model test failed on both
+  OSes (the binary is checked before the hash; CI has no llama-server) and its failed assertion left
+  the inline harness's threads alive, so pytest never exited; the Sprint 1 SAT profile test got exit 2
+  from the CLI on macOS only (output not shown; a cold harness had 10 s, now 30 s); the Linux built app
+  did not end within 20 s of a real window close. The first two are fixed and verified here (the
+  corrupt test reproduced and then passed with a HOME that has no binary); the third is open (below).
+  `make test-fast`: 333 passed with the fixture join. One run of the Sprint 1 SAT and llama-server
+  unit tests had one failure while the live file ran; it passed three times after and the failing test
+  was not captured.
+
+## Prompt 5.6 — remote OpenAI-compatible binding, D4 = B (2026-10-16)
+
+- The app owns `AssistantModelBinding` 0.4.0, the remote mode only (a local binding keeps the suite's
+  0.3.0): provider and model, `endpoint.base_url` (http, https or `unix://`) and `api_key_ref`,
+  `placement`, `data_policy` (`none` or `synthetic_fixtures_only`; sealed data and secrets `false` by
+  the schema), `spend` (price per million tokens, owner-approved, when), the D17 limits with
+  `max_external_charge_minor` as the spend limit, `remote_fallback: false`, `observed` once ready.
+  `OpenAICompatible` sits behind the same port: policy (`none` refuses before the key is read), key
+  from the secret store (none: the exact `security` / `secret-tool` commands of D4 in the reason), the
+  model in `GET /v1/models` (401/403: "the endpoint refused the key"), then the same typed probe as
+  the local server; a call whose projected charge would pass the limit is refused before it is sent;
+  the count is the endpoint's tokenizer or, on 404, one token per two bytes. The harness opts in by
+  `<profile>/assistant/binding.json`; an invalid record leaves the assistant unavailable with its
+  first schema error and the local model is never tried instead. The ready event carries placement,
+  policy, spend and limit; the header shows `assistant ready (profile · remote <host> · synthetic
+  fixtures only · spend limit £0.00)` and the trail's ready line the same, before the first
+  instruction. No proprietary adapter (D4 = B). The supervisor's restart bound is now real: a death
+  or a failed launch is started again at most three times in one harness's life; failures no restart
+  can change are final at once (found by the 5.5 mutation check; decisions 2026-10-16).
+- Tests: `tests/unit/test_remote_binding.py` (3: the schema's refusals, the charge arithmetic, the
+  account and the socket client); `tests/integration/test_remote_harness.py` (4, no model: the opt-in
+  file without a key is unavailable with how to store one, final, no local server; an invalid record;
+  policy, key and endpoint refusals in that order against the harness's own address as a 404 and 401
+  endpoint; the charge refused before sending and the two-bytes bound); `test_assistant_loop.py` +1
+  (a server dead at every tick: four ready, four unavailable, then nothing more); the corrupt-model
+  test waits two ticks for no second attempt; `tests/integration/test_live_remote.py` (4,
+  `live_model`): ready on llama-server itself with the policy shown, the server's own tokenizer, "7
+  times 8" answered, the local binding never named; a wrong model, a refused key and an unaffordable
+  probe each unavailable once with its reason. Vitest +1 (the remote view and the ready line).
+- Results on this Mac (2026-10-16): unit 3 passed; `test_remote_harness.py`, `test_assistant.py` and
+  `test_assistant_loop.py` 21 passed (the three `sandbox` tests after `make runner-env`, which the new
+  contract file made stale); `test_live_remote.py` 3 passed then the fourth after a helper fix:
+  `3 passed, 1 error in 42.57s` then `1 passed, 3 deselected in 29.34s` for the fourth (the helper
+  passed `provider` twice); `make test-fast` → `342 passed, 64 deselected, 1 warning in 152.21s`
+  (a first run refused two test modules with one basename; the integration one was renamed);
+  vitest 13 passed; `uv run python tools/trace_ids.py 5` names no missing ID once D16 and R22 are
+  cited by the out-of-memory and the generate-run-repair tests.
+- Mutation checks (`mutate56.py`, scratch): 10/10 caught — the `none` policy refused before the key;
+  no key refused; 401 named as a refused key; the spend guard; the two-bytes bound; the opt-in file
+  read; a verification failure final (the 5.5 survivor, caught now); the restart bound; the policy
+  shown in the ready event; the model checked against what is served.
+- Two processes left by earlier runs were found and killed (a llama-server from the 5.5 out-of-memory
+  mutation, which held port 8081, and a pytest hung since before this session's compaction on the
+  restart test); the out-of-memory test now stops its adapter in a `finally` (decisions 2026-10-16).
+
+## Sprint 5 gate (2026-10-16)
+
+- `make verify` on macOS arm64 (at `4eef69d`): format, lint, mypy strict, boundaries clean;
+  **388 passed, 18 deselected**, coverage 88.31%, 7 min 50 s. Tail:
+  ```
+  Required test coverage of 85% reached. Total coverage: 88.31%
+  388 passed, 18 deselected, 1 warning in 470.91s (0:07:50)
+  ```
+- `make verify-linux` (linux/arm64 container) at `4eef69d`: **1 failed, 387 passed** — the stale-server
+  check shelled out to `ps`, which the plain verify container lacks (decisions 2026-10-16; on Linux it
+  now reads `/proc/<pid>/cmdline`). Rerun with the fix: **388 passed, 18 deselected**, coverage 86.33%,
+  6 min 49 s. Tail:
+  ```
+  Required test coverage of 85% reached. Total coverage: 86.33%
+  388 passed, 18 deselected, 1 warning in 409.88s (0:06:49)
+  ```
+- The integrity review (PASS, two should-fix, six notes; decisions 2026-10-16) and its fixes landed
+  after those two runs, so both gates are rerun on the final commit below.
+- Final runs at `f4c6690` (the review's fixes and the `ps` fix):
+  - `make verify-linux`: **389 passed, 18 deselected**, coverage 88.12%, 7 min 4 s. Tail:
+    ```
+    Required test coverage of 85% reached. Total coverage: 88.12%
+    389 passed, 18 deselected, 1 warning in 424.23s (0:07:04)
+    ```
+  - `make verify` on macOS: **1 failed, 388 passed** in 8 min 3 s — the Sprint 4 CPU-time containment
+    test, on the intermittent `killpg` EPERM (open defects below; the test passed three times alone
+    right after). Tail:
+    ```
+    FAILED tests/integration/test_containment.py::test_d21_cpu_time_past_the_limit_stops_the_task_even_when_it_ignores_sigxcpu
+    1 failed, 388 passed, 18 deselected, 1 warning in 483.76s (0:08:03)
+    ```
+- Final runs at `937e42b` (every fix of the gate in):
+  - `make verify` on macOS: **392 passed, 18 deselected**, coverage 89.15%, 8 min 14 s. Tail:
+    ```
+    Required test coverage of 85% reached. Total coverage: 89.15%
+    392 passed, 18 deselected, 6 warnings in 494.78s (0:08:14)
+    ```
+  - `make verify-linux` at `937e42b`: 1 failed, 391 passed — the new symlink unit test read the macOS
+    profile text on Linux; the test now reads the confinement each OS builds (`2712b6b`, a test-only
+    change, 10 unit tests passing on macOS). Rerun at `2712b6b`: **392 passed, 18 deselected**,
+    coverage 88.36%, 7 min 2 s. Tail:
+    ```
+    Required test coverage of 85% reached. Total coverage: 88.36%
+    392 passed, 18 deselected, 1 warning in 422.97s (0:07:02)
+    ```
+- **Gate outcome:** macOS arm64 — verify, SAT, desktop build, end-to-end, the Playwright acceptance
+  spec, A24, A29 and A30 green; A28's generated-code part FAIL (the over-grouping). Linux arm64
+  (container) — verify and SAT green; the live suite red by the D17 deadline fact (four tests).
+  `tools/trace_ids.py 5`: every ID in scope is in a test docstring or an evidence record. The
+  `[s5] chore: sprint 5 complete` commit is not made: two live records are red.
+- **CI at the gate** (run 38950633517 at `2712b6b`, the one read): `desktop (macos)` passed; `verify`
+  failed one test on each OS and `desktop (ubuntu)` one, all three test races (decisions
+  2026-10-16: a liveness helper reading `/proc` of a task that had just ended; a message test's
+  expected event order on a slow runner, now fixed by the `harness` fixture waiting for the
+  assistant's first event; the window check waiting for the plan's line). Fixed and pushed; the
+  pull request's checks carry the result (no further read, the three read points being spent).
+- `make sat` on macOS at `f4c6690`: **22 passed** in 3 min 47 s (every sprint's acceptance tests, the
+  `live_model` ones left to `make live`); evidence rewritten under `docs/evidence/`. Tail:
+  ```
+  22 passed, 6 warnings in 227.66s (0:03:47)
+  ```
+- `make sat-linux` (linux/arm64 container) at `f4c6690`: the first run refused pytest's marker
+  expression (the quotes were lost on the way into the container; decisions 2026-10-16, fixed in the
+  Makefile); the rerun **22 passed** in 3 min 32 s, evidence copied out. Tail:
+  ```
+  22 passed, 1 warning in 212.88s (0:03:32)
+  ```
+- `make desktop-build` then `make e2e` on macOS at `f4c6690`: the bundle built (`DS Playground.app`);
+  vitest **13 passed**, Playwright **22 passed** (50.5 s; the `@live_model` spec left to `make live`),
+  the Rust shell test **1 passed**, the built-app tests **2 passed** in 23 s. Tail:
+  ```
+  22 passed (50.5s)
+  test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.73s
+  2 passed, 5 warnings in 22.97s
+  ```
+  (pytest's temp cleanup warned about a scratch image the failed CPU-time test had left mounted;
+  detached by hand under `pytest-of-nm`.)
+- `make live` on macOS, with `/usr/bin/log stream` watching for Seatbelt denials throughout:
+  - first run at `f4c6690`: the `@live_model` Playwright acceptance spec failed before the first
+    keystroke, the harness it started saying "the model server exited with status 1" four times; the
+    watch showed Seatbelt denying the server its own key file, named through `/var` instead of
+    `/private/var` (decisions 2026-10-16; the adapter now resolves its paths, `5f2cec9`). Tail:
+    ```
+    Received string:    "version 0.1.0 · process 81896 · assistant unavailable: the model server exited with status 1"
+    1 failed
+    make: *** [live] Error 1
+    ```
+  - second run at `5f2cec9`: the acceptance spec **passed in 72 s** (type the instruction, the first
+    tool call in the trail, pause by the chord, the job paused, Resume, the proposal line, the table
+    opened); then every Python live test errored at setup, "127.0.0.1:8081 is held by another
+    process": the spec's plain kill of its harness had left the model server running (decisions
+    2026-10-16; the spec now quits through `/v1/shutdown`). Tail:
+    ```
+    ✓  1 tests/live.spec.ts:23:1 › @live_model A28, A24: type the instruction, see real progress, pause mid-run, resume, open the table (1.2m)
+    3 passed, 392 deselected, 6 warnings, 13 errors in 7.15s
+    ```
+  - third run (the spec quitting its harness): the acceptance spec **passed in 66 s** again; the
+    Python suite then ran: 10 passed, but the acceptance, intent and remote tests saw the model
+    server gone ("the model server did not answer (ConnectError)", 0 generations): the gateway
+    file's quit test (D24) stops the session's server, and only the failure tests' wrapper revived
+    it; the shared wrapper now revives a stopped session server for every later harness, and the
+    remote fixture revives it before reading the served models (decisions 2026-10-16). Tail:
+    ```
+    ✓  1 tests/live.spec.ts:23:1 › @live_model A28, A24: type the instruction, see real progress, pause mid-run, resume, open the table (1.1m)
+    2 failed, 10 passed, 392 deselected, 6 warnings, 4 errors in 303.45s (0:05:03)
+    ```
+  - fourth run (the shared wrapper reviving the server): the acceptance spec **passed in 66 s**;
+    Python **12 passed, 4 failed** in 6 min 30 s — the model refused the essay the hung-generation
+    test needed (answered in 1.3 s), two readiness waits were 20 s against a 25 s restart, the quit
+    test read the key file before the stop had unlinked it, and the "minimal features" case ended on
+    an empty answer the loop accepted (decisions 2026-10-16: all four fixed; an empty answer is now
+    refused). A24 under a hung generation was already recorded PASS by the third run (p95 pause
+    0.019 s, cancel 0.036 s). Tail:
+    ```
+    ✓  1 tests/live.spec.ts:23:1 › @live_model A28, A24: type the instruction, see real progress, pause mid-run, resume, open the table (1.1m)
+    4 failed, 12 passed, 392 deselected, 6 warnings in 390.48s (0:06:30)
+    ```
+  - fifth run (the four fixes): the acceptance spec **passed in 78 s**; Python **14 passed, 2 failed**
+    in 7 min 5 s: A28's generated-code part FAIL on the known over-grouping (8 rows by region and
+    service level, values equal to DuckDB's for that grouping; 5 generations, 37 s, 0 repairs), and
+    A29 with four of the five reference instructions as described and "keep features minimal" not:
+    the model set the soft objective and answered instead of asking about a hard maximum (the
+    intent test's step summary printed that answer as empty; it was not). The watch saw, of ours,
+    only the known benign denials plus `file-read-metadata /private/var/db/timezone/zoneinfo`; no
+    sysctl was asked for. Tail:
+    ```
+    ✓  1 tests/live.spec.ts:23:1 › @live_model A28, A24: type the instruction, see real progress, pause mid-run, resume, open the table (1.3m)
+    FAILED tests/integration/test_live_generate.py::test_a28_the_acceptance_instruction_yields_a_committed_table_equal_to_duckdb
+    FAILED tests/integration/test_live_intent.py::test_a29_the_five_reference_instructions
+    2 failed, 14 passed, 393 deselected, 6 warnings in 425.72s (0:07:05)
+    ```
+- `make live-linux` (linux/arm64 container, CPU only, 2 threads) at `77420d8`: **12 passed, 4 failed**
+  in 28 min 38 s. Passed: the seven gateway tests (readiness, verification, the key, A30 offline), the
+  hung-generation A24 and the out-of-memory tests, the three remote refusals. Failed: A28 and A29,
+  each "no answer within the 300 s generation deadline" with 0 generations — the container processes
+  prompts at 3.1 tokens per second (D3), so the 2,700-token system context of one call needs about
+  15 minutes against D17's 300 s; then the remote readiness and the deadline tests timed out behind
+  the abandoned generations, which hold the server's single slot until their deadline. A fact of
+  this container's speed, not a product defect: the harness said so truthfully at each step. The
+  run's evidence files were not copied out (the copy follows a failing pytest; fixed below). Tail:
+  ```
+  FAILED tests/integration/test_live_generate.py::test_a28_the_acceptance_instruction_yields_a_committed_table_equal_to_duckdb
+  FAILED tests/integration/test_live_intent.py::test_a29_the_five_reference_instructions
+  FAILED tests/integration/test_live_remote.py::test_r17_the_remote_binding_is_ready_with_its_policy_shown_and_answers_from_llama_server
+  FAILED tests/integration/test_live_failure.py::test_r16_a_hung_server_is_killed_at_the_deadline_and_the_assistant_recovers_on_the_same_binding
+  4 failed, 12 passed, 394 deselected, 1 warning in 1718.71s (0:28:38)
+  ```
+  - sixth run at `77420d8` (the two product rules): the acceptance spec **passed in 72 s**; Python
+    **15 passed, 1 failed** in 7 min 9 s. **A29 PASS**: the five reference instructions as described
+    ("keep features minimal" now ends with the application's question). **A28 FAIL** on the known
+    over-grouping only (8 rows by region and service level, values equal to DuckDB's for that
+    grouping; 5 generations, 42 s, 0 repairs). **A24 PASS** (p95 pause 0.019 s, cancel 0.036 s;
+    third run) and **A30 PASS** (the offline part). Tail:
+    ```
+    ✓  1 tests/live.spec.ts:23:1 › @live_model A28, A24: type the instruction, see real progress, pause mid-run, resume, open the table (1.2m)
+    FAILED tests/integration/test_live_generate.py::test_a28_the_acceptance_instruction_yields_a_committed_table_equal_to_duckdb
+    1 failed, 15 passed, 394 deselected, 6 warnings in 429.59s (0:07:09)
+    ```
+- Integrity review (one run, general-purpose agent with the reviewer's definition; 259k tokens):
+  **REVIEW: PASS**, two should-fix and six notes, all answered (decisions 2026-10-16): the model's
+  patch could set the derived privacy status or name an unlisted field, and a bare-prefix provenance
+  covered every path (fixed: refused, parent-or-exact provenance); the generation deadline was a
+  per-read timeout (fixed: the whole generation); the tool catalogue is counted in the input bound
+  and the Metal memory poll counts resident memory (notes taken); replay idempotency of two tools, a
+  text answer settling `applied` without effect, Linux live coverage and the in-memory spend sum
+  (notes recorded, the first two open for Sprint 6). Every fix mutation-caught.
+- **Measured facts** (facts, not claims of adequacy; the local binding `assistant-local-qwen`,
+  llama.cpp b11104, Qwen3-8B Q4_K_M, seed 1, temperature 0; the acceptance instruction on the
+  500-row orders fixture, from the A28 generated-code record's `measured` field; the D3 rows are the
+  5.1 checkpoint above):
+
+  | Fact | macOS arm64 (Metal, `-t 2 -ngl 99`) | Linux arm64 container (CPU, `-t 2`) |
+  |---|---|---|
+  | First useful response (the first tool call, from the instruction) | 8.5–9.7 s (two runs) | none: the first call ran past the 300 s deadline (the 2,700-token prompt at 3.1 tok/s needs ~15 min) |
+  | Step latency (mean seconds per generation, prompt and answer) | 6.8–7.7 s over 5 generations | not reached: no generation completed within D17 |
+  | Tokens per second | 45.3 generation / 258 prompt (D3, prose); 14.4–16.1 completion tokens per second of generation time in the task (prompt processing included) | 1.6 generation / 3.1 prompt (D3); none completed in the task |
+  | Peak memory of the model server | 6.39 GiB `phys_footprint`, sampled every 0.5 s during the task (D3: 1.24 GiB at readiness; resident 5.98 GiB, the mapped weights) | not sampled (no task ran); the server loaded within the `prlimit` address-space bound |
+  | Repairs per task | 0 of at most 2 (one task submitted) | no task submitted |
+  | Load to health | 23.6–25.5 s (D3) | 16.2 s (D3) |
+
+## D3 checkpoint — launch profile (2026-10-15, measured under the Seatbelt profile on this M1 Max)
+
+| Profile | Flags | Load to health | First token (cold / warm) | Prompt tok/s | Generation tok/s | Typed probe | Peak footprint | Resident |
+|---|---|---|---|---|---|---|---|---|
+| CPU, 2 threads (the contract) | `-t 2 -ngl 0` | 28.1 s | 1.04 s / 0.96 s | 23.0 | 11.5 | 10.0 s | 5.62 GiB | 9.86 GiB |
+| CPU, all 10 cores | `-t 10 -ngl 0` | 30.6 s | 1.49 s / 0.94 s | 23.7 | 11.1 | 7.0 s | 5.62 GiB | — |
+| Metal, full offload | `-t 2 -ngl 99` | 23.6–25.5 s | 0.27 s / 0.09 s | 258 | 45.3–45.4 | 1.1 s | 1.24 GiB | 5.98 GiB |
+
+Each row passed the typed probe with thinking off. Generation is 164–175 tokens of prose at temperature
+0, seed 1; "cold" is the first request after load. Peak footprint is the kernel's `phys_footprint`;
+Metal's weights live in GPU-mapped memory it does not count, hence the resident column (`ps`). Since the
+5.7 review the memory poll takes the larger of the two, so the binding's limit bounds the weights too. Load times are with the file in the page cache. Linux (the container, CPU only, 2 threads):
+health in 16.2 s, 3.1 prompt tok/s, 1.6 generation tok/s.
+
 ## Open defects and gaps
+
+- **5.4 acceptance, local binding:** "load this CSV and show transit hours by service level" yields a
+  table grouped by region and service level (values right for that grouping), not per service level;
+  `A28-generated-code-live-assistant-local-qwen` is FAIL on macOS and `make live` is red by that one
+  test until the model's interpretation is qualified or changed (Sprint 11's suite is where adequacy
+  is judged). Identical on every gate run (six).
+- **Linux container, the assistant's prompts past D17's deadline:** at 3.1 prompt tokens per second
+  the 2,700-token context of one call needs about 15 minutes against 300 s, so A28 and A29 fail there
+  with "no answer within the 300 s generation deadline" and the next tests wait behind the abandoned
+  generation (decisions 2026-10-16). `make live-linux` is red by four tests; the gateway, failure and
+  remote-refusal tests pass. A fact of this container, not of the product; a Linux machine with a
+  GPU or more cores is the real target.
+- Review notes deferred to Sprint 6 (decisions 2026-10-16): a `dispatched` patch or schema call
+  replayed after a crash is not idempotent (no double commit); a text answer settles `applied` even
+  when no call had an effect; the remote spend sum lives in memory.
+- A SIGTERM to a harness started by a Playwright spec did not stop its model server (the spec now
+  quits through the API); why the supervisor's stop did not run is not established.
+- CI, Linux built app (run 38895075855): after the real window close the shell did not end within 20 s;
+  the Sprint 4 gate passed this step and the shell's close path is unchanged since; the step had not
+  run on CI in Sprint 5 before (earlier runs failed before it). The waits now report what is left on a
+  timeout. Not reproducible here; open until the gate's CI run.
+- `make live`: the quit test (`test_d24_quitting_the_harness_stops_the_model_server_it_started`) failed
+  once in a full macOS run that overlapped a container run, and its output was not captured; it passed in
+  the three runs since. Not established whether the 30 s waits are too short under load.
 
 - macOS sandbox: sysctl reads are allowed by name only, the eleven measured for the standard library and
   DuckDB; a future library reading another one gets EPERM (add it by name after checking it reveals
@@ -457,8 +915,17 @@ Code commit `2c81168`; the evidence and this file were committed after it.
   snapshot with a separate request that can land later (the failing text had the plan and "Resources
   not observed", no read error). The test now waits for the snapshot's line; it passed on run
   38380964046. One pass does not prove a race gone; the Linux built-app test runs only on CI.
-- macOS: one gate run's dispatcher logged `PermissionError` starting a task (no traceback): which call
-  refused is not established. It is now a retried transient failure, not a stranded job.
+- macOS: `os.killpg(pid, SIGKILL)` in the sandbox's `stop()` (`sandbox.py:104`) is refused with
+  `EPERM` now and then: at the Sprint 4 gate the dispatcher logged it without a traceback; at the
+  Sprint 5 gate it failed `test_d21_cpu_time_past_the_limit_stops_the_task_even_when_it_ignores_sigxcpu`
+  once in a full `make verify` (the test passed three times alone right after, and in the two other
+  full runs that day). The likely cause is a process-group id reused by a process of another user
+  between the task's end and the kill; not established. A retried transient failure in the
+  dispatcher, a red test when it lands in the containment test. Open (Sprint 6 housekeeping: check
+  the group is still the task's before the kill, or kill the known pids).
+  The failed run also left that task's scratch image mounted (`/dev/disk4`, under `pytest-of-nm`):
+  `hdiutil detach` and a forced `diskutil unmountDisk` both answer "Resource busy" though `lsof`
+  finds no holder; left mounted, to be detached after a reboot (never any other disk).
 - macOS: after some `make e2e` runs a bundled harness was left running on one test's temporary profile,
   started by a process that had exited; origin not established (not seen in the 2026-10-13 run).
 - One macOS gate run took 22 minutes of wall time against 7 to 8 minutes of tests; not reproduced.
@@ -479,11 +946,10 @@ Code commit `2c81168`; the evidence and this file were committed after it.
   a time; a test job still waits for the outside test worker. A checkpoint is recorded but nothing
   restores from it yet.
 - Controls: a phrase with several live jobs needs clarification; only the job's own controls (buttons)
-  name a job. There is no Resume menu item. **Open DEFECT:** in the built macOS app Cmd+. cancels
-  nothing. The owner's press on 2026-10-13: Cmd+P paused the job through the window's own handler;
-  Cmd+. reached neither the window nor the native menu (no command arrived at the harness). Both
-  chords work in Playwright and on Linux. Changing the chord is the owner's call (waiting on the
-  owner). Action outcomes are shown in the activity trail only, with one wording (closed in Sprint 4
+  name a job. There is no Resume menu item. The Sprint 4 defect (in the built macOS app Cmd+. reached
+  neither the window nor the native menu) is answered by D1: Cancel run is now CmdOrCtrl+Shift+K
+  everywhere; whether the built macOS app delivers it is the owner's press at the Sprint 5 gate
+  (open until then). Action outcomes are shown in the activity trail only, with one wording (closed in Sprint 4
   housekeeping). Resume and admission are serialised on one aggregate; a
   revision followed by a crash before the hold leaves a job on the old revision until its next resume.
 - Requirements: three change instructions are understood by a fixed grammar; a budget or evaluation
@@ -498,18 +964,29 @@ Code commit `2c81168`; the evidence and this file were committed after it.
 
 ## Waiting on the owner
 
-1. **Cmd+. in the built macOS app** reaches neither the window nor the native menu: choose another
-   chord for Cancel run (for example Cmd+Shift+K) or keep it and rely on the button.
-2. Merging the Sprint 4 pull request (#8).
-3. Optional: remove `~/Library/Containers/dsp.probe.appsandbox` (28 KB), left by the gap investigation's
+1. In the built macOS app (`make desktop-build` left `DS Playground.app` under
+   `desktop/src-tauri/target/release/bundle/macos/`): start a job, press Cmd+P and Cmd+Shift+K, and
+   say what happened (the chord is D1's; no automated test can press it in the real window).
+2. The acceptance line in the real macOS window: type "load this CSV and show transit hours by service
+   level" with the orders fixture granted, watch the progress, pause mid-run, resume, open the table.
+   On the first run macOS may ask to allow keychain access: expected, the harness reads the server's
+   key from the login keychain (service `dev.dsp.assistant`), and the table will be grouped by region
+   and service level (the open A28 defect).
+2. Optional: remove `~/Library/Containers/dsp.probe.appsandbox` (28 KB), left by the gap investigation's
    App Sandbox probe; the system refused its deletion from this session.
 
 ## Handoff note
 
-Sprint 4 (prompts 4.1 to 4.7) is on `sprint-4-runner`, pull request #8 against `main` titled "Sprint 4:
-sandboxed native runner"; merging is the owner's. The gate is PASS on macOS and Linux for Sprint 4 scope
-after the two macOS containment gaps were closed. **Next is Sprint 5, prompt 5.1**, on a new branch from
-`main` once the pull request is merged.
+Sprint 5 is on `claude/sprint-5-assistant-gateway-fc1f11` (from `main` at `73698be`), pushed through
+the gate's commits, with the pull request "Sprint 5: assistant gateway, open model first" open for the
+owner to merge. **Next is Sprint 6, prompt 6.1** (fixtures), on a new branch from `main` after the merge.
+Carry into Sprint 6 housekeeping: the open defects above (the over-grouped acceptance table, the Linux
+deadline fact, the `killpg` EPERM, the two review notes, the kill that left a server). The `make live`
+suites: macOS green but for A28; Linux red by the deadline fact. `make test-fast` was 342 passed at 5.6;
+the gate's `make verify` runs are recorded above. The D3 pick is Metal (applied); D4 = B is built.
+
+Sprint 4's handoff: the gate was PASS on macOS and Linux for Sprint 4 scope after the two macOS
+containment gaps were closed (PR #8, merged).
 
 Notes for the next session: the `harness` fixture serves the real app from the test process on a loopback
 socket with a clock the test moves (`clock.advance(61)` expires a lease); the `worker` fixture starts

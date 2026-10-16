@@ -49,10 +49,12 @@ test.afterEach(async () => {
   }
 });
 
-test("R26: shows connected with the harness version and pid", async ({ page }) => {
+test("R26, R18: shows connected with the harness version and pid, and the assistant's state", async ({ page }) => {
   await open(page, harness);
   await expect(page.getByRole("status")).toHaveText("● Harness connected");
   await expect(page.getByText(`version 0.1.0 · process ${harness.pid}`)).toBeVisible();
+  await expect(page.locator("p.detail")).toContainText("assistant unavailable: model missing");
+  await expect(page.getByRole("region", { name: "Activity" })).toContainText("Assistant unavailable: model missing");
   await expectNoAxeViolations(page);
 });
 
@@ -310,9 +312,11 @@ test("R20, A44: a lost harness keeps the last known state, and a restarted one i
   const events = await fetch(`${own.base_url}/v1/events`, {
     headers: { Authorization: `Bearer ${own.token}` },
   }).then((response) => response.json());
-  expect(events.events.map((event: { type: string }) => event.type)).toEqual([
+  const types = events.events.map((event: { type: string }) => event.type);
+  expect(types.filter((type: string) => !type.startsWith("assistant."))).toEqual([
     "discovery.finished",
     "plan.proposed",
   ]);
+  expect(types.filter((type: string) => type === "assistant.unavailable")).toHaveLength(2); // one per start
   process.kill(own.pid);
 });

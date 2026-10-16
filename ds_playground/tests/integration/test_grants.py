@@ -181,3 +181,34 @@ def test_an_output_grant_proposes_an_output_binding(ledger: SqliteLedger, root: 
     assert ledger.current(CTX, "OutputBinding") == [binding]
     grant(ledger, root / "nested")
     assert len(ledger.current(CTX, "OutputBinding")) == 1  # a source grant proposes no binding
+
+
+def test_r26_a_granted_file_is_named_by_its_own_name_or_a_dot_and_nothing_else(
+    tmp_path: Path,
+) -> None:
+    """R26: the label the window shows names the granted file; a sibling is outside the grant."""
+    from dsp.adapters.ledger_sqlite import SqliteLedger
+    from dsp.application.grants import grant_folder, resolve
+    from dsp.contracts.errors import DspError, TrustedContext
+
+    ctx = TrustedContext.local()
+    (tmp_path / "orders.csv").write_text("a\n")
+    (tmp_path / "other.csv").write_text("b\n")
+    store = SqliteLedger(tmp_path / "ledger.sqlite", lambda: "2026-10-16T10:00:00+00:00")
+    granted = grant_folder(
+        ctx,
+        tmp_path / "orders.csv",
+        "source_root",
+        ledger=store,
+        clock=lambda: "2026-10-16T10:00:00+00:00",
+        new_id=lambda: "g",
+    )
+    for name in (".", "orders.csv"):
+        assert (
+            resolve(ctx, granted["id"], name, "source_root", ledger=store)
+            == tmp_path / "orders.csv"
+        )
+    sibling = resolve(ctx, granted["id"], "other.csv", "source_root", ledger=store)
+    assert not sibling.exists()  # under the granted file there is nothing: the capture says so
+    with pytest.raises(DspError):
+        resolve(ctx, granted["id"], "../other.csv", "source_root", ledger=store)

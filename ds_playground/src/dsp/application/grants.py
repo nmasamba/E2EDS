@@ -124,11 +124,14 @@ def resolve(
     Refused: an unknown or another tenant's handle, a revoked grant, a grant for another purpose,
     and any path that ends outside the granted root once every symlink is followed. The root was
     stored fully resolved, so a root later replaced by a link elsewhere resolves outside it too.
+    A granted file is named by "." or by its own name (the label the window and the assistant see).
     """
     grant = _find(ctx, handle, ledger)
     if (grant["state"], grant["purpose"]) != ("active", purpose):
         raise DspError(ErrorCode.FORBIDDEN, "the grant is revoked or is for another purpose")
     root = Path(grant["root"])
+    if root.is_file() and relative == root.name:
+        relative = "."
     target = (root / relative).resolve()
     if not target.is_relative_to(root):
         raise DspError(ErrorCode.FORBIDDEN, "the path is outside the granted folder")

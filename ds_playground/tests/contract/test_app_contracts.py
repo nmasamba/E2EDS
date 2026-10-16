@@ -90,11 +90,19 @@ def test_b26_prior_versions_still_read_under_their_own_schema() -> None:
         reservation="reservation-1",
         idempotency_key="k",
     )
-    sprint_3 = job | {"schema_version": "0.1.0"}
+    earlier = {key: value for key, value in job.items() if key != "parent"}
+    sprint_3 = earlier | {"schema_version": "0.1.0"}
     schemas.validate("Job", sprint_3)
     refused("Job", sprint_3 | {"task": None})  # 0.1.0 always carried a test-worker task
-    refused("Job", job)  # 0.2.0 needs the payload digest
+    sprint_4 = earlier | {"schema_version": "0.2.0", "payload_sha256": SHA}
+    schemas.validate("Job", sprint_4 | {"task": None})
+    refused("Job", sprint_4 | {"schema_version": "0.1.0"})  # 0.1.0 knew no payload digest
+    refused("Job", job)  # 0.3.0 needs the payload digest
+    refused("Job", earlier | {"payload_sha256": SHA})  # and names the parent, if any
     schemas.validate("Job", job | {"task": None, "payload_sha256": SHA})
+    schemas.validate("Job", job | {"task": {"command": "command-1"}, "payload_sha256": SHA})
+    schemas.validate("Job", job | {"task": None, "payload_sha256": SHA, "parent": "job-0"})
+    refused("Job", job | {"task": {"command": ""}, "payload_sha256": SHA})
 
 
 def test_b26_code_tasks_conform_and_declare_their_outputs() -> None:
@@ -108,6 +116,12 @@ def test_b26_code_tasks_conform_and_declare_their_outputs() -> None:
     worker = code_task({"cues": ["sleep"], "seconds": 1}, workload)
     schemas.validate("CodeTask", worker)
     assert (worker["language"], worker["outputs"]) == ("test_worker", [])
+    loop = code_task({"command": "command-1"}, workload)
+    schemas.validate("CodeTask", loop)
+    assert (loop["language"], loop["inputs"], loop["outputs"]) == ("assistant", [], [])
+    refused("CodeTask", loop | {"outputs": ["table.csv"]})  # the loop itself writes nothing
+    schemas.validate("CodeTask", python | {"schema_version": "0.1.0"})  # Sprint 4's still reads
+    refused("CodeTask", loop | {"schema_version": "0.1.0"})  # which knew no assistant task
     for bad in (
         PYTHON | {"outputs": []},
         PYTHON | {"outputs": ["../escape.json"]},

@@ -1,10 +1,12 @@
 import { expect, test } from "vitest";
 import {
   activity,
+  assistant,
   expectedRevision,
   freshness,
   jobs,
   liveJob,
+  results,
   merge,
   trail,
   type LedgerEvent,
@@ -76,6 +78,69 @@ test("R20: a job that starts again is running again, and a revoked source is not
     "failed",
     "FORBIDDEN",
   ]);
+});
+
+test("R18: the assistant is ready only by its own committed event, and unavailable says why", () => {
+  expect(assistant([])).toEqual({ state: "unavailable", reason: "not started", profile: "", shown: "" });
+  const down = [event(1, "assistant.unavailable", { reason: "model missing" })];
+  expect(assistant(down)).toEqual({ state: "unavailable", reason: "model missing", profile: "", shown: "" });
+  const up = [...down, event(2, "assistant.ready", { profile: "assistant-local-cpu-v1", model_sha256: "sha256:d9" })];
+  expect(assistant(up)).toMatchObject({ state: "ready", profile: "assistant-local-cpu-v1" });
+  const said = [...up, event(3, "assistant.message", { text: "I am ready" }), event(4, "assistant.unavailable", { reason: "the model server stopped" })];
+  expect(assistant(said)).toMatchObject({ state: "unavailable", reason: "the model server stopped" });
+  const remote = {
+    profile: "assistant-remote-v1",
+    placement: { host: "127.0.0.1", leaves_machine: false },
+    data_policy: { allowed: "synthetic_fixtures_only", sealed_data: false, secrets: false },
+    spend: { price_per_million_tokens_minor: 0 },
+    spend_limit_minor: 0,
+  };
+  expect(assistant([event(5, "assistant.ready", remote)]).shown).toBe(
+    "remote 127.0.0.1 · synthetic fixtures only · spend limit £0.00",
+  );
+  expect(activity([event(5, "assistant.ready", remote)]).map((a) => [a.text, a.state])).toEqual([
+    ["Assistant ready: assistant-remote-v1", "remote 127.0.0.1 · synthetic fixtures only · spend limit £0.00"],
+  ]);
+  expect(activity(up).map((item) => item.text)).toEqual([
+    "Assistant unavailable: model missing",
+    "Assistant ready: assistant-local-cpu-v1",
+  ]);
+});
+
+test("B24, A24: a child job is addressed through its live parent; assistant lines are proposals", () => {
+  const parent = job(1, "job.queued", "job-p", "queued");
+  const child = job(3, "job.queued", "job-c", "queued", 0, 0, { input: { parent: "job-p" } });
+  const log = [parent, job(2, "job.started", "job-p", "running", 1), child, job(4, "job.started", "job-c", "running", 1)];
+  expect(liveJob(log)?.id).toBe("job-p");
+  expect(jobs(log).map((view) => view.id)).toEqual(["job-p"]);
+  const ended = [...log, job(5, "job.succeeded", "job-p", "succeeded", 1)];
+  expect(liveJob(ended)?.id).toBe("job-c");
+  const said = [
+    event(6, "assistant.call_dispatched", { job: "job-p", n: 1, tool: "inspect_schema" }),
+    event(7, "assistant.call_refused", { job: "job-p", n: 2, tool: "request_trial", code: "INPUT_INVALID", reason: "arguments" }),
+    event(8, "assistant.answered", { job: "job-p", n: 3, text: "The evaluation passed." }),
+  ];
+  expect(activity(said).map((item) => [item.text, item.state])).toEqual([
+    ["Assistant call 1: inspect_schema", ""],
+    ["Assistant call 2: request_trial", "refused · arguments"],
+    ["Assistant (a proposal, not a result): The evaluation passed.", ""],
+  ]);
+  expect(trail(said).find((stage) => stage.id === "evaluate")!.state).toBe("pending");
+});
+
+test("D23, A28: a result is the record a job's success names, never a message's claim", () => {
+  const log = [
+    job(1, "job.queued", "job-a", "queued"),
+    job(2, "job.succeeded", "job-a", "succeeded", 1, 0, { input: { key: "job-a.1", sha256: "sha256:a" } }),
+    event(3, "assistant.answered", { job: "job-b", text: "the table is ready: sha256:fake" }),
+    job(4, "job.succeeded", "job-c", "succeeded", 1, 0, { input: { key: "job-c.1", sha256: "sha256:c" } }),
+    job(5, "job.failed", "job-d", "failed", 1, 0, { input: { reason: "crash" } }),
+  ];
+  expect(results(log)).toEqual([
+    { job: "job-c", sha256: "sha256:c" },
+    { job: "job-a", sha256: "sha256:a" },
+  ]);
+  expect(results([])).toEqual([]);
 });
 
 test("R20: prose or unknown events claiming completion change nothing", () => {

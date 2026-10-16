@@ -6,6 +6,8 @@ evidence that depended on the changed part stale through a small dependency grap
 evaluation changes need the owner's own action and are refused here.
 """
 
+import copy
+import json
 import re
 from collections.abc import Callable
 from typing import Any
@@ -207,16 +209,97 @@ def owner_action(patch: list[dict[str, Any]]) -> str | None:
     return None
 
 
-def _applied(workload: dict[str, Any], patch: list[dict[str, Any]]) -> dict[str, Any]:
-    changed: dict[str, Any] = {**workload}
+def apply_patch(document: dict[str, Any], patch: list[dict[str, Any]]) -> dict[str, Any]:
+    """Apply a JSON Patch (add, replace, remove; lists by index or ``-``) to a copy.
+
+    A path that does not exist, or a replace or remove of a missing member, is INPUT_INVALID: the
+    patch is a model's or a grammar's proposal and is never applied in part.
+    """
+    changed = copy.deepcopy(document)
     for operation in patch:
-        parts = operation["path"].strip("/").split("/")
-        target = changed
-        for part in parts[:-1]:
-            target[part] = {**target[part]}
-            target = target[part]
-        target[parts[-1]] = operation["value"]
+        tokens = [t.replace("~1", "/").replace("~0", "~") for t in operation["path"][1:].split("/")]
+        target: Any = changed
+        try:
+            for token in tokens[:-1]:
+                target = target[int(token)] if isinstance(target, list) else target[token]
+            last = tokens[-1]
+            if isinstance(target, list):
+                index = len(target) if last == "-" else int(last)
+                if operation["op"] == "add":
+                    target.insert(index, operation["value"])
+                elif operation["op"] == "replace":
+                    target[index] = operation["value"]
+                else:
+                    del target[index]
+            elif operation["op"] == "add":
+                target[last] = operation["value"]
+            elif last not in target:
+                raise KeyError(last)
+            elif operation["op"] == "replace":
+                target[last] = operation["value"]
+            else:
+                del target[last]
+        except (KeyError, IndexError, ValueError, TypeError):
+            raise DspError(
+                ErrorCode.INPUT_INVALID, f"the patch names {operation['path']}, which is not there"
+            ) from None
     return changed
+
+
+def complete(current: dict[str, Any], patch: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The patch plus what the requirements' own rules derive from it; or why it cannot apply.
+
+    Rules the schema cannot express: a predictor field is allowed or excluded, never neither
+    (one the patch leaves in neither list is excluded) and never both; adding an output
+    transform (rounding is a precision change, not anonymity) puts the privacy status under
+    review; a row identifier must remain. The derived operations are appended, so the readback
+    and the record show them as the application's, not the model's.
+    """
+    derived: list[dict[str, Any]] = []
+    after = apply_patch(current, patch)["intent_constraints"]
+    features = after["features"]
+    both = sorted(set(features["allowed_fields"]) & set(features["excluded_fields"]))
+    if both:
+        raise DspError(ErrorCode.INPUT_INVALID, f"{both[0]} is both allowed and excluded")
+    predictors = [role["field"] for role in after["field_roles"] if role["role"] == "predictor"]
+    missing = [
+        f for f in predictors if f not in features["allowed_fields"] + features["excluded_fields"]
+    ]
+    if missing:
+        derived.append(
+            {
+                "op": "replace",
+                "path": f"{FEATURES}/excluded_fields",
+                "value": [*features["excluded_fields"], *missing],
+            }
+        )
+    adds_transform = len(after["output_transforms"]) > len(
+        current["intent_constraints"]["output_transforms"]
+    )
+    if adds_transform and after["privacy_status"] == "not_requested":
+        derived.append(
+            {
+                "op": "replace",
+                "path": "/intent_constraints/privacy_status",
+                "value": "requires_review",
+            }
+        )
+    if not any(role["role"] == "row_id" for role in after["field_roles"]):
+        raise DspError(
+            ErrorCode.INPUT_INVALID, "a row identifier must remain among the field roles"
+        )
+    return [*patch, *derived]
+
+
+def describe(patch: list[dict[str, Any]]) -> str:
+    """The plain readback of a patch: each change as its path and value, nothing invented."""
+    said = []
+    for operation in patch:
+        path = operation["path"].removeprefix("/intent_constraints")
+        value = json.dumps(operation["value"], ensure_ascii=False)
+        value = value if len(value) <= 80 else value[:77] + "..."
+        said.append(f"remove {path}" if operation["op"] == "remove" else f"{path} ← {value}")
+    return "; ".join(said)
 
 
 def impact_of(
@@ -254,13 +337,16 @@ def revise(
     *,
     ledger: Ledger,
     clock: Callable[[], str],
+    provenance: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Apply a typed patch as a new immutable revision and return it with its impact.
 
     A patch on the owner's paths is refused with REQUIRES_CONFIRMATION. The expected revision
     must be the current one (REVISION_CONFLICT otherwise); two edits that both read the same
     revision are serialised by the workload aggregate, and the second conflicts. Old revisions
-    and the results recorded against them are untouched.
+    and the results recorded against them are untouched. ``provenance`` is the assistant's
+    per-field record (proposed, with the span and confidence); the grammar's own change is one
+    confirmed entry, since the owner typed it.
     """
     if kind := owner_action(patch):
         raise DspError(
@@ -274,21 +360,21 @@ def revise(
             f"the requirements are at {current['revision']}, not {expected_revision}",
         )
     impact = impact_of(ctx, patch, current, ledger)
-    successor = _applied(current, patch) | {
+    typed = provenance or [
+        {
+            "field": FEATURES,
+            "source_kind": "direct_user_message",
+            "message_id": message_id,
+            "source_span": text,
+            "extraction_confidence": None,
+            "materiality": "high",
+            "confirmation_status": "confirmed",
+            "confirmed_by": ctx.principal,
+        }
+    ]
+    successor = apply_patch(current, patch) | {
         "revision": f"{int(current['revision'].split('.')[0]) + 1}.0.0",
-        "field_provenance": [
-            *current["field_provenance"],
-            {
-                "field": FEATURES,
-                "source_kind": "direct_user_message",
-                "message_id": message_id,
-                "source_span": text,
-                "extraction_confidence": None,
-                "materiality": "high",
-                "confirmation_status": "confirmed",
-                "confirmed_by": ctx.principal,
-            },
-        ],
+        "field_provenance": [*current["field_provenance"], *typed],
     }
     validate("WorkloadSpec", successor)
     aggregate = f"workload:{WORKLOAD_ID}"
@@ -297,6 +383,7 @@ def revise(
         "from": current["revision"],
         "to": successor["revision"],
         "patch": patch,
+        "readback": describe(patch),
         "impact": impact,
         "message_id": message_id,
         "at": clock(),
