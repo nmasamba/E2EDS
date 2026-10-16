@@ -188,6 +188,11 @@ def harness(state_dir: Path, assistant: Any) -> Iterator[tuple[httpx.Client, Clo
             break
         except httpx.HTTPError:
             time.sleep(0.05)
+    for _ in range(200):  # a started harness has said what its assistant is (ready or not)
+        events = client.get("/v1/events").json()["events"]
+        if any(e["type"].startswith("assistant.") for e in events):
+            break
+        time.sleep(0.05)
     yield client, clock
     server.should_exit = True
     thread.join(10)

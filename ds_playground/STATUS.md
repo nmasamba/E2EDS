@@ -736,6 +736,12 @@ Code commit `2c81168`; the evidence and this file were committed after it.
   (container) — verify and SAT green; the live suite red by the D17 deadline fact (four tests).
   `tools/trace_ids.py 5`: every ID in scope is in a test docstring or an evidence record. The
   `[s5] chore: sprint 5 complete` commit is not made: two live records are red.
+- **CI at the gate** (run 38950633517 at `2712b6b`, the one read): `desktop (macos)` passed; `verify`
+  failed one test on each OS and `desktop (ubuntu)` one, all three test races (decisions
+  2026-10-16: a liveness helper reading `/proc` of a task that had just ended; a message test's
+  expected event order on a slow runner, now fixed by the `harness` fixture waiting for the
+  assistant's first event; the window check waiting for the plan's line). Fixed and pushed; the
+  pull request's checks carry the result (no further read, the three read points being spent).
 - `make sat` on macOS at `f4c6690`: **22 passed** in 3 min 47 s (every sprint's acceptance tests, the
   `live_model` ones left to `make live`); evidence rewritten under `docs/evidence/`. Tail:
   ```

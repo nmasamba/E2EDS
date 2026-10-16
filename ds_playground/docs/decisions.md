@@ -871,6 +871,17 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   `live_model` part `A28-generated-code-live-<binding>` (written by `make live`, PASS only when the
   committed table equals DuckDB's); the overall record stays INSUFFICIENT_EVIDENCE for sealed
   partitions (Sprint 9) and VM isolation (the owner's deviation), not rounded up.
+- **2026-10-16 — S5 — DEFECT — the gate's CI read, run 38950633517 at `2712b6b`: three test races (fixed, pushed unread)** —
+  `verify (ubuntu)`: the Sprint 4 harness-dies containment test's own liveness helper read
+  `/proc/<pid>/stat` after checking it existed, and the task ended in between (a gone process now
+  counts as not alive). `verify (macos)`: a Sprint 3 message test expects the assistant's first
+  event before its first message, and the slow runner recorded `assistant.unavailable` after it;
+  the `harness` fixture now waits for that first event, so every harness test starts from the
+  same state. `desktop (ubuntu)`: the built app's window check asserted the plan's outcome line in
+  the same text that showed the stage, while the plan comes with its own request (the Sprint 4
+  race, on another line); it now waits for the line. The desktop macOS job passed. The fixes are
+  pushed without a further CI read (the three read points are spent); the pull request's checks
+  show the result, and Auto-fix can wake this session on them.
 - **2026-10-16 — S5 — FINDING — the Linux container cannot meet D17's deadline for the assistant's prompts (5.7, open as a fact)** —
   `make live-linux` at the gate: 12 passed, 4 failed. The gateway's readiness, verification, key
   and A30 offline tests, the hung-generation A24, out of memory and the remote refusals pass; A28

@@ -430,7 +430,10 @@ def alive(pid: int) -> bool:
     except ProcessLookupError:
         return False
     stat = Path(f"/proc/{pid}/stat")  # where the OS has one, a zombie says so
-    return not (stat.exists() and stat.read_text().rsplit(")", 1)[-1].split()[0] == "Z")
+    try:
+        return stat.read_text().rsplit(")", 1)[-1].split()[0] != "Z"
+    except OSError:  # gone between the look and the read, or no /proc: not alive
+        return False
 
 
 def test_d24_a_task_whose_harness_dies_ends_with_it(tmp_path: Path, runner_env: Path) -> None:

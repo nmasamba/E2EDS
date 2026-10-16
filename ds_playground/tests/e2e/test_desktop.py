@@ -176,7 +176,12 @@ def inspect_window(binary: Path, state_dir: Path) -> None:
                 answer = harness(state_dir).get("/v1/status").json()
                 assert f"version {answer['version']} · process {answer['pid']}" in text
                 assert "Environment and context\n● Completed" in text
-                assert "Outcome: INSUFFICIENT_EVIDENCE. local-native-draft is unqualified" in text
+                # the plan's line comes with its own request, like the snapshot's below
+                eventually(
+                    lambda: shown(
+                        "Outcome: INSUFFICIENT_EVIDENCE. local-native-draft is unqualified"
+                    )
+                )
                 snapshot = harness(state_dir).get("/v1/hardware").json()
                 cpus = snapshot["cpu"]["visible_logical_processors"]
                 # the window reads the snapshot apart from the plan, so it may show later
