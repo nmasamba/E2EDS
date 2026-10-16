@@ -7,6 +7,8 @@ must equal an independent DuckDB query on the same file. The model's prose is ne
 import csv
 import io
 import json
+import sys
+import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -102,6 +104,16 @@ def _is_number(text: str) -> bool:
     return True
 
 
+def peak_memory(server: Any, pid: int) -> int:
+    """The server's memory as the OS accounts it: macOS footprint now, Linux peak RSS (VmHWM)."""
+    if sys.platform == "darwin":
+        return int(server.footprint(pid) or 0)
+    for line in Path(f"/proc/{pid}/status").read_text().splitlines():
+        if line.startswith("VmHWM:"):
+            return int(line.split()[1]) * 1024
+    return 0
+
+
 def test_a28_the_acceptance_instruction_yields_a_committed_table_equal_to_duckdb(
     harness: Harness,
     state_dir: Path,
@@ -109,6 +121,7 @@ def test_a28_the_acceptance_instruction_yields_a_committed_table_equal_to_duckdb
     monkeypatch: pytest.MonkeyPatch,
     runner_env: Path,
     evidence: Callable[..., None],
+    model_server: Any,
 ) -> None:
     """R22, A28, B26, D17: model-generated code runs in the sandbox; its table is the right table.
 
@@ -138,9 +151,33 @@ def test_a28_the_acceptance_instruction_yields_a_committed_table_equal_to_duckdb
     answer = say(client, INSTRUCTION)
     assert answer["state"] == "accepted", answer
     job = answer["job"]["id"]
-    done = ended(client, job, 900)
+    peak, sampling = [0], threading.Event()
+
+    def sample() -> None:  # the server's memory while the task runs, every half second
+        while not sampling.is_set():
+            peak[0] = max(peak[0], peak_memory(model_server, model_server.process.pid))
+            sampling.wait(0.5)
+
+    sampler = threading.Thread(target=sample)
+    sampler.start()
+    try:
+        done = ended(client, job, 900)
+    finally:
+        sampling.set()
+        sampler.join()
     elapsed = time.monotonic() - started
     recorded = calls(state_dir, job)
+    generation = sum(c["generation_seconds"] for c in recorded) or 1e-9
+    completion = sum(c["usage"]["completion_tokens"] for c in recorded)
+    measured = {
+        "first_tool_call_seconds": round(recorded[0]["generation_seconds"], 1)
+        if recorded
+        else None,
+        "mean_step_seconds": round(generation / max(len(recorded), 1), 1),
+        "completion_tokens_per_second": round(completion / generation, 1),
+        "peak_model_server_memory_gib": round(peak[0] / 2**30, 2),
+        "memory_measure": "phys_footprint, sampled" if sys.platform == "darwin" else "VmHWM",
+    }
     submitted = [
         c for c in recorded if c["tool"] == "submit_code_task" and c["state"] == "committed"
     ]
@@ -207,7 +244,7 @@ def test_a28_the_acceptance_instruction_yields_a_committed_table_equal_to_duckdb
                 else ""
             )
         )
-        + f"; steps: {steps}"
+        + f"; measured: {json.dumps(measured)}; steps: {steps}"
     )
     evidence(
         "A28",
@@ -228,5 +265,8 @@ def test_a28_the_acceptance_instruction_yields_a_committed_table_equal_to_duckdb
     assert repairs <= 2
     assert done["state"] == "succeeded"
     Path(tmp_path / "facts.json").write_text(
-        json.dumps({"seconds": round(elapsed, 1), "generations": len(recorded), "repairs": repairs})
+        json.dumps(
+            {"seconds": round(elapsed, 1), "generations": len(recorded), "repairs": repairs}
+            | measured
+        )
     )

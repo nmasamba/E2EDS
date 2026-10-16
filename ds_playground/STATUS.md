@@ -685,6 +685,31 @@ Code commit `2c81168`; the evidence and this file were committed after it.
   mutation, which held port 8081, and a pytest hung since before this session's compaction on the
   restart test); the out-of-memory test now stops its adapter in a `finally` (decisions 2026-10-16).
 
+## Sprint 5 gate (2026-10-16)
+
+- `make verify` on macOS arm64 (at `4eef69d`): format, lint, mypy strict, boundaries clean;
+  **388 passed, 18 deselected**, coverage 88.31%, 7 min 50 s. Tail:
+  ```
+  Required test coverage of 85% reached. Total coverage: 88.31%
+  388 passed, 18 deselected, 1 warning in 470.91s (0:07:50)
+  ```
+- `make verify-linux` (linux/arm64 container) at `4eef69d`: **1 failed, 387 passed** — the stale-server
+  check shelled out to `ps`, which the plain verify container lacks (decisions 2026-10-16; on Linux it
+  now reads `/proc/<pid>/cmdline`). Rerun with the fix: **388 passed, 18 deselected**, coverage 86.33%,
+  6 min 49 s. Tail:
+  ```
+  Required test coverage of 85% reached. Total coverage: 86.33%
+  388 passed, 18 deselected, 1 warning in 409.88s (0:06:49)
+  ```
+- The integrity review (PASS, two should-fix, six notes; decisions 2026-10-16) and its fixes landed
+  after those two runs, so both gates are rerun on the final commit below.
+GATE_PENDING_FINAL_VERIFY
+GATE_PENDING_SAT
+GATE_PENDING_E2E
+GATE_PENDING_LIVE
+GATE_PENDING_REVIEW
+GATE_PENDING_FACTS
+
 ## D3 checkpoint — launch profile (2026-10-15, measured under the Seatbelt profile on this M1 Max)
 
 | Profile | Flags | Load to health | First token (cold / warm) | Prompt tok/s | Generation tok/s | Typed probe | Peak footprint | Resident |

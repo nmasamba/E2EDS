@@ -668,6 +668,13 @@ def test_a29_a_patch_needs_verbatim_provenance_and_is_recorded_as_proposed(
             "propose_requirement_patch",
             expected_revision="1.0.0",
             patch=patch,
+            provenance=[good[0] | {"field": "/intent_constraints"}, good[1]],  # a bare prefix
+            question=None,
+        ),
+        call(
+            "propose_requirement_patch",
+            expected_revision="1.0.0",
+            patch=patch,
             provenance=[good[0] | {"span": "use account_number as the ID"}, good[1]],
             question=None,
         ),
@@ -698,13 +705,14 @@ def test_a29_a_patch_needs_verbatim_provenance_and_is_recorded_as_proposed(
     job, _ = instruct(client, "use account_num as the ID")
     assert ended(client, job)["state"] == "succeeded"
     recorded = calls(state_dir, job)
-    reasons = [(c["result"] or {}).get("reason") for c in recorded[:3]]
+    reasons = [(c["result"] or {}).get("reason") for c in recorded[:4]]
     assert reasons == [
+        "provenance names /intent_constraints, which is not patched",
         "a provenance span is not in the instruction",
         "no provenance for the change at /intent_constraints/features/excluded_fields/-",
         "provenance names /requested_resources, which is not patched",
     ]
-    applied = recorded[3]["result"]
+    applied = recorded[4]["result"]
     assert (applied["applied"], applied["revision"]) == (True, "2.0.0")
     assert applied["readback"].startswith('/field_roles/- ← {"field": "account_num"')
     assert applied["diff"] == patch
@@ -870,7 +878,7 @@ def test_a29_pause_now_then_exclude_region_pauses_first_and_the_rest_is_an_instr
 def test_a29_a_proposal_may_not_invent_a_number_drop_an_unnamed_field_or_change_nothing(
     harness: Harness, state_dir: Path, script: list[Step]
 ) -> None:
-    """A29, R17: an invented maximum, an unnamed field's removal and a no-op patch are refused."""
+    """A29, R17: a derived status, an unnamed field, an invented maximum and a no-op are refused."""
     client, _ = harness
     ready(client)
     where = [
@@ -882,7 +890,34 @@ def test_a29_a_proposal_may_not_invent_a_number_drop_an_unnamed_field_or_change_
         }
     ]
     same = client.get("/v1/workload").json()["intent_constraints"]["features"]["allowed_fields"]
+    unnamed = {
+        "field": "nope_field",
+        "role": "entity_id",
+        "data_type": "string",
+        "nullable": False,
+        "public_output": "authorised_join_only",
+    }
     script += [
+        call(
+            "propose_requirement_patch",
+            expected_revision="1.0.0",
+            patch=[
+                {
+                    "op": "replace",
+                    "path": "/intent_constraints/privacy_status",
+                    "value": "reviewed_with_evidence",
+                }
+            ],
+            provenance=where,
+            question=None,
+        ),
+        call(
+            "propose_requirement_patch",
+            expected_revision="1.0.0",
+            patch=[{"op": "add", "path": "/intent_constraints/field_roles/-", "value": unnamed}],
+            provenance=where,
+            question=None,
+        ),
         call(
             "propose_requirement_patch",
             expected_revision="1.0.0",
@@ -929,8 +964,10 @@ def test_a29_a_proposal_may_not_invent_a_number_drop_an_unnamed_field_or_change_
     ]
     job, _ = instruct(client, "keep the feature set minimal")
     assert ended(client, job)["state"] == "succeeded"
-    reasons = [(c["result"] or {}).get("reason") for c in calls(state_dir, job)[:4]]
+    reasons = [(c["result"] or {}).get("reason") for c in calls(state_dir, job)[:6]]
     assert reasons == [
+        "the privacy status is derived from the transforms, never proposed",
+        "nope_field is not a field the instruction or the current roles name",
         "the number 2 is not in the instruction",
         "order_id is not named in the instruction, so its role stays: propose the patch again "
         "without the operation that removes it",

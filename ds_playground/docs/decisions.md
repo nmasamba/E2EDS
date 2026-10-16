@@ -871,6 +871,36 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   `live_model` part `A28-generated-code-live-<binding>` (written by `make live`, PASS only when the
   committed table equals DuckDB's); the overall record stays INSUFFICIENT_EVIDENCE for sealed
   partitions (Sprint 9) and VM isolation (the owner's deviation), not rounded up.
+- **2026-10-16 — S5 — FINDING — the integrity review at 5.7: PASS, two should-fix, six notes** — run once
+  as a general-purpose agent carrying the reviewer's definition (the project agent is not in the
+  session's registry), on `73698be..4eef69d`. Should-fix, both fixed: (1) authority — a model
+  `replace` of a string leaf under `/intent_constraints` was applied unchecked, so a patch could set
+  `privacy_status` to `reviewed_with_evidence` or add a role for a field the instruction never
+  names, and one provenance entry with the bare prefix `/intent_constraints` covered every path;
+  now the privacy status is refused as derived by the application, a field name a value introduces
+  (`field`, `output_field`) must be in the instruction or in the current roles, and a provenance
+  field must be the patched path or its parent. (2) containment — the generation deadline was
+  passed to httpx as a per-read timeout, so a generation that kept streaming chunks was never
+  stopped (at the container's 1.6 tok/s a 2,048-token answer would run 21 minutes past a 300 s
+  deadline); `assemble` now carries the absolute deadline and a chunk past it is the hang, in
+  both adapters (unit test on a slow stream; the SIGSTOP live test keeps the no-chunk case).
+  Notes, taken: (3) the input bound now counts the tool catalogue with the messages; (4) on Metal
+  the footprint account leaves the mapped weights out, so the memory limit now takes the larger
+  of footprint and resident. Notes, deferred and open: (5) a `dispatched` call replayed after a
+  crash is not idempotent for `propose_requirement_patch` (the revision applied; the replay is
+  quoted a conflict) and `inspect_schema` (a second capture); no double commit, so Sprint 6
+  housekeeping. (6) a plain-text answer settles the command `applied` even when every call was
+  refused; the trail calls the answer a proposal, so nothing is rounded up, but "applied" means
+  the job ended; to settle on effect in Sprint 6. (7) the live failure and remote tests had run on
+  macOS only at review time; `make live-linux` at the gate runs them on Linux. (8) the remote
+  spend sum lives in memory and a harness restart resets it; harmless while the schema holds
+  `max_external_charge_minor` at 0, to come from the ledger when that is lifted.
+- **2026-10-16 — S5 — DEFECT — the stale-server check needed `ps`, which the verify container lacks (5.7, fixed)** —
+  the first `make verify-linux` of the gate failed one unit test: `stale()` read a pid file's process
+  through `ps -ww -o command=`, and the plain Linux container has no `ps` (the live container had it
+  from its build tools). On Linux the check now reads the kernel's own record, `/proc/<pid>/cmdline`,
+  with no dependency; macOS keeps `ps` (there is no `/proc`). The unit test is unchanged and covers
+  the negative case on both OSes; the positive kill is exercised by the live restart path.
 - **2026-10-16 — S5 — ASSUMPTION — the acceptance line's Playwright spec is selected by tag (5.7)** —
   Playwright has no markers, so the `live_model` spec (`desktop/tests/live.spec.ts`, titled
   `@live_model`) is left out of `make e2e` by `--grep-invert @live_model` in the renderer's test

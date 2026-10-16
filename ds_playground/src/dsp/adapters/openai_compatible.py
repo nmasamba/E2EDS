@@ -147,8 +147,8 @@ class OpenAICompatible:
                 if answer.status_code != 200:
                     self.failure = f"the endpoint answered {answer.status_code}"
                     raise DspError(ErrorCode.ASSISTANT_UNAVAILABLE, self.failure)
-                found = assemble(answer.iter_lines(), stop)
-        except httpx.TimeoutException:
+                found = assemble(answer.iter_lines(), stop, time.monotonic() + deadline)
+        except (httpx.TimeoutException, TimeoutError):
             self.failure = f"no answer within the {deadline:g} s generation deadline"
             raise DspError(ErrorCode.ASSISTANT_UNAVAILABLE, self.failure) from None
         except httpx.HTTPError as error:

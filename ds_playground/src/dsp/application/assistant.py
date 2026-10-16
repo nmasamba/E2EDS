@@ -438,7 +438,8 @@ def run(
         shown = messages_for(context(ctx, job, ledger, limits), command["text"], calls)
         try:
             gateway = assistant.gateway()
-            over = gateway.count(json.dumps(shown)) > limits["max_input_tokens"]
+            sent = json.dumps(shown) + json.dumps(tools.catalogue())  # the tools go in too
+            over = gateway.count(sent) > limits["max_input_tokens"]
         except DspError as unavailable:  # the server is gone: the task fails, the loop lives
             outcome = {"outcome": "failed", "transient": False, "reason": unavailable.message[:200]}
             break

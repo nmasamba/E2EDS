@@ -1,6 +1,7 @@
 """The llama-server adapter: the launch contract as flags, the confinement, the checks first."""
 
 import sys
+from collections.abc import Iterator
 from itertools import pairwise
 from pathlib import Path
 from typing import Any
@@ -242,3 +243,18 @@ def test_r16_a_server_that_answers_health_but_fails_readiness_is_stopped(
         time.sleep(0.1)
     assert adapter.process.poll() is not None, "the server was left running"
     assert not (tmp_path / "home" / "assistant" / "api-key").exists()
+
+
+def test_r16_a_generation_that_keeps_streaming_past_the_deadline_is_stopped_as_a_hang() -> None:
+    """R16, D17: the deadline bounds the whole generation, not the wait for the next chunk."""
+    import time
+
+    def slow() -> Iterator[str]:
+        for _ in range(50):
+            time.sleep(0.01)
+            yield 'data: {"choices": [{"delta": {"content": "x"}}]}'
+
+    with pytest.raises(TimeoutError):
+        llama_server.assemble(slow(), None, time.monotonic() + 0.1)
+    whole = llama_server.assemble(slow(), None, time.monotonic() + 60)
+    assert (whole["message"]["content"], whole["stopped"]) == ("x" * 50, False)

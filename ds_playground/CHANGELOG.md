@@ -30,6 +30,11 @@
   policy and the owner's spend limit shown in the header and trail before the first instruction, a
   charge the limit cannot cover refused before it is sent, and never the local model in its place.
   Tested against llama-server itself; no proprietary adapter.
+- After the integrity review: a proposal can no longer set the privacy status (the application
+  derives it) or add a role for a field the instruction never names, and its provenance must name
+  the changed path or its parent; the generation deadline now bounds a generation that keeps
+  streaming, not only the wait for its next chunk; the memory limit on Metal counts the mapped
+  weights; the input limit counts the tool catalogue.
 
 ## Sprint 4 — sandboxed native runner (2026-10-13)
 

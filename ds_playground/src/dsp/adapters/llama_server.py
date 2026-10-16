@@ -108,17 +108,36 @@ def _sb(kind: str, paths: Sequence[Path]) -> str:
     return " ".join(f"({kind} {json.dumps(str(p), ensure_ascii=False)})" for p in paths)
 
 
-def assemble(lines: Iterable[str], stop: Callable[[], bool] | None) -> dict[str, Any]:
+def command_line(pid: int) -> str:
+    """A process's full command line: the kernel's record on Linux, ``ps`` on macOS; "" if gone."""
+    if sys.platform != "darwin":
+        try:
+            return Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode()
+        except OSError:
+            return ""
+    shown = subprocess.run(
+        ["ps", "-ww", "-o", "command=", "-p", str(pid)], capture_output=True, text=True, check=False
+    )
+    return shown.stdout
+
+
+def assemble(
+    lines: Iterable[str], stop: Callable[[], bool] | None, ends: float | None = None
+) -> dict[str, Any]:
     """One streamed chat completion's chunks as the model's message, its usage and timings.
 
     ``stop`` is asked between chunks; True ends the generation (closing the stream cancels it on
-    the server) and the answer says ``stopped``.
+    the server) and the answer says ``stopped``. ``ends`` is the deadline as ``time.monotonic()``
+    reads it: a chunk arriving past it is the hang the deadline exists for, however many came
+    before, and raises TimeoutError.
     """
     content, reasoning, finish, halted = "", False, None, False
     calls: dict[int, dict[str, Any]] = {}
     usage: dict[str, Any] = {}
     timings: dict[str, Any] = {}
     for line in lines:
+        if ends is not None and time.monotonic() > ends:
+            raise TimeoutError("past the generation deadline")
         if stop is not None and stop():
             halted = True
             break
@@ -414,13 +433,8 @@ class LlamaServer:
             return
         pid = pid_file.read_text().strip()
         if pid.isdigit():
-            shown = subprocess.run(
-                ["ps", "-ww", "-o", "command=", "-p", pid],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if str(self.server) in shown.stdout and str(self.model) in shown.stdout:
+            shown = command_line(int(pid))
+            if str(self.server) in shown and str(self.model) in shown:
                 os.killpg(int(pid), 9) if sys.platform == "darwin" else os.kill(int(pid), 9)
                 time.sleep(0.5)
         pid_file.unlink()
@@ -452,7 +466,9 @@ class LlamaServer:
         system = ctypes.CDLL("/usr/lib/libSystem.B.dylib", use_errno=True)
         if system.proc_pid_rusage(pid, 0, ctypes.byref(usage)):
             return None
-        return int(usage.footprint)
+        return int(
+            max(usage.footprint, usage.resident)
+        )  # on Metal the weights are mapped, resident
 
     def stop(self) -> None:
         """Stop the server and its session; delete the key file."""
@@ -505,8 +521,8 @@ class LlamaServer:
                         ErrorCode.ASSISTANT_UNAVAILABLE,
                         f"the model server answered {answer.status_code}",
                     )
-                return assemble(answer.iter_lines(), stop)
-        except httpx.TimeoutException:
+                return assemble(answer.iter_lines(), stop, time.monotonic() + deadline)
+        except (httpx.TimeoutException, TimeoutError):
             self.failure = f"no answer within the {deadline:g} s generation deadline"
             self.stop()
             raise DspError(ErrorCode.ASSISTANT_UNAVAILABLE, self.failure) from None

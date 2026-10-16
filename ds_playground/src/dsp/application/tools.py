@@ -388,9 +388,30 @@ class Dispatcher:
             return []
 
         roles = current["intent_constraints"]["field_roles"]
+        known = {str(role["field"]) for role in roles}
+
+        def names(value: Any) -> list[str]:  # the field names a value introduces
+            if isinstance(value, dict):
+                own = [str(value[k]) for k in ("field", "output_field") if k in value]
+                return own + [n for item in value.values() for n in names(item)]
+            if isinstance(value, list):
+                return [n for item in value for n in names(item)]
+            return []
+
         for operation in patch:
             path = operation["path"]
+            if path == "/intent_constraints/privacy_status":
+                raise DspError(
+                    ErrorCode.INPUT_INVALID,
+                    "the privacy status is derived from the transforms, never proposed",
+                )
             if path.startswith("/intent_constraints"):
+                for name in names(operation.get("value")):
+                    if name not in text and name not in known:
+                        raise DspError(
+                            ErrorCode.INPUT_INVALID,
+                            f"{name} is not a field the instruction or the current roles name",
+                        )
                 for number in numbers(operation["value"]):
                     if f"{number:g}" not in text:
                         raise DspError(
@@ -421,22 +442,26 @@ class Dispatcher:
         """The typed, proposed provenance of a patch: every path covered, every span verbatim.
 
         A span must be the instruction's own words, so a reader can find it; a field must be a
-        path the patch changes (or a prefix of one); an uncovered change is refused. Nothing here
-        is confirmed: the owner's own action does that.
+        path the patch changes or that path's parent (never a bare prefix that covers everything);
+        an uncovered change is refused. Nothing here is confirmed: the owner's own action does that.
         """
         paths = [operation["path"] for operation in patch]
+
+        def covers(field: str, path: str) -> bool:
+            return path == field or path.rsplit("/", 1)[0] == field
+
         for entry in given:
             if entry["span"] not in self.command["text"]:
                 raise DspError(
                     ErrorCode.INPUT_INVALID, "a provenance span is not in the instruction"
                 )
-            if not any(path.startswith(entry["field"]) for path in paths):
+            if not any(covers(entry["field"], path) for path in paths):
                 raise DspError(
                     ErrorCode.INPUT_INVALID,
                     f"provenance names {entry['field']}, which is not patched",
                 )
         for path in paths:
-            if not any(path.startswith(entry["field"]) for entry in given):
+            if not any(covers(entry["field"], path) for entry in given):
                 raise DspError(ErrorCode.INPUT_INVALID, f"no provenance for the change at {path}")
         return [
             {
