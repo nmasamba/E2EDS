@@ -270,5 +270,6 @@ def test_r16_the_confinement_names_real_paths_so_a_symlinked_profile_folder_stil
     adapter = server(tmp_path / "link")
     assert adapter.state == real / "home" / "assistant"
     assert (adapter.model, adapter.server) == (real / "model.gguf", real / "llama-server")
-    assert str(real / "home" / "assistant") in adapter.profile()
-    assert str(tmp_path / "link") not in adapter.profile()
+    confinement = adapter.profile() if sys.platform == "darwin" else " ".join(adapter.confined())
+    assert str(real / "home" / "assistant") in confinement
+    assert str(tmp_path / "link") not in confinement

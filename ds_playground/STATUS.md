@@ -6,9 +6,10 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 
 - **Sprint:** 5 — M1 assistant gateway, open model first (B24, B26, B27; A24, A29, A30; R16, R17, R18,
   R22; D16, D17).
-- **Claimed prompt:** 5.6 done (D4 = B); next 5.7, the gate. One open defect from 5.4 (the live
-  acceptance table is over-grouped) and one open CI observation (Linux built app after a window
-  close). D3 picked: A, Metal full offload (2026-10-15).
+- **Claimed prompt:** 5.7, the gate, run on both OSes (below). **Not called done**: the live
+  acceptance's generated-code part (A28) is FAIL on the known over-grouping, and on Linux the
+  container cannot meet D17's deadline for the assistant's prompts (a measured fact). Everything
+  else is green on both OSes. Next is Sprint 6, prompt 6.1. D3: A (Metal); D4: B; D5: A.
 - **Branch:** `claude/sprint-5-assistant-gateway-fc1f11`, from `main` at `73698be` (PRs #1 to #8 merged).
 
 ## Done
@@ -716,7 +717,13 @@ Code commit `2c81168`; the evidence and this file were committed after it.
     FAILED tests/integration/test_containment.py::test_d21_cpu_time_past_the_limit_stops_the_task_even_when_it_ignores_sigxcpu
     1 failed, 388 passed, 18 deselected, 1 warning in 483.76s (0:08:03)
     ```
-GATE_PENDING_VERIFY_RERUN
+- Final runs at `937e42b` (every fix of the gate in):
+  - `make verify` on macOS: **392 passed, 18 deselected**, coverage 89.15%, 8 min 14 s. Tail:
+    ```
+    Required test coverage of 85% reached. Total coverage: 89.15%
+    392 passed, 18 deselected, 6 warnings in 494.78s (0:08:14)
+    ```
+GATE_PENDING_VERIFY_LINUX_LAST
 - `make sat` on macOS at `f4c6690`: **22 passed** in 3 min 47 s (every sprint's acceptance tests, the
   `live_model` ones left to `make live`); evidence rewritten under `docs/evidence/`. Tail:
   ```
@@ -850,17 +857,29 @@ GATE_PENDING_VERIFY_RERUN
 | Metal, full offload | `-t 2 -ngl 99` | 23.6–25.5 s | 0.27 s / 0.09 s | 258 | 45.3–45.4 | 1.1 s | 1.24 GiB | 5.98 GiB |
 
 Each row passed the typed probe with thinking off. Generation is 164–175 tokens of prose at temperature
-0, seed 1; "cold" is the first request after load. Peak footprint is the kernel's `phys_footprint` (what
-the memory poll reads); Metal's weights live in GPU-mapped memory it does not count, hence the resident
-column (`ps`). Load times are with the file in the page cache. Linux (the container, CPU only, 2 threads):
+0, seed 1; "cold" is the first request after load. Peak footprint is the kernel's `phys_footprint`;
+Metal's weights live in GPU-mapped memory it does not count, hence the resident column (`ps`). Since the
+5.7 review the memory poll takes the larger of the two, so the binding's limit bounds the weights too. Load times are with the file in the page cache. Linux (the container, CPU only, 2 threads):
 health in 16.2 s, 3.1 prompt tok/s, 1.6 generation tok/s.
 
 ## Open defects and gaps
 
 - **5.4 acceptance, local binding:** "load this CSV and show transit hours by service level" yields a
   table grouped by region and service level (values right for that grouping), not per service level;
-  `A28-generated-code-live-assistant-local-qwen` is FAIL and `make live` is red by that one test until
-  the model's interpretation is qualified or changed (Sprint 11's suite is where adequacy is judged).
+  `A28-generated-code-live-assistant-local-qwen` is FAIL on macOS and `make live` is red by that one
+  test until the model's interpretation is qualified or changed (Sprint 11's suite is where adequacy
+  is judged). Identical on every gate run (six).
+- **Linux container, the assistant's prompts past D17's deadline:** at 3.1 prompt tokens per second
+  the 2,700-token context of one call needs about 15 minutes against 300 s, so A28 and A29 fail there
+  with "no answer within the 300 s generation deadline" and the next tests wait behind the abandoned
+  generation (decisions 2026-10-16). `make live-linux` is red by four tests; the gateway, failure and
+  remote-refusal tests pass. A fact of this container, not of the product; a Linux machine with a
+  GPU or more cores is the real target.
+- Review notes deferred to Sprint 6 (decisions 2026-10-16): a `dispatched` patch or schema call
+  replayed after a crash is not idempotent (no double commit); a text answer settles `applied` even
+  when no call had an effect; the remote spend sum lives in memory.
+- A SIGTERM to a harness started by a Playwright spec did not stop its model server (the spec now
+  quits through the API); why the supervisor's stop did not run is not established.
 - CI, Linux built app (run 38895075855): after the real window close the shell did not end within 20 s;
   the Sprint 4 gate passed this step and the shell's close path is unchanged since; the step had not
   run on CI in Sprint 5 before (earlier runs failed before it). The waits now report what is left on a
@@ -927,20 +946,26 @@ health in 16.2 s, 3.1 prompt tok/s, 1.6 generation tok/s.
 
 ## Waiting on the owner
 
-1. At the Sprint 5 gate: in the built macOS app, start a job, press Cmd+P and Cmd+Shift+K, and say what
-   happened.
+1. In the built macOS app (`make desktop-build` left `DS Playground.app` under
+   `desktop/src-tauri/target/release/bundle/macos/`): start a job, press Cmd+P and Cmd+Shift+K, and
+   say what happened (the chord is D1's; no automated test can press it in the real window).
+2. The acceptance line in the real macOS window: type "load this CSV and show transit hours by service
+   level" with the orders fixture granted, watch the progress, pause mid-run, resume, open the table.
+   On the first run macOS may ask to allow keychain access: expected, the harness reads the server's
+   key from the login keychain (service `dev.dsp.assistant`), and the table will be grouped by region
+   and service level (the open A28 defect).
 2. Optional: remove `~/Library/Containers/dsp.probe.appsandbox` (28 KB), left by the gap investigation's
    App Sandbox probe; the system refused its deletion from this session.
 
 ## Handoff note
 
-Sprint 5 is on `claude/sprint-5-assistant-gateway-fc1f11` (from `main` at `73698be`). Committed and
-pushed: 5.0 (D1), 5.1, 5.2, 5.3, 5.4 (`32f560f`, whose CI read is recorded above) and 5.5 with the CI
-fixes. **Resume at 5.6** (D4 = B: an OpenAI-compatible remote binding behind the same port, tested
-against the local llama-server, synthetic fixtures only, £0, no key-needing test without asking),
-then 5.7 (the gate). The live suites: `make live` was green on macOS at 5.3 and on Linux at 5.4
-(7 passed); `test_live_failure.py` 3 passed at 5.5; the 5.4 acceptance test is red by the open
-over-grouping defect. `make test-fast` was 333 passed at 5.5. The D3 pick is Metal (applied).
+Sprint 5 is on `claude/sprint-5-assistant-gateway-fc1f11` (from `main` at `73698be`), pushed through
+the gate's commits, with the pull request "Sprint 5: assistant gateway, open model first" open for the
+owner to merge. **Next is Sprint 6, prompt 6.1** (fixtures), on a new branch from `main` after the merge.
+Carry into Sprint 6 housekeeping: the open defects above (the over-grouped acceptance table, the Linux
+deadline fact, the `killpg` EPERM, the two review notes, the kill that left a server). The `make live`
+suites: macOS green but for A28; Linux red by the deadline fact. `make test-fast` was 342 passed at 5.6;
+the gate's `make verify` runs are recorded above. The D3 pick is Metal (applied); D4 = B is built.
 
 Sprint 4's handoff: the gate was PASS on macOS and Linux for Sprint 4 scope after the two macOS
 containment gaps were closed (PR #8, merged).
