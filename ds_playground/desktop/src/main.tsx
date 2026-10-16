@@ -415,14 +415,15 @@ function Results({ harness, log }: { harness: Harness; log: LedgerEvent[] }) {
     const text = await response.text();
     setOpened({ job, name: output.name, rows: parseCsv(text).slice(0, 101) });
   };
-  const listed = committed.filter((result) => (records[result.sha256] ?? []).length);
+  const tables = (sha256: string) => (records[sha256] ?? []).filter((output) => output.name.endsWith(".csv"));
+  const listed = committed.filter((result) => tables(result.sha256).length);
   return (
     <section aria-labelledby="results">
       <h2 id="results">Results</h2>
       {listed.length === 0 && <p>No table yet.</p>}
       <ul>
         {listed.map((result) =>
-          (records[result.sha256] ?? []).map((output) => (
+          tables(result.sha256).map((output) => (
             <li key={`${result.job}-${output.name}`}>
               Job {result.job.slice(-6)}: {output.name} ({output.bytes} bytes){" "}
               <button type="button" onClick={() => void open(result.job, output)}>

@@ -6,6 +6,7 @@ import stat
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -172,7 +173,7 @@ def test_r16_the_os_keychain_holds_the_real_key_on_this_os(tmp_path: Path) -> No
 
 
 def test_a30_the_server_cannot_reach_out_and_the_denial_is_the_os_s(
-    model_server: LlamaServer, tmp_path: Path
+    model_server: LlamaServer, tmp_path: Path, evidence: Callable[..., None]
 ) -> None:
     """A30, C14: under the server's own confinement an outbound connect is refused by the OS.
 
@@ -221,6 +222,17 @@ def test_a30_the_server_cannot_reach_out_and_the_denial_is_the_os_s(
     listener.close()
     assert done.stdout, done.stderr[-800:]
     found = json.loads(done.stdout)
+    evidence(
+        "A30",
+        "offline-start",
+        "PASS" if found["connect"] != "ok" and found["resolve"] != "ok" else "FAIL",
+        "the real model server under its own confinement, a loopback listener on another port",
+        "the assistant starts and answers with third-party network denied by the OS, not by a flag",
+        f"under the server's profile a connect to this host answered {found['connect']} and a name "
+        f"lookup {found['resolve']}; the server's own listener kept answering",
+        "the export without the assistant (the rest of A30) is Sprint 10",
+        sprint=5,
+    )
     assert found["connect"] != "ok", found
     assert found["resolve"] != "ok", found
     assert model_server.client.get("/health").status_code == 200

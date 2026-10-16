@@ -23,7 +23,6 @@ from dsp.contracts.schemas import validate
 from dsp.ports import Ledger, Store
 
 MAX_SOURCE = 64 * 1024
-FAILURE_CHARS = 200  # a task's failure message is text the task chose: bounded and quoted
 NOT_YET = "nothing of that kind exists yet: trials, evaluations and releases come in later sprints"
 HANDLE = {
     "type": "string",
@@ -47,8 +46,14 @@ TOOLS: dict[str, dict[str, Any]] = {
             "type": "object",
             "additionalProperties": False,
             "properties": {
-                "source": HANDLE | {"description": "a granted source folder's handle"},
-                "path": {"type": "string", "minLength": 1, "maxLength": 300},
+                "source": HANDLE | {"description": "a granted source's handle"},
+                "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 300,
+                    "description": "the CSV's name under a granted folder, or the granted"
+                    " file's own name (its label)",
+                },
             },
             "required": ["source", "path"],
         },
@@ -233,11 +238,6 @@ def preview(name: str, content: bytes) -> dict[str, Any]:
     return {"kind": "other", "bytes": len(content)}
 
 
-def quoted_failure(reason: str | None) -> str | None:
-    """A task's failure message, bounded: it is text the task chose and never an instruction."""
-    return None if reason is None else reason[:FAILURE_CHARS]
-
-
 class Dispatcher:
     """Runs one checked call for one assistant job; every result is data the loop quotes."""
 
@@ -259,18 +259,16 @@ class Dispatcher:
         self.admit, self.run_job, self.profile = admit, run_job, profile
 
     def revision_check(self, name: str, arguments: dict[str, Any]) -> None:
-        """Revision: a patch names the current one; work stops on a revision the job predates."""
+        """Revision: a patch names the current requirements revision, or it conflicts.
+
+        A code task needs no check here: it is admitted under the current revision, and a change
+        made outside this task holds the task itself (the revision's hold pauses live jobs).
+        """
         current = current_workload(self.ctx, self.ledger)["revision"]
         if name == "propose_requirement_patch" and arguments["expected_revision"] != current:
             raise DspError(
                 ErrorCode.REVISION_CONFLICT,
                 f"the requirements are at {current}, not {arguments['expected_revision']}",
-            )
-        if name == "submit_code_task" and self.job["workload_ref"]["revision"] != current:
-            raise DspError(
-                ErrorCode.REVISION_CONFLICT,
-                f"this task was admitted at {self.job['workload_ref']['revision']}; "
-                f"the requirements are at {current} now",
             )
 
     def scope_check(self, name: str, arguments: dict[str, Any]) -> None:
@@ -464,6 +462,6 @@ class Dispatcher:
         return {
             "job": job.get("id"),
             "state": job.get("state"),
-            "failure": quoted_failure(job.get("reason")),
+            "failure": job.get("reason"),  # the coordinator keeps at most 200 characters of it
             "outputs": outputs,
         }

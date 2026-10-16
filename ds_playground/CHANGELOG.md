@@ -15,6 +15,11 @@
   results), the application validates and runs each one, and the trail shows every call, refusal and
   the assistant's answer, marked as a proposal. Pause and cancel reach the jobs the assistant
   submitted; the instruction's command is accepted, then applied, rejected or needs clarification.
+- Requirement changes from the assistant are typed patches with where in your words each came from;
+  the trail shows a plain readback of each revision; "Pause now; exclude region before continuing"
+  pauses first; a budget change through the assistant is refused for your own action.
+- The assistant writes SQL or Python, runs it in the sandbox as a job, sees a bounded preview of the
+  result and repairs a failed task at most twice; the Results section opens a committed table.
 
 ## Sprint 4 — sandboxed native runner (2026-10-13)
 

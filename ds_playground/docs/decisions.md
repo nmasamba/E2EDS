@@ -828,6 +828,49 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   when its data policy allows the data class; the local binding allows the owner's own data, which
   never leaves the machine. The preview is a view of a committed artifact, built by the harness from
   the content store; the model's context holds it only as quoted data.
+- **2026-10-16 — S5 — DECISION — generate, run, repair (5.4)** — the assistant writes an artifact
+  (`write_code_artifact`), submits it (`submit_code_task`: Sprint 4's admission, dispatcher and sandbox
+  unchanged, as a child job) and sees the redacted outcome; `inspect_results` with an output's name adds
+  the bounded preview defined above; a repair is a new artifact naming the failed one and is counted
+  against D17's two. The model's instructions say how (SQL on a table named like the input; one output;
+  read the failure, repair, resubmit) and that an instruction to load, show, compute or summarise data
+  is done only when a code task produced the table, never by describing data in the answer: on the
+  first live run the model inspected the schema and answered in prose (no task). The window's Results
+  section lists each succeeded job's CSV outputs from the RunRecord its success names and opens one as
+  a table of cells (`GET /v1/artifacts/{sha256}`, read-only, by digest only); a profile's JSON is a
+  record, not a table, and is not listed. The `data.captured` event now carries the capture's digest,
+  so a client can name captured data as a task input without reading the manifest.
+- **2026-10-16 — S5 — DECISION — a task's own requirement change does not stale its code tasks (5.4)** —
+  5.2 refused `submit_code_task` once the requirements had moved past the revision the assistant job
+  was admitted at. On the first live run the model registered the CSV's field roles with a patch (a
+  reasonable "load this CSV" step), the revision moved, and every resubmission of its repaired code
+  was refused as stale; the task ended without a table. The check is gone: a child job is admitted
+  under the current revision by construction, and a change made outside the task (the owner's typed
+  change) already pauses the task through the revision's hold, which is the suite's own rule. The
+  patch's `expected_revision` check stays.
+- **2026-10-16 — S5 — DEFECT — the local model over-groups the acceptance instruction (5.4, open)** —
+  "load this CSV and show transit hours by service level" on the orders fixture: after the procedure
+  and naming fixes the model inspects the schema, writes SQL, runs it in the sandbox, inspects the
+  result and answers from it, in 5 generations and about 35 s, but its SQL groups by `region` and
+  `service_level` (identical on four runs at seed 1, temperature 0, under three wordings of a rule
+  against added groupings), so the committed table is not the table per service level the independent
+  query gives, though its values are DuckDB's means for the grouping it chose. The A28 part
+  `generated-code-live-assistant-local-qwen` is therefore FAIL on this binding; the gate's `make live`
+  is red by it. Not fixed by more prompting on purpose: the application cannot know the instruction's
+  categories, and tuning the model's instructions to one test is not a product change. Earlier failed
+  runs, each fixed in the product: the model answered in prose after the schema (rule added), named the
+  granted file by its label (the resolver now accepts it), queried its input as a file (the rules now
+  name the input as the data's name) and lost its resubmissions to the stale-revision check (removed).
+- **2026-10-16 — S5 — ASSUMPTION — what "equal to an independent query" accepts (5.4)** — the
+  acceptance instruction names "transit hours" and the fixture has quoted and actual transit hours;
+  the live test accepts a committed CSV with one row per service level whose numeric column equals
+  DuckDB's mean of either column within 0.01 (rounding by the model's SQL), and the record says which;
+  the row count, column names and order are the model's. Nothing else about the model's prose is read.
+- **2026-10-16 — S5 — DECISION — A28's record after 5.4** — the Sprint 4 SAT's wording that no model
+  generates code until Sprint 5 is replaced: model-generated code and its repairs are the
+  `live_model` part `A28-generated-code-live-<binding>` (written by `make live`, PASS only when the
+  committed table equals DuckDB's); the overall record stays INSUFFICIENT_EVIDENCE for sealed
+  partitions (Sprint 9) and VM isolation (the owner's deviation), not rounded up.
 - **2026-10-15 — S5 — ASSUMPTION — the sprint branch** — the work is on the branch the desktop app made for
   this session, `claude/sprint-5-assistant-gateway-fc1f11`, from `main` at `73698be`, rather than a
   branch named `sprint-5-assistant`; the pull request carries the sprint's title.

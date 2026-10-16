@@ -988,6 +988,7 @@ def test_a28_a_failed_task_is_repaired_at_most_twice_and_the_table_matches_an_in
         )
     ]
     script += [call("inspect_results", job="J2", output="table.csv")]
+    script += [call("inspect_results", job="J2", output="nope.csv")]
     script += [call("write_code_artifact", language="sql", source=right + " ", repairs="B")]
     script += [call("write_code_artifact", language="sql", source=right + "  ", repairs="B")]
     script += [text("The table shows mean actual transit hours by service level.")]
@@ -1025,11 +1026,11 @@ def test_a28_a_failed_task_is_repaired_at_most_twice_and_the_table_matches_an_in
                     "outputs": ["table.csv"],
                 }
             )
-        if n == 7:
+        if n in (7, 8):
             script[0]["tool_calls"][0]["function"]["arguments"] = json.dumps(
-                {"job": seen[5]["result"]["job"], "output": "table.csv"}
+                {"job": seen[5]["result"]["job"], "output": "table.csv" if n == 7 else "nope.csv"}
             )
-        if n in (8, 9):
+        if n in (9, 10):
             script[0]["tool_calls"][0]["function"]["arguments"] = json.dumps(
                 {
                     "language": "sql",
@@ -1051,6 +1052,7 @@ def test_a28_a_failed_task_is_repaired_at_most_twice_and_the_table_matches_an_in
         ("write_code_artifact", "committed", True),
         ("submit_code_task", "committed", False),
         ("inspect_results", "committed", False),
+        ("inspect_results", "committed", False),
         ("write_code_artifact", "committed", True),
         ("write_code_artifact", "refused", True),
         ("answer", "committed", False),
@@ -1069,7 +1071,8 @@ def test_a28_a_failed_task_is_repaired_at_most_twice_and_the_table_matches_an_in
     assert preview["kind"] == "csv"
     assert preview["header_and_first_rows"][0] == ["service_level", "mean_hours"]
     assert (preview["rows"], len(preview["header_and_first_rows"])) == (2, 3)
-    assert recorded[8]["refusal"]["reason"] == "2 code repairs is the most for one task"
+    assert "preview" not in recorded[7]["result"]  # an output the job did not declare
+    assert recorded[9]["refusal"]["reason"] == "2 code repairs is the most for one task"
     stored = client.get(f"/v1/artifacts/{output['sha256']}").content.decode()
     query = "SELECT service_level, round(avg(actual_transit_hours), 2) AS mean_hours"
     expected = duckdb.sql(f"{query} FROM read_csv('{data}') GROUP BY 1 ORDER BY 1").fetchall()
@@ -1079,11 +1082,11 @@ def test_a28_a_failed_task_is_repaired_at_most_twice_and_the_table_matches_an_in
     ]
     assert client.get("/v1/artifacts/not-a-digest").status_code == 400
     assert client.get("/v1/artifacts/sha256:" + "0" * 64).status_code == 404
-    big = "x,y\\n" + "\\n".join(f"{i},{'v' * 500}" for i in range(50)) + "\\n"
+    big = "x,y\n" + "\n".join(f"{i},{'v' * 500}" for i in range(50)) + "\n"
     from dsp.application.tools import preview as bounded
 
     shown = bounded("big.csv", big.encode())
     assert (shown["rows"], len(shown["header_and_first_rows"])) == (50, 21)
     assert len(shown["header_and_first_rows"][1][1]) == 200
     assert bounded("notes.json", b"{" + b"a" * 5000)["head"] == "{" + "a" * 1999
-    assert bounded("blob.bin", b"\\x00" * 10) == {"kind": "other", "bytes": 10}
+    assert bounded("blob.bin", b"\x00" * 10) == {"kind": "other", "bytes": 10}

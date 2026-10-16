@@ -69,6 +69,39 @@ def matching_column(
     return None
 
 
+def own_grouping(rows: list[dict[str, str]], data: Path) -> str:
+    """Whether the table's numbers are DuckDB's means for the grouping the model chose itself."""
+    columns = list(rows[0])
+    numeric = [c for c in columns if all(_is_number(r[c]) for r in rows)]
+    keys = [c for c in columns if c not in numeric]
+    if not keys or not numeric:
+        return f"columns {columns}: no grouping and measure to check"
+    outcomes = []
+    for measure in ("actual_transit_hours", "quoted_transit_hours"):
+        expected = {
+            tuple(str(v) for v in row[:-1]): float(row[-1])
+            for row in duckdb.sql(
+                f"SELECT {', '.join(keys)}, avg({measure}) FROM read_csv('{data}') GROUP BY ALL"
+            ).fetchall()
+        }
+        for value in numeric:
+            close = all(
+                abs(float(r[value]) - expected.get(tuple(r[k] for k in keys), 1e9)) < 0.011
+                for r in rows
+            )
+            if close and len(rows) == len(expected):
+                outcomes.append(f"{value} per {keys} equals DuckDB's mean {measure}")
+    return "; ".join(outcomes) or f"grouped by {keys} with {numeric}: not DuckDB's means for that"
+
+
+def _is_number(text: str) -> bool:
+    try:
+        float(text)
+    except ValueError:
+        return False
+    return True
+
+
 def test_a28_the_acceptance_instruction_yields_a_committed_table_equal_to_duckdb(
     harness: Harness,
     state_dir: Path,
@@ -114,6 +147,7 @@ def test_a28_the_acceptance_instruction_yields_a_committed_table_equal_to_duckdb
     repairs = sum(1 for c in recorded if c["repair"] and c["state"] == "committed")
     found: tuple[str, str] | None = None
     table: dict[str, Any] = {}
+    own = ""
     for call in reversed(submitted):
         if call["result"]["state"] != "succeeded":
             continue
@@ -123,17 +157,42 @@ def test_a28_the_acceptance_instruction_yields_a_committed_table_equal_to_duckdb
             text = client.get(f"/v1/artifacts/{output['sha256']}").content.decode()
             rows = list(csv.DictReader(io.StringIO(text)))
             found = matching_column(rows, expected)
+            table = {
+                "job": call["result"]["job"],
+                "output": output["name"],
+                "sha256": output["sha256"],
+                "rows": rows,
+            }
+            if not found and rows:
+                own = own_grouping(rows, data)
             if found:
-                table = {
-                    "job": call["result"]["job"],
-                    "output": output["name"],
-                    "sha256": output["sha256"],
-                    "rows": rows,
-                }
                 break
         if found:
             break
-    steps = " | ".join(f"{c['n']} {c['tool']} -> {c['state']}" for c in recorded)
+    steps = " | ".join(
+        f"{c['n']} {c['tool']} -> {c['state']}"
+        + (f" {json.dumps(c['result'])[:300]}" if c["tool"] == "answer" else "")
+        + (f" {json.dumps(c['result'])[:400]}" if c["tool"] == "inspect_schema" else "")
+        + (
+            " "
+            + json.dumps(
+                {k: v for k, v in (c["result"] or c["refusal"] or {}).items() if k != "outputs"}
+            )[:300]
+            if c["tool"] in ("submit_code_task", "propose_requirement_patch")
+            else ""
+        )
+        + (
+            f" inputs {[i['name'] for i in c['arguments'].get('inputs', [])]}"
+            if c["tool"] == "submit_code_task"
+            else ""
+        )
+        + (
+            f" source {json.dumps(c['arguments'].get('source', ''))[:200]}"
+            if c["tool"] == "write_code_artifact"
+            else ""
+        )
+        for c in recorded
+    )
     actual = (
         f"job {done['state']} ({done['reason']}) in {elapsed:.0f} s, {len(recorded)} generations, "
         f"{len(submitted)} task(s) submitted, {repairs} repair(s); "
@@ -142,6 +201,11 @@ def test_a28_the_acceptance_instruction_yields_a_committed_table_equal_to_duckdb
             f"{len(table['rows'])} rows and its {found[1]} per {found[0]} equals DuckDB's"
             if found
             else "no committed CSV output matched DuckDB's means per service level"
+            + (
+                f"; the committed {table['output']} has {len(table['rows'])} rows: {own}"
+                if table
+                else ""
+            )
         )
         + f"; steps: {steps}"
     )

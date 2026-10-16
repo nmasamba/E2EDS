@@ -42,3 +42,22 @@ def model_server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Any]:
     adapter.observed = adapter.start()  # kept for the record
     yield adapter
     adapter.stop()
+
+
+class Lent(Shared):
+    """The session's server lent with its real stop, and restarted for real once it is dead."""
+
+    def start(self, proceed: Any = None) -> dict[str, Any]:
+        """Already started: hand back what was observed; after a death, start it again for real."""
+        if self.server.process is not None and self.server.process.poll() is not None:
+            self.server.observed = self.server.start(proceed or (lambda: True))
+        return dict(self.server.observed)
+
+    def stop(self) -> None:
+        """The harness's quit, or a deadline, stops the real server."""
+        self.server.stop()
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """The live failure tests end the session's server, so they run after the other live tests."""
+    items.sort(key=lambda item: item.module.__name__.endswith("test_live_failure"))  # type: ignore[attr-defined]

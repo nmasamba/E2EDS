@@ -284,7 +284,7 @@ def test_the_built_app_works_and_survives_close_kill_crash_and_a_second_instance
     replaced = eventually(lambda: harness(state_dir))
     successor = replaced.get("/v1/status").json()["pid"]
     assert successor != owner["pid"]
-    assert kinds(replaced) == history
+    assert kinds(replaced) == [*history, "assistant.unavailable"]  # the new harness's own state
 
     if LINUX:
         # A real window close, asked of the window manager, only detaches: the app ends and the

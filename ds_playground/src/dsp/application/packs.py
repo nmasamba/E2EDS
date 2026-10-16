@@ -85,7 +85,7 @@ def submit_profile(
         "rights": "owner_supplied_unreviewed",
     }
     validate("DataManifest", data)
-    captured = {"data": data["id"], "bytes": size}
+    captured = {"data": data["id"], "bytes": size, "sha256": raw}
     ledger.commit(
         ctx, f"data:{data['id']}", 0, f"{data['id']}:captured", "data.captured", captured, [data]
     )
