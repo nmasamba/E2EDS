@@ -20,6 +20,16 @@
   pauses first; a budget change through the assistant is refused for your own action.
 - The assistant writes SQL or Python, runs it in the sandbox as a job, sees a bounded preview of the
   result and repairs a failed task at most twice; the Results section opens a committed table.
+- Every failure of the model ends in `assistant unavailable` with its reason, the conversation and
+  the controls untouched and no other model tried: a missing or corrupt model, a server that does not
+  fit its memory limit, a hung server (killed at the generation deadline, the task failed with that
+  reason, the same binding restarted) and a harness restart, which never dispatches a committed tool
+  call twice. Pause and cancel receipts stay within 2 s with the model stopped mid-generation.
+- Opt-in remote binding (D4 = B): a record at `<profile>/assistant/binding.json` points the assistant
+  at an OpenAI-compatible endpoint, with its key read from the OS secret store, the project's data
+  policy and the owner's spend limit shown in the header and trail before the first instruction, a
+  charge the limit cannot cover refused before it is sent, and never the local model in its place.
+  Tested against llama-server itself; no proprietary adapter.
 
 ## Sprint 4 — sandboxed native runner (2026-10-13)
 

@@ -105,6 +105,18 @@ def settled(app: subprocess.Popen[bytes]) -> None:
     eventually(gone)
 
 
+def closed(app: subprocess.Popen[bytes]) -> int:
+    """The shell's exit status within 20 s; when it does not end, what is left says why."""
+    try:
+        return app.wait(20)
+    except subprocess.TimeoutExpired:
+        left = [
+            subprocess.run(seen, capture_output=True, text=True, check=False).stdout
+            for seen in (["wmctrl", "-l"], ["pgrep", "-af", "dsp-desktop"])
+        ]
+        raise AssertionError(f"the shell did not end in 20 s; windows and shells: {left}") from None
+
+
 def press(keys: str) -> None:
     """Send a key combination to the app's main window through the window manager."""
     window = xdotool("search", "--sync", "--onlyvisible", "--name", "^DS Playground$")
@@ -291,11 +303,11 @@ def test_the_built_app_works_and_survives_close_kill_crash_and_a_second_instance
         # harness it started keeps running.
         xdotool("search", "--sync", "--onlyvisible", "--name", "^DS Playground$")
         subprocess.run(["wmctrl", "-F", "-c", "DS Playground"], check=True, timeout=60)
-        assert fourth.wait(20) == 0
+        assert closed(fourth) == 0
         assert replaced.get("/v1/status").json()["pid"] == successor
         fifth = launch()
         press("ctrl+q")  # a real Quit from a shell that did not start the harness leaves it too
-        assert fifth.wait(20) == 0
+        assert closed(fifth) == 0
         assert replaced.get("/v1/status").json()["pid"] == successor
     else:
         fourth.terminate()  # an open window would start another harness once this one stops
@@ -308,7 +320,7 @@ def test_the_built_app_works_and_survives_close_kill_crash_and_a_second_instance
         owning = launch()  # a shell that started its own harness stops it on a real Quit
         eventually(lambda: harness(state_dir))
         press("ctrl+q")
-        assert owning.wait(20) == 0
+        assert closed(owning) == 0
         assert harness_stopped(state_dir)
         (state_dir / "harness.json").unlink()
     seen = (

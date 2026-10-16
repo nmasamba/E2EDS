@@ -191,6 +191,8 @@ def harness(state_dir: Path, assistant: Any) -> Iterator[tuple[httpx.Client, Clo
     yield client, clock
     server.should_exit = True
     thread.join(10)
+    if supervisor := getattr(app.state, "supervisor", None):
+        supervisor.join(60)  # the assistant's stop is part of the quit; a lent server is shared
     (state_dir / "harness.json").unlink()
 
 

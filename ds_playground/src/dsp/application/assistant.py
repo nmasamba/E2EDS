@@ -11,7 +11,7 @@ import contextlib
 import json
 import logging
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from dsp.application import jobs, tools
@@ -29,7 +29,16 @@ MODEL_BYTES = 5_027_783_488
 MODEL_SHA256 = "sha256:d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785"
 LAUNCH = {"threads": 2, "gpu_layers": 99}  # the owner's D3 pick (2026-10-15): Metal full offload
 AGGREGATE = "assistant:local"
-RESTARTS = 3  # after a crash, a hang or a limit; never after a verification failure
+RESTARTS = 3  # starts the watch may add in one harness's life
+FINAL = (  # failures no restart can change: the file, the limit, the store or the key
+    "model ",
+    "model_",
+    "memory_limit",
+    "no key",
+    "the project's data policy",
+    "the spend limit",
+    "the endpoint refused the key",
+)
 
 
 def local_binding(
@@ -112,6 +121,22 @@ def local_binding(
     return binding
 
 
+def remote_binding(
+    record: Mapping[str, Any], observed: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """The owner's remote binding (0.4.0, D4 = B): planning until its typed probe has passed."""
+    seen = observed or {}
+    binding = dict(record) | {
+        "planning_only": not seen,
+        "observed": {key: seen[key] for key in ("model", "probe_seconds")} if seen else None,
+    }
+    validate("AssistantModelBinding", binding)
+    return binding
+
+
+Describe = Callable[[dict[str, Any] | None], dict[str, Any]]
+
+
 class Assistant:
     """What the harness knows about its assistant: starting, ready, or unavailable and why."""
 
@@ -122,11 +147,15 @@ class Assistant:
         *,
         ledger: Callable[[], Ledger],
         clock: Callable[[], str],
+        describe: Describe | None = None,
     ) -> None:
         self.ctx, self.server, self.ledger, self.clock = ctx, server, ledger, clock
         self.state = "unavailable"
         self.reason = "the assistant has not started" if server else "no model server is configured"
-        self.binding = local_binding(ctx, threads=LAUNCH["threads"])
+        self.describe: Describe = describe or (
+            lambda observed: local_binding(ctx, threads=LAUNCH["threads"], observed=observed)
+        )
+        self.binding = self.describe(None)
         self.failures = 0
         self.lock = threading.Lock()
 
@@ -134,20 +163,24 @@ class Assistant:
         """Start the server and record the outcome; never raises, the state says what happened."""
         with self.lock:
             if self.server is None:
+                self._record("assistant.unavailable", {"reason": self.reason})
                 return
             self.state = "starting"
             try:
                 observed = self.server.start(proceed)
             except DspError as error:
                 self.state, self.reason = "unavailable", error.message
-                verification = error.message.startswith(("model ", "model_"))
-                self.failures = RESTARTS if verification else self.failures + 1
+                if error.message.startswith(FINAL):
+                    self.failures = RESTARTS  # the file or the limit does not change by itself
                 self._record("assistant.unavailable", {"reason": error.message})
                 return
-            self.binding = local_binding(self.ctx, threads=LAUNCH["threads"], observed=observed)
-            self.state, self.reason, self.failures = "ready", "", 0
+            self.binding = self.describe(observed)
+            self.state, self.reason = "ready", ""
             body = {"binding": pin(self.binding), "profile": self.binding["profile_id"]}
-            body |= {key: observed[key] for key in ("model_sha256", "load_seconds")}
+            body |= {k: observed[k] for k in ("model_sha256", "load_seconds") if k in observed}
+            if "data_policy" in self.binding:  # a remote binding: shown before its first use
+                body |= {k: self.binding[k] for k in ("placement", "data_policy", "spend")}
+                body["spend_limit_minor"] = self.binding["limits"]["max_external_charge_minor"]
             self._record("assistant.ready", body, [("AssistantModelBinding", self.binding)])
 
     def _record(self, kind: str, body: dict[str, Any], objects: Any = ()) -> None:
@@ -160,14 +193,21 @@ class Assistant:
             logging.getLogger(__name__).error("assistant event not recorded: %s", error.code)
 
     def watch(self) -> None:
-        """The tick: a dead server (crash, limit, hang) is restarted a bounded number of times."""
-        if self.state != "ready" or self.server is None or self.server.alive():
+        """The tick: a server that died (crash, hang) or failed to launch is started again.
+
+        At most RESTARTS times for the harness's life; a verification or memory failure is final.
+        """
+        if self.server is None:
             return
-        self.state, self.reason = "unavailable", "the model server stopped"
-        self._record("assistant.unavailable", {"reason": self.reason})
-        if self.failures < RESTARTS:
-            self.failures += 1
-            self.start()
+        if self.state == "ready":
+            if self.server.alive():
+                return
+            self.state, self.reason = "unavailable", "the model server stopped"
+            self._record("assistant.unavailable", {"reason": self.reason})
+        if self.state != "unavailable" or self.failures >= RESTARTS:
+            return
+        self.failures += 1
+        self.start()
 
     def gateway(self) -> ModelGateway:
         """The model, if the assistant is ready; otherwise ASSISTANT_UNAVAILABLE with the reason."""
@@ -395,9 +435,14 @@ def run(
         if not proceed():
             outcome = {"outcome": "stopped"}
             break
-        gateway = assistant.gateway()
         shown = messages_for(context(ctx, job, ledger, limits), command["text"], calls)
-        if gateway.count(json.dumps(shown)) > limits["max_input_tokens"]:
+        try:
+            gateway = assistant.gateway()
+            over = gateway.count(json.dumps(shown)) > limits["max_input_tokens"]
+        except DspError as unavailable:  # the server is gone: the task fails, the loop lives
+            outcome = {"outcome": "failed", "transient": False, "reason": unavailable.message[:200]}
+            break
+        if over:
             outcome = _limit(f"{limits['max_input_tokens']} input tokens")
             break
         started = timer()

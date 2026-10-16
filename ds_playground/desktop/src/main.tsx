@@ -567,7 +567,9 @@ function Workspace(props: { harness: Harness; version: string; pid: number }) {
       <p className="detail">
         version {version} · process {pid}
         {live && ` · job ${live.id.slice(-6)} ${live.state.replace("_", " ")}`}
-        {model.state === "ready" ? ` · assistant ready (${model.profile})` : ` · assistant unavailable: ${model.reason}`}
+        {model.state === "ready"
+          ? ` · assistant ready (${model.profile}${model.shown ? ` · ${model.shown}` : ""})`
+          : ` · assistant unavailable: ${model.reason}`}
       </p>
       <Controls harness={harness} job={live} notReceived={notReceived} />
       <div className="workspace">

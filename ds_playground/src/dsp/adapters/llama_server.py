@@ -27,7 +27,7 @@ import shutil
 import subprocess
 import sys
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -37,7 +37,7 @@ from jsonschema import Draft202012Validator
 from dsp.adapters.sandbox import chain
 from dsp.contracts.canonical import digest
 from dsp.contracts.errors import DspError, ErrorCode
-from dsp.ports import SecretStore
+from dsp.ports import ModelGateway, SecretStore
 
 ACCOUNT = "assistant-api-key"  # secret://local/assistant-api-key
 LOAD_SECONDS = 300
@@ -106,6 +106,74 @@ LINUX_SYSTEM = [Path(p) for p in ("/usr/lib", "/usr/lib64", "/lib", "/lib64", "/
 
 def _sb(kind: str, paths: Sequence[Path]) -> str:
     return " ".join(f"({kind} {json.dumps(str(p), ensure_ascii=False)})" for p in paths)
+
+
+def assemble(lines: Iterable[str], stop: Callable[[], bool] | None) -> dict[str, Any]:
+    """One streamed chat completion's chunks as the model's message, its usage and timings.
+
+    ``stop`` is asked between chunks; True ends the generation (closing the stream cancels it on
+    the server) and the answer says ``stopped``.
+    """
+    content, reasoning, finish, halted = "", False, None, False
+    calls: dict[int, dict[str, Any]] = {}
+    usage: dict[str, Any] = {}
+    timings: dict[str, Any] = {}
+    for line in lines:
+        if stop is not None and stop():
+            halted = True
+            break
+        if not line.startswith("data: ") or line == "data: [DONE]":
+            continue
+        chunk = json.loads(line[6:])
+        usage = chunk.get("usage") or usage
+        timings = chunk.get("timings") or timings
+        for choice in chunk.get("choices", []):
+            delta = choice.get("delta", {})
+            content += delta.get("content") or ""
+            reasoning = reasoning or "reasoning_content" in delta
+            for part in delta.get("tool_calls") or []:
+                slot = calls.setdefault(
+                    part.get("index", 0),
+                    {"id": "", "type": "function", "function": {}},
+                )
+                slot["id"] = part.get("id") or slot["id"]
+                function = slot["function"]
+                for key in ("name", "arguments"):
+                    function[key] = function.get(key, "") + (
+                        part.get("function", {}).get(key) or ""
+                    )
+            finish = choice.get("finish_reason") or finish
+    message: dict[str, Any] = {"role": "assistant", "content": content}
+    if calls:
+        message["tool_calls"] = [calls[index] for index in sorted(calls)]
+    if reasoning:
+        message["reasoning_content"] = ""  # its presence is what the probe refuses
+    return {
+        "message": message,
+        "finish_reason": finish,
+        "usage": usage,
+        "timings": timings,
+        "stopped": halted,
+    }
+
+
+def typed_probe(gateway: ModelGateway, deadline: float) -> dict[str, Any]:
+    """Readiness is a schema-valid tool call with thinking off; raise unless the model gives one."""
+    answer = gateway.complete(
+        PROBE_MESSAGES, [PROBE_TOOL], max_tokens=128, deadline=deadline, seed=1, temperature=0
+    )
+    calls: list[dict[str, Any]] = answer["message"].get("tool_calls") or [{}]
+    call = calls[0].get("function", {})
+    schema = Draft202012Validator(PROBE_TOOL["function"]["parameters"])
+    try:
+        arguments = json.loads(call.get("arguments", ""))
+    except ValueError:
+        arguments = None
+    if call.get("name") != "report_ready" or not schema.is_valid(arguments):
+        raise DspError(ErrorCode.ASSISTANT_UNAVAILABLE, "the typed tool-response probe failed")
+    if "reasoning_content" in answer["message"]:
+        raise DspError(ErrorCode.ASSISTANT_UNAVAILABLE, "thinking is on; the binding says off")
+    return answer
 
 
 class LlamaServer:
@@ -336,21 +404,7 @@ class LlamaServer:
                 ErrorCode.ASSISTANT_UNAVAILABLE, f"the server answered {props.status_code}"
             )
         template = props.json().get("chat_template")
-        deadline = self.binding["limits"]["generation_deadline_seconds"]
-        answer = self.complete(
-            PROBE_MESSAGES, [PROBE_TOOL], max_tokens=128, deadline=deadline, seed=1, temperature=0
-        )
-        calls: list[dict[str, Any]] = answer["message"].get("tool_calls") or [{}]
-        call = calls[0].get("function", {})
-        schema = Draft202012Validator(PROBE_TOOL["function"]["parameters"])
-        try:
-            arguments = json.loads(call.get("arguments", ""))
-        except ValueError:
-            arguments = None
-        if call.get("name") != "report_ready" or not schema.is_valid(arguments):
-            raise DspError(ErrorCode.ASSISTANT_UNAVAILABLE, "the typed tool-response probe failed")
-        if "reasoning_content" in answer["message"]:
-            raise DspError(ErrorCode.ASSISTANT_UNAVAILABLE, "thinking is on; the binding says off")
+        answer = typed_probe(self, self.binding["limits"]["generation_deadline_seconds"])
         return answer, template
 
     def stale(self) -> None:
@@ -442,10 +496,6 @@ class LlamaServer:
             body["tools"] = list(tools)
         if not self.alive():
             raise DspError(ErrorCode.ASSISTANT_UNAVAILABLE, self.failure or "server not running")
-        content, reasoning, finish, halted = "", False, None, False
-        calls: dict[int, dict[str, Any]] = {}
-        usage: dict[str, Any] = {}
-        timings: dict[str, Any] = {}
         try:
             with self.client.stream(
                 "POST", "/v1/chat/completions", json=body, headers=self.headers(), timeout=deadline
@@ -455,31 +505,7 @@ class LlamaServer:
                         ErrorCode.ASSISTANT_UNAVAILABLE,
                         f"the model server answered {answer.status_code}",
                     )
-                for line in answer.iter_lines():
-                    if stop is not None and stop():
-                        halted = True
-                        break
-                    if not line.startswith("data: ") or line == "data: [DONE]":
-                        continue
-                    chunk = json.loads(line[6:])
-                    usage = chunk.get("usage") or usage
-                    timings = chunk.get("timings") or timings
-                    for choice in chunk.get("choices", []):
-                        delta = choice.get("delta", {})
-                        content += delta.get("content") or ""
-                        reasoning = reasoning or "reasoning_content" in delta
-                        for part in delta.get("tool_calls") or []:
-                            slot = calls.setdefault(
-                                part.get("index", 0),
-                                {"id": "", "type": "function", "function": {}},
-                            )
-                            slot["id"] = part.get("id") or slot["id"]
-                            function = slot["function"]
-                            for key in ("name", "arguments"):
-                                function[key] = function.get(key, "") + (
-                                    part.get("function", {}).get(key) or ""
-                                )
-                        finish = choice.get("finish_reason") or finish
+                return assemble(answer.iter_lines(), stop)
         except httpx.TimeoutException:
             self.failure = f"no answer within the {deadline:g} s generation deadline"
             self.stop()
@@ -489,22 +515,16 @@ class LlamaServer:
                 ErrorCode.ASSISTANT_UNAVAILABLE,
                 f"the model server did not answer ({type(error).__name__})",
             ) from None
-        message: dict[str, Any] = {"role": "assistant", "content": content}
-        if calls:
-            message["tool_calls"] = [calls[index] for index in sorted(calls)]
-        if reasoning:
-            message["reasoning_content"] = ""  # its presence is what the probe refuses
-        return {
-            "message": message,
-            "finish_reason": finish,
-            "usage": usage,
-            "timings": timings,
-            "stopped": halted,
-        }
 
     def count(self, text: str) -> int:
         """How many tokens the text is, by the server's own tokenizer."""
-        answer = self.client.post("/tokenize", json={"content": text}, headers=self.headers())
+        try:
+            answer = self.client.post("/tokenize", json={"content": text}, headers=self.headers())
+        except httpx.HTTPError as error:
+            raise DspError(
+                ErrorCode.ASSISTANT_UNAVAILABLE,
+                f"the model server did not answer ({type(error).__name__})",
+            ) from None
         if answer.status_code != 200:
             raise DspError(ErrorCode.ASSISTANT_UNAVAILABLE, "the tokenizer did not answer")
         return len(answer.json()["tokens"])

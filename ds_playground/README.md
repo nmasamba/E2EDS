@@ -120,7 +120,10 @@ executable and builds the bundle (`.app` on macOS; deb and AppImage on Linux) un
 `desktop/src-tauri/target/release/bundle/`; the app starts its own bundled harness, with no terminal and no uv.
 `make e2e` runs the renderer and shell tests against a real harness and then launches the built app, so run
 `make desktop-build` first. `make sat` runs the sprint acceptance tests and writes their evidence records to
-`docs/evidence/`.
+`docs/evidence/`. `make live` runs the tests that need the local open model (`llama-server` and the
+Qwen3-8B file under `~/.local/share/dsp/`, which `make verify` and `make sat` leave out) and writes their
+evidence; `make live-linux` runs them in the Linux container, building llama.cpp there once into a cached
+Docker volume.
 
 ## Development
 

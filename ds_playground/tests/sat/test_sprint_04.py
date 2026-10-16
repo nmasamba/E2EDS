@@ -329,7 +329,7 @@ def test_a28_code_and_attempts_are_kept(
         "each attempt's start and end are events",
         f"{told(job)}; source stored by digest; {len(started)} attempt started and ended",
         LIMIT,
-        "repairs (at most two per task, D17) need the assistant of Sprint 5",
+        "repairs (at most two, D17) are the assistant's, recorded by the Sprint 5 live test",
         sprint=4,
         assurance=ASSURANCE,
     )
@@ -341,9 +341,10 @@ def test_a28_the_acceptance_line_read_secret_is_denied_by_the_os(
     """A28, B26: `dsp run-task fixtures/tasks/read_secret.json` is refused by the OS (acceptance).
 
     The overall A28 record is FAIL when a part this run recorded on this OS failed. Otherwise it
-    stays INSUFFICIENT_EVIDENCE: the scenario names model-generated code and at most two repairs,
-    which need the assistant of Sprint 5, real sealed partitions (Sprint 9), and VM isolation,
-    which this build replaces with an OS sandbox by owner decision.
+    stays INSUFFICIENT_EVIDENCE: the scenario names model-generated code and at most two repairs
+    (Sprint 5's live test records that part per binding, never rounding this one up), real sealed
+    partitions (Sprint 9), and VM isolation, which this build replaces with an OS sandbox by owner
+    decision.
     """
     task = Path(__file__).parents[2] / "fixtures" / "tasks" / "read_secret.json"
     ran = CliRunner().invoke(app, ["run-task", str(task)])
@@ -387,7 +388,7 @@ def test_a28_the_acceptance_line_read_secret_is_denied_by_the_os(
         f"the acceptance line: {said}; failed on this OS: {', '.join(failed) or 'none'}",
         LIMIT,
         "the code was written by hand: model-generated code and its at most two repairs (D17) "
-        "need the assistant of Sprint 5",
+        "are Sprint 5's live_model part, A28-generated-code-live-<binding>, recorded on its own",
         "sealed final partitions do not exist until Sprint 9; a plain file stood for one",
         "the suite asks for a dedicated VM; this build runs an OS sandbox by owner decision "
         "(2026-10-01), so the assurance is os_sandbox_single_user",

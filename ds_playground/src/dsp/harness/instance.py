@@ -56,7 +56,7 @@ def serve(state_dir: Path, host: str = "127.0.0.1", dev: bool = False) -> None:
 
 def connect(state_dir: Path) -> httpx.Client:
     """Return an authenticated client for the running harness, starting it if none answers."""
-    for attempt in range(100):
+    for attempt in range(300):  # 30 s: a cold harness on a slow machine, measured under coverage
         try:
             state = json.loads((state_dir / "harness.json").read_text())
             client = httpx.Client(

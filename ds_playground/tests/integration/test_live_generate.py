@@ -110,7 +110,7 @@ def test_a28_the_acceptance_instruction_yields_a_committed_table_equal_to_duckdb
     runner_env: Path,
     evidence: Callable[..., None],
 ) -> None:
-    """A28, B26, D17: model-generated code runs in the sandbox and its table is the right table.
+    """R22, A28, B26, D17: model-generated code runs in the sandbox; its table is the right table.
 
     The record states what ran, how many repairs, and which transit column the model chose; the
     outcome is PASS only when a committed CSV output has one row per service level whose values

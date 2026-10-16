@@ -6,8 +6,9 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 
 - **Sprint:** 5 — M1 assistant gateway, open model first (B24, B26, B27; A24, A29, A30; R16, R17, R18,
   R22; D16, D17).
-- **Claimed prompt:** 5.4 done with one open defect (the live acceptance table is over-grouped);
-  next 5.5. D3 picked: A, Metal full offload (2026-10-15).
+- **Claimed prompt:** 5.6 done (D4 = B); next 5.7, the gate. One open defect from 5.4 (the live
+  acceptance table is over-grouped) and one open CI observation (Linux built app after a window
+  close). D3 picked: A, Metal full offload (2026-10-15).
 - **Branch:** `claude/sprint-5-assistant-gateway-fc1f11`, from `main` at `73698be` (PRs #1 to #8 merged).
 
 ## Done
@@ -596,6 +597,94 @@ Code commit `2c81168`; the evidence and this file were committed after it.
   below; decisions 2026-10-16). Each earlier failure was a product gap, fixed: prose instead of a task,
   the granted file's label as a path, the input queried as a file, resubmissions refused as stale.
 
+## Prompt 5.5 — failure and independence (2026-10-16)
+
+- Every failure of the model ends in `assistant unavailable` with its reason, the conversation and the
+  controls untouched and no other model tried: a missing model or binary and a size or hash mismatch
+  are verification failures the watch never retries (final until the harness restarts); out of memory
+  is the footprint poll's kill on macOS (`prlimit` on Linux) before the server is ever ready; a hung
+  server is killed at the generation deadline, the task fails with "no answer within the N s generation
+  deadline", the command is rejected with it, `status` still answers, and the watch restarts the same
+  binding (at most three times); a harness restart expires the dead attempt's lease and the next
+  attempt rebuilds its context from the committed AssistantCall records, so no committed call is
+  dispatched twice. A tokenizer call that cannot reach the server fails the task with
+  `ASSISTANT_UNAVAILABLE` instead of leaving the job leased.
+- Tests: `test_assistant.py` +2 (`slow`: a right-sized file with other bytes, and a missing binary,
+  each refused with its reason, no server process, the instruction rejected, a control phrase
+  answered, one `assistant.unavailable`; a harness that dies mid-generation and its successor on the
+  same ledger: attempt 2 replays the committed call, dispatches nothing twice, and the first harness's
+  loop wakes fenced out); `test_live_failure.py` (3, `live_model`): A24 under a hung generation
+  (SIGSTOP on the real server, every processor busy, 20 pause and 20 cancel trials on hung jobs, the
+  hung assistant job's own pause durable at once, nothing dispatched afterwards, the generation ending
+  when the server resumes), the deadline (5 s: killed, failed, rejected, restarted on the same binding,
+  a new instruction succeeds), out of memory (a 0.5 GiB limit: never ready, nothing of it left). A30's
+  offline part is the 5.1 probe test's evidence. `make sat` and `make sat-linux` now leave `live_model`
+  out, as `make verify` does.
+- Live result on this Mac (2026-10-16): `uv run pytest tests/integration/test_live_failure.py` →
+  `3 passed in 268.06s (0:04:28)`, no server left running (A24 PASS: pause and cancel p95 within 2 s;
+  the measured values are the record `make live` writes at the gate). The two earlier runs found two
+  test defects, both fixed (decisions 2026-10-16): the harness fixture's quit was not joined, so one
+  test's stop could kill the server the next test had just been lent; and the deadline test read the
+  events before the watch's one-second tick.
+- Mutation checks (`mutate55.py`, scratch): 4/5 caught — the context rebuilt from records, the deadline
+  kill, the watch's restart, the memory poll; `verification-final` survived because the branch was
+  dead code (the watch never restarted from unavailable), fixed and caught in 5.6 (decisions
+  2026-10-16).
+- The 5.4 CI read (run 38895075855, cancelled after 37 min): the corrupt-model test failed on both
+  OSes (the binary is checked before the hash; CI has no llama-server) and its failed assertion left
+  the inline harness's threads alive, so pytest never exited; the Sprint 1 SAT profile test got exit 2
+  from the CLI on macOS only (output not shown; a cold harness had 10 s, now 30 s); the Linux built app
+  did not end within 20 s of a real window close. The first two are fixed and verified here (the
+  corrupt test reproduced and then passed with a HOME that has no binary); the third is open (below).
+  `make test-fast`: 333 passed with the fixture join. One run of the Sprint 1 SAT and llama-server
+  unit tests had one failure while the live file ran; it passed three times after and the failing test
+  was not captured.
+
+## Prompt 5.6 — remote OpenAI-compatible binding, D4 = B (2026-10-16)
+
+- The app owns `AssistantModelBinding` 0.4.0, the remote mode only (a local binding keeps the suite's
+  0.3.0): provider and model, `endpoint.base_url` (http, https or `unix://`) and `api_key_ref`,
+  `placement`, `data_policy` (`none` or `synthetic_fixtures_only`; sealed data and secrets `false` by
+  the schema), `spend` (price per million tokens, owner-approved, when), the D17 limits with
+  `max_external_charge_minor` as the spend limit, `remote_fallback: false`, `observed` once ready.
+  `OpenAICompatible` sits behind the same port: policy (`none` refuses before the key is read), key
+  from the secret store (none: the exact `security` / `secret-tool` commands of D4 in the reason), the
+  model in `GET /v1/models` (401/403: "the endpoint refused the key"), then the same typed probe as
+  the local server; a call whose projected charge would pass the limit is refused before it is sent;
+  the count is the endpoint's tokenizer or, on 404, one token per two bytes. The harness opts in by
+  `<profile>/assistant/binding.json`; an invalid record leaves the assistant unavailable with its
+  first schema error and the local model is never tried instead. The ready event carries placement,
+  policy, spend and limit; the header shows `assistant ready (profile · remote <host> · synthetic
+  fixtures only · spend limit £0.00)` and the trail's ready line the same, before the first
+  instruction. No proprietary adapter (D4 = B). The supervisor's restart bound is now real: a death
+  or a failed launch is started again at most three times in one harness's life; failures no restart
+  can change are final at once (found by the 5.5 mutation check; decisions 2026-10-16).
+- Tests: `tests/unit/test_remote_binding.py` (3: the schema's refusals, the charge arithmetic, the
+  account and the socket client); `tests/integration/test_remote_harness.py` (4, no model: the opt-in
+  file without a key is unavailable with how to store one, final, no local server; an invalid record;
+  policy, key and endpoint refusals in that order against the harness's own address as a 404 and 401
+  endpoint; the charge refused before sending and the two-bytes bound); `test_assistant_loop.py` +1
+  (a server dead at every tick: four ready, four unavailable, then nothing more); the corrupt-model
+  test waits two ticks for no second attempt; `tests/integration/test_live_remote.py` (4,
+  `live_model`): ready on llama-server itself with the policy shown, the server's own tokenizer, "7
+  times 8" answered, the local binding never named; a wrong model, a refused key and an unaffordable
+  probe each unavailable once with its reason. Vitest +1 (the remote view and the ready line).
+- Results on this Mac (2026-10-16): unit 3 passed; `test_remote_harness.py`, `test_assistant.py` and
+  `test_assistant_loop.py` 21 passed (the three `sandbox` tests after `make runner-env`, which the new
+  contract file made stale); `test_live_remote.py` 3 passed then the fourth after a helper fix:
+  `3 passed, 1 error in 42.57s` then `1 passed, 3 deselected in 29.34s` for the fourth (the helper
+  passed `provider` twice); `make test-fast` → `342 passed, 64 deselected, 1 warning in 152.21s`
+  (a first run refused two test modules with one basename; the integration one was renamed);
+  vitest 13 passed; `uv run python tools/trace_ids.py 5` names no missing ID once D16 and R22 are
+  cited by the out-of-memory and the generate-run-repair tests.
+- Mutation checks (`mutate56.py`, scratch): 10/10 caught — the `none` policy refused before the key;
+  no key refused; 401 named as a refused key; the spend guard; the two-bytes bound; the opt-in file
+  read; a verification failure final (the 5.5 survivor, caught now); the restart bound; the policy
+  shown in the ready event; the model checked against what is served.
+- Two processes left by earlier runs were found and killed (a llama-server from the 5.5 out-of-memory
+  mutation, which held port 8081, and a pytest hung since before this session's compaction on the
+  restart test); the out-of-memory test now stops its adapter in a `finally` (decisions 2026-10-16).
+
 ## D3 checkpoint — launch profile (2026-10-15, measured under the Seatbelt profile on this M1 Max)
 
 | Profile | Flags | Load to health | First token (cold / warm) | Prompt tok/s | Generation tok/s | Typed probe | Peak footprint | Resident |
@@ -616,6 +705,10 @@ health in 16.2 s, 3.1 prompt tok/s, 1.6 generation tok/s.
   table grouped by region and service level (values right for that grouping), not per service level;
   `A28-generated-code-live-assistant-local-qwen` is FAIL and `make live` is red by that one test until
   the model's interpretation is qualified or changed (Sprint 11's suite is where adequacy is judged).
+- CI, Linux built app (run 38895075855): after the real window close the shell did not end within 20 s;
+  the Sprint 4 gate passed this step and the shell's close path is unchanged since; the step had not
+  run on CI in Sprint 5 before (earlier runs failed before it). The waits now report what is left on a
+  timeout. Not reproducible here; open until the gate's CI run.
 - `make live`: the quit test (`test_d24_quitting_the_harness_stops_the_model_server_it_started`) failed
   once in a full macOS run that overlapped a container run, and its output was not captured; it passed in
   the three runs since. Not established whether the 30 s waits are too short under load.
@@ -677,12 +770,12 @@ health in 16.2 s, 3.1 prompt tok/s, 1.6 generation tok/s.
 ## Handoff note
 
 Sprint 5 is on `claude/sprint-5-assistant-gateway-fc1f11` (from `main` at `73698be`). Committed and
-pushed: 5.0 (D1), 5.1, 5.2, 5.3 (the last at `2318055`, whose CI result is unread). 5.4 is committed
-locally as work in progress with its tests unrun (above); **resume at 5.4**: run
-`uv run pytest tests/integration/test_assistant_loop.py -k repaired` and `make live` (which writes the
-A28 and A29 records), then the mutation checks, the Results Playwright spec, the docs, the commit and
-the push with its CI read; then 5.5, 5.6 (D4 = B), 5.7. The `make live` suites were green on macOS and
-Linux at 5.3; `make test-fast` was 331 passed at 5.3. The D3 pick is Metal (applied).
+pushed: 5.0 (D1), 5.1, 5.2, 5.3, 5.4 (`32f560f`, whose CI read is recorded above) and 5.5 with the CI
+fixes. **Resume at 5.6** (D4 = B: an OpenAI-compatible remote binding behind the same port, tested
+against the local llama-server, synthetic fixtures only, £0, no key-needing test without asking),
+then 5.7 (the gate). The live suites: `make live` was green on macOS at 5.3 and on Linux at 5.4
+(7 passed); `test_live_failure.py` 3 passed at 5.5; the 5.4 acceptance test is red by the open
+over-grouping defect. `make test-fast` was 333 passed at 5.5. The D3 pick is Metal (applied).
 
 Sprint 4's handoff: the gate was PASS on macOS and Linux for Sprint 4 scope after the two macOS
 containment gaps were closed (PR #8, merged).

@@ -199,7 +199,7 @@ export function activity(log: LedgerEvent[]): Activity[] {
     else if (type === "grant.created") add(`Folder granted: ${body.label}`);
     else if (type === "grant.revoked") add("Folder removed");
     else if (type === "export.committed") add(`Export committed: ${body.version}`);
-    else if (type === "assistant.ready") add(`Assistant ready: ${body.profile}`);
+    else if (type === "assistant.ready") add(`Assistant ready: ${body.profile}`, shown(body) || undefined);
     else if (type === "assistant.unavailable") add(`Assistant unavailable: ${body.reason}`);
     else if (type === "assistant.call_dispatched") add(`Assistant call ${body.n}: ${body.tool}`);
     else if (type === "assistant.call_refused") add(`Assistant call ${body.n}: ${body.tool}`, `refused · ${body.reason}`);
@@ -208,14 +208,23 @@ export function activity(log: LedgerEvent[]): Activity[] {
   return items;
 }
 
-export type AssistantView = { state: string; reason: string; profile: string };
+export type AssistantView = { state: string; reason: string; profile: string; shown: string };
+
+/** A remote binding's placement, data policy and spend limit, as the ready event shows them (D4). */
+function shown(body: Record<string, unknown>): string {
+  const policy = body.data_policy as { allowed?: string } | undefined;
+  if (!policy) return "";
+  const placement = body.placement as { host?: string } | undefined;
+  const limit = Number(body.spend_limit_minor ?? 0) / 100;
+  return `remote ${placement?.host ?? "?"} · ${String(policy.allowed).replace(/_/g, " ")} · spend limit £${limit.toFixed(2)}`;
+}
 
 /** The assistant as its last committed event left it: never ready on a message's say-so. */
 export function assistant(log: LedgerEvent[]): AssistantView {
-  let view: AssistantView = { state: "unavailable", reason: "not started", profile: "" };
+  let view: AssistantView = { state: "unavailable", reason: "not started", profile: "", shown: "" };
   for (const { type, body } of log) {
-    if (type === "assistant.ready") view = { state: "ready", reason: "", profile: String(body.profile) };
-    else if (type === "assistant.unavailable") view = { state: "unavailable", reason: String(body.reason), profile: "" };
+    if (type === "assistant.ready") view = { state: "ready", reason: "", profile: String(body.profile), shown: shown(body) };
+    else if (type === "assistant.unavailable") view = { state: "unavailable", reason: String(body.reason), profile: "", shown: "" };
   }
   return view;
 }

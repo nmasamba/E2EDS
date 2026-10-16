@@ -7,6 +7,7 @@ import threading
 import time
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 from typing import Annotated, Any, Literal
 from uuid import uuid4
@@ -20,10 +21,11 @@ from dsp.adapters import export_fs, sandbox, secrets
 from dsp.adapters.discovery import host, probes
 from dsp.adapters.ledger_sqlite import SqliteLedger
 from dsp.adapters.llama_server import LlamaServer
+from dsp.adapters.openai_compatible import OpenAICompatible
 from dsp.adapters.store_fs import ContentStore
 from dsp.application import admission, controls, conversation, jobs
 from dsp.application import assistant as assistant_loop
-from dsp.application.assistant import LAUNCH, MODEL_BYTES, Assistant
+from dsp.application.assistant import LAUNCH, MODEL_BYTES, Assistant, remote_binding
 from dsp.application.assistant import local_binding as assistant_binding
 from dsp.application.discovery import discover
 from dsp.application.grants import grant_folder, resolve, revoke, summary
@@ -96,6 +98,19 @@ def mount(
     """
     ctx = TrustedContext.local()
     binding = local_binding(ctx, *host())
+    opted = state_dir / "assistant" / "binding.json"  # the owner's opt-in: a remote binding (D4)
+    if assistant is None and opted.is_file():
+        try:
+            record = json.loads(opted.read_text())
+            describe = partial(remote_binding, record)
+            describe(None)
+            remote = OpenAICompatible(record, secrets=secrets.local(state_dir))
+            assistant = Assistant(
+                ctx, remote, ledger=lambda: ledger(), clock=clock, describe=describe
+            )
+        except (ValueError, DspError, KeyError) as error:
+            assistant = Assistant(ctx, None, ledger=lambda: ledger(), clock=clock)
+            assistant.reason = f"the remote binding in {opted.name} is not valid: {error}"
     if assistant is None:
         model = Path(os.environ.get("DSP_MODEL_DIR") or MODELS) / "Qwen3-8B-Q4_K_M.gguf"
         llama = LlamaServer(
@@ -280,7 +295,8 @@ def mount(
         if runner is not None:
             every(0.25, dispatch)
         every(0.5, attend)
-        threading.Thread(target=supervise).start()  # not a daemon: a quit stops the model server
+        app.state.supervisor = threading.Thread(target=supervise)
+        app.state.supervisor.start()  # not a daemon: a quit stops the model server
 
     def native(request: Request) -> None:
         """A lease, a heartbeat or a report comes from a worker process, never from the window."""

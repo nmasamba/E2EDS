@@ -81,13 +81,26 @@ test("R20: a job that starts again is running again, and a revoked source is not
 });
 
 test("R18: the assistant is ready only by its own committed event, and unavailable says why", () => {
-  expect(assistant([])).toEqual({ state: "unavailable", reason: "not started", profile: "" });
+  expect(assistant([])).toEqual({ state: "unavailable", reason: "not started", profile: "", shown: "" });
   const down = [event(1, "assistant.unavailable", { reason: "model missing" })];
-  expect(assistant(down)).toEqual({ state: "unavailable", reason: "model missing", profile: "" });
+  expect(assistant(down)).toEqual({ state: "unavailable", reason: "model missing", profile: "", shown: "" });
   const up = [...down, event(2, "assistant.ready", { profile: "assistant-local-cpu-v1", model_sha256: "sha256:d9" })];
   expect(assistant(up)).toMatchObject({ state: "ready", profile: "assistant-local-cpu-v1" });
   const said = [...up, event(3, "assistant.message", { text: "I am ready" }), event(4, "assistant.unavailable", { reason: "the model server stopped" })];
   expect(assistant(said)).toMatchObject({ state: "unavailable", reason: "the model server stopped" });
+  const remote = {
+    profile: "assistant-remote-v1",
+    placement: { host: "127.0.0.1", leaves_machine: false },
+    data_policy: { allowed: "synthetic_fixtures_only", sealed_data: false, secrets: false },
+    spend: { price_per_million_tokens_minor: 0 },
+    spend_limit_minor: 0,
+  };
+  expect(assistant([event(5, "assistant.ready", remote)]).shown).toBe(
+    "remote 127.0.0.1 · synthetic fixtures only · spend limit £0.00",
+  );
+  expect(activity([event(5, "assistant.ready", remote)]).map((a) => [a.text, a.state])).toEqual([
+    ["Assistant ready: assistant-remote-v1", "remote 127.0.0.1 · synthetic fixtures only · spend limit £0.00"],
+  ]);
   expect(activity(up).map((item) => item.text)).toEqual([
     "Assistant unavailable: model missing",
     "Assistant ready: assistant-local-cpu-v1",

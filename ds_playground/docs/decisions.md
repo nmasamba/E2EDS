@@ -871,6 +871,111 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   `live_model` part `A28-generated-code-live-<binding>` (written by `make live`, PASS only when the
   committed table equals DuckDB's); the overall record stays INSUFFICIENT_EVIDENCE for sealed
   partitions (Sprint 9) and VM isolation (the owner's deviation), not rounded up.
+- **2026-10-16 — S5 — ASSUMPTION — the acceptance line's Playwright spec is selected by tag (5.7)** —
+  Playwright has no markers, so the `live_model` spec (`desktop/tests/live.spec.ts`, titled
+  `@live_model`) is left out of `make e2e` by `--grep-invert @live_model` in the renderer's test
+  script and run by `make live` with `--grep @live_model`, before the Python live tests so a red
+  acceptance record does not hide it. It starts a real harness on the real model folder, grants the
+  generated orders fixture through the harness (the folder picker is the owner's), types the 5.4
+  instruction into the composer, waits for the first tool call in the trail, pauses with the chord,
+  waits for the job to show paused, presses Resume, waits for the assistant's proposal line, and
+  opens the first committed CSV as a table. Deselection, never a skip, as the gate rule asks.
+- **2026-10-16 — S5 — FINDING — two processes left behind by earlier runs (5.6)** — the live remote
+  tests first failed with "127.0.0.1:8081 is held by another process": a llama-server from the 5.5
+  mutation run was still up, started by the out-of-memory test under the mutation that disabled the
+  footprint kill (the model loaded in full, the test failed, and nothing stopped the adapter it had
+  built). That test now stops its adapter in a `finally`. The same look found a pytest from before
+  this session's context was compacted, 51 minutes old, on the restart test: the non-daemon harness
+  thread hang of the CI defect above, seen here first and not understood then. Both killed by hand.
+- **2026-10-16 — S5 — DECISION — remote OpenAI-compatible binding, D4 = B (5.6)** — the app owns
+  `AssistantModelBinding` 0.4.0, the remote mode only (`mode: remote_openai_compatible`; a local binding
+  keeps the suite's 0.3.0): provider and model name, `endpoint.base_url` (http, https, or `unix://` for
+  a server on a socket) and `api_key_ref` (`secret://local/<account>`), `placement` (host; whether data
+  leaves the machine), `data_policy` (`none` or `synthetic_fixtures_only`; sealed data and secrets are
+  `false` by the schema), `spend` (the price per million tokens in minor units, approved by the owner,
+  when), the D17 limits with `max_external_charge_minor` as the owner's spend limit, standard decoding
+  fields only, `remote_fallback: false`, and `observed` (the model id and the probe's seconds) once
+  ready. The adapter `OpenAICompatible` sits behind the same `ModelServer` port: `start` checks the
+  policy (`none` lets nothing leave: refused before the key is read), reads the key from the secret
+  store under the account (none: refused with the exact `security` and `secret-tool` commands of D4),
+  sees the model in `GET /v1/models` (401 or 403: "the endpoint refused the key"), then passes the same
+  typed tool-response probe as the local server; `complete` refuses a call whose projected charge
+  (the counted input plus `max_tokens`, at the price, rounded up) would take the spend past the limit,
+  before anything is sent, and adds the reported usage's charge after; `count` is the endpoint's own
+  tokenizer (`/tokenize`: llama-server, vLLM) or, on 404, one token per two bytes. The harness opts in
+  by a record at `<profile>/assistant/binding.json`; an invalid record leaves the assistant unavailable
+  with the first schema error, and never the local model in its place (no fallback, by the skill). The
+  ready event carries placement, data policy, spend and limit, so the window's header and trail show
+  them before the first instruction ("shown before first use"). Tested against llama-server itself
+  on TCP (macOS) and its socket (Linux), with the session server's own key in a test-only store: no
+  key of the owner's, no spend, nothing leaves (D4 = B). The proprietary adapter is not built.
+- **2026-10-16 — S5 — ASSUMPTION — the data policy is declared and shown, not enforced on content (5.6)** —
+  under D4 = B the only data that may leave is synthetic fixtures; the harness cannot tell a synthetic
+  file from a real one, so the policy is the owner's declaration recorded with the binding, shown at
+  readiness and in the trail, and enforced only where it can be: sealed data and secrets never enter
+  a prompt (Sprint 9 adds sealed data; the key is never in the context). An endpoint without a
+  tokenizer gets a high token bound (two bytes per token), so the D17 input limit refuses an input
+  the endpoint might cut, at the cost of usable context.
+- **2026-10-16 — S5 — FINDING — the restart bound was not real (5.5, found by its mutation check)** — the
+  "verification failures are final" branch survived its mutation because the watch only ever restarted
+  from the ready state and reset its counter on every success: a server that kept dying was restarted
+  without bound, and a failed launch was never retried. Now: the watch starts a server again after a
+  death or a failed launch, at most three times in one harness's life, and leaves it unavailable
+  past that; failures no restart can change are final at once (a missing, corrupt or mis-sized model
+  or binary, the memory limit, no key, a refused key, a `none` data policy, an unaffordable probe).
+  Tests: a server dead at every tick ends with four ready and four unavailable events and no more;
+  the corrupt-model test waits two ticks and sees no second attempt; the remote failures likewise.
+- **2026-10-16 — S5 — DEFECT — CI run 38895075855, the 5.4 read (fixed, one open)** — (1) both `verify`
+  jobs: the corrupt-model test expected "model hash mismatch" for its second case and got "model server
+  binary missing": verification checks the binary before the model's hash, and CI has no llama-server.
+  The failed assertion left that test's inline harness threads alive (not daemons: a quit must stop the
+  model server), so pytest never exited and both jobs ran until cancelled 37 minutes later. The case now
+  names an existing file (`sys.executable`) as its binary, and both inline-harness tests stop their
+  servers in a `finally`. Reproduced here with a HOME that has no binary: the failure and the hang, then
+  the fixed test passing and exiting. (2) `verify (macos-latest)` only: the Sprint 1 SAT profile test got
+  exit 2 from the CLI, a `DspError` whose text the test did not show; it passes here and a cold harness
+  answers the CLI in 1.6 s. The CLI gave a cold harness 10 s (100 tries of 0.1 s) under a coverage-traced
+  subprocess on a shared runner; it now gives 30 s, and the test shows the CLI's output when it fails.
+  Not reproduced: a hypothesis until the gate's run. (3) `desktop (ubuntu-24.04)`: after the real window
+  close the shell did not end within 20 s. The Sprint 4 gate passed this step; the shell's close path and
+  the window's title are unchanged since; the 5.2 and 5.3 runs failed earlier in that test, so this step
+  had not run on CI since Sprint 4. The three close waits now report the windows and shells left when
+  they time out. **Open** until the gate's run; not reproducible here (no Linux desktop).
+- **2026-10-16 — S5 — FINDING — a test harness's quit must be joined (5.5)** — the harness's supervisor
+  thread stops the assistant's server after uvicorn has exited; the `harness` fixture joined only
+  uvicorn, so one test's stop could land after the next test's harness had reported the shared live
+  server ready: the first deadline run died at its own SIGSTOP with "no such process", and the loop,
+  whose tokenizer call hit a bare connection error, left the job leased and logged "attend failed".
+  The app now keeps the supervisor on `app.state`, the fixture joins it (a quit's stop finishes before
+  the next harness starts), a tokenizer call that cannot reach the server is `ASSISTANT_UNAVAILABLE`
+  with the error's type, and the loop fails the task with that reason.
+- **2026-10-16 — S5 — FINDING — the deadline test raced the watch's tick (5.5)** — the watch marks the
+  server dead and restarts it on a one-second tick; the test read the events 60 ms after the task
+  failed and found the state still ready and no outage recorded. The test now waits for the restart's
+  second `assistant.ready` before counting the one `assistant.unavailable`. Product unchanged: the
+  window can show "ready" for up to a second after a deadline kill, and an instruction in that second
+  fails with the gateway's own reason.
+- **2026-10-16 — S5 — DECISION — failure and independence (5.5)** — every failure of the model ends in
+  `assistant_unavailable` with the conversation and the controls untouched and no other model tried:
+  a missing model or binary and a hash or size mismatch are verification failures, final until the
+  harness restarts (the watch never retries them: the file does not change by itself); out of memory
+  is the kernel's kill on macOS (jetsam is not available through `sandbox-exec`, so the footprint poll
+  kills past the binding's limit) or `prlimit`'s refusal on Linux, before the server is ever ready; a
+  hung server is killed at the generation deadline (the stream's read timeout, 300 s by the binding;
+  5 s in the test), the task fails with that reason, the command is rejected with it, and the watch
+  restarts the same binding up to three times; a restart of the harness expires the dead attempt's
+  lease, and the next attempt rebuilds the context from the committed AssistantCall records, so a
+  committed call is never dispatched twice and an interrupted one runs again idempotently. The fast
+  controls never touch the model: with the server stopped mid-generation (SIGSTOP) and every
+  processor busy, pause and cancel receipts stay within 2 s at p95 (the A24 record for Sprint 5), a
+  pause of the hung assistant job is durable at once and nothing it proposes afterwards runs. A30's
+  offline part is the 5.1 probe under the server's own confinement, now written as evidence.
+- **2026-10-16 — S5 — ASSUMPTION — Sprint 5's acceptance tests live with the live tests (5.5)** — A24
+  under a hung generation, A29 and the A28 generated-code part need the real model, so they are
+  `live_model` tests under `tests/integration/` whose evidence `make live` writes (and `make live-linux`
+  copies out); `make sat` and `make sat-linux` leave `live_model` out, as `make verify` does, and rerun
+  every earlier sprint's file. The live failure tests end the session's server on purpose, so the
+  integration conftest orders them after the other live tests, and each later harness restarts it.
 - **2026-10-15 — S5 — ASSUMPTION — the sprint branch** — the work is on the branch the desktop app made for
   this session, `claude/sprint-5-assistant-gateway-fc1f11`, from `main` at `73698be`, rather than a
   branch named `sprint-5-assistant`; the pull request carries the sprint's title.

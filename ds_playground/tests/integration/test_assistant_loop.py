@@ -16,7 +16,7 @@ import httpx
 import pytest
 
 from dsp.adapters.ledger_sqlite import SqliteLedger
-from dsp.application.assistant import Assistant
+from dsp.application.assistant import RESTARTS, Assistant
 from dsp.application.tools import NOT_YET
 from dsp.contracts.errors import ErrorCode, TrustedContext
 from tests.conftest import Clock
@@ -108,10 +108,19 @@ def before() -> dict[str, Any]:
     return {"hook": None}
 
 
+class Dying(Scripted):
+    """A server whose every start succeeds and that is dead at every tick after."""
+
+    def alive(self) -> bool:
+        """Dead."""
+        return False
+
+
 @pytest.fixture
-def gateway(script: list[Step], before: dict[str, Any]) -> Scripted:
-    """The scripted gateway this harness's assistant uses."""
-    return Scripted(script, lambda n: before["hook"](n) if before["hook"] else None)
+def gateway(script: list[Step], before: dict[str, Any], request: pytest.FixtureRequest) -> Scripted:
+    """The scripted gateway this harness's assistant uses (``Dying`` when a test says so)."""
+    kind: type[Scripted] = getattr(request, "param", Scripted)
+    return kind(script, lambda n: before["hook"](n) if before["hook"] else None)
 
 
 @pytest.fixture
@@ -123,9 +132,9 @@ def assistant(gateway: Scripted, state_dir: Path) -> Assistant:
     )
 
 
-def ready(client: httpx.Client) -> None:
+def ready(client: httpx.Client, seconds: float = 20) -> None:
     """Wait for the assistant and observe the hardware, so an instruction can be admitted."""
-    until(lambda: client.get("/v1/assistant").json()["state"] == "ready")
+    until(lambda: client.get("/v1/assistant").json()["state"] == "ready", seconds)
     if client.get("/v1/hardware").status_code == 404:
         assert client.post("/v1/hardware").status_code == 200
 
@@ -947,7 +956,7 @@ def test_a28_a_failed_task_is_repaired_at_most_twice_and_the_table_matches_an_in
     monkeypatch: pytest.MonkeyPatch,
     runner_env: Path,
 ) -> None:
-    """A28, D17: generate, run, see the redacted failure, repair, run again; the preview is bounded.
+    """R22, A28, D17: generate, run, read the redacted failure, repair, run again; preview bounded.
 
     The scripted model writes SQL with a wrong column, sees the quoted failure, repairs it naming
     the failed artifact, and the committed table equals DuckDB's own answer on the fixture. The
@@ -1090,3 +1099,25 @@ def test_a28_a_failed_task_is_repaired_at_most_twice_and_the_table_matches_an_in
     assert len(shown["header_and_first_rows"][1][1]) == 200
     assert bounded("notes.json", b"{" + b"a" * 5000)["head"] == "{" + "a" * 1999
     assert bounded("blob.bin", b"\x00" * 10) == {"kind": "other", "bytes": 10}
+
+
+@pytest.mark.parametrize("gateway", [Dying], indirect=True)
+def test_r16_a_server_that_keeps_dying_is_started_again_three_times_then_left_unavailable(
+    harness: Harness,
+) -> None:
+    """The watch restarts a dead server RESTARTS times in one harness's life, then stops trying."""
+    client, _ = harness
+    until(lambda: kinds(client).count("assistant.unavailable") == RESTARTS + 1, 15)
+    time.sleep(2.5)  # two more ticks: no further start
+    seen = kinds(client)
+    assert (seen.count("assistant.ready"), seen.count("assistant.unavailable")) == (
+        RESTARTS + 1,
+        RESTARTS + 1,
+    )
+    assert client.get("/v1/assistant").json()["state"] == "unavailable"
+    assert say(client, "write some code")["because"] == "the model server stopped"
+
+
+def kinds(client: httpx.Client) -> list[str]:
+    """Every event's type, in commit order."""
+    return [str(e["type"]) for e in client.get("/v1/events").json()["events"]]

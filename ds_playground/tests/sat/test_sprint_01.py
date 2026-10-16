@@ -13,7 +13,8 @@ def test_sprint_1_profile_and_export_the_orders_fixture(tmp_path: Path, home: Pa
     out.mkdir()
     write_orders(source)
     runner = CliRunner()
-    assert runner.invoke(app, ["profile", str(source), "--out", str(out)]).exit_code == 0
+    profiled = runner.invoke(app, ["profile", str(source), "--out", str(out)])
+    assert profiled.exit_code == 0, profiled.output
     assert runner.invoke(app, ["verify", str(out / "v1")]).output.strip() == "verified"
     profile = json.loads((out / "v1" / "profile.json").read_text())
     accounts = next(c for c in profile["columns"] if c["name"] == "account_num")

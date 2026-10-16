@@ -74,7 +74,7 @@ def test_a24_pause_and_cancel_receipts_are_durable_within_two_seconds_under_a_hu
     proposes afterwards is dispatched; the generation ends when the server resumes.
     """
     client, _ = harness
-    ready(client)
+    ready(client, 300)  # the previous test's harness stopped the lent server: a real restart
     answer = say(client, "write a long essay about rivers, at least 600 words, as your answer")
     job = answer["job"]["id"]
     generating(client, job)
@@ -150,7 +150,7 @@ def test_r16_a_hung_server_is_killed_at_the_deadline_and_the_assistant_recovers_
     The task fails, the command says so, the controls still answer, and no other model is tried.
     """
     client, _ = harness
-    ready(client)
+    ready(client, 300)  # the previous test's harness stopped the lent server: a real restart
     assistant.binding["limits"]["generation_deadline_seconds"] = 5
     before = pin(assistant.binding)
     answer = say(client, "write a long essay about rivers, at least 600 words, as your answer")
@@ -171,11 +171,10 @@ def test_r16_a_hung_server_is_killed_at_the_deadline_and_the_assistant_recovers_
         "no answer within the 5 s generation deadline",
     )
     assert say(client, "status")["because"] == "no job is live"
-    assistant.binding["limits"]["generation_deadline_seconds"] = 300
-    until(lambda: client.get("/v1/assistant").json()["state"] == "ready", 300)
+    until(lambda: [e["type"] for e in events(client)].count("assistant.ready") == 2, 300)
+    assert client.get("/v1/assistant").json()["state"] == "ready"
     kinds = [e["type"] for e in events(client)]
     assert kinds.count("assistant.unavailable") == 1
-    assert kinds.count("assistant.ready") == 2
     ready_events = [e["body"] for e in events(client) if e["type"] == "assistant.ready"]
     assert ready_events[-1]["binding"]["id"] == before["id"]  # the same binding, no other model
     assert model_server.process.pid != pid
@@ -186,13 +185,19 @@ def test_r16_a_hung_server_is_killed_at_the_deadline_and_the_assistant_recovers_
 def test_r16_out_of_memory_ends_in_unavailable_and_no_server_remains(
     model_server: Any, tmp_path: Path
 ) -> None:
-    """R16: a model that does not fit its memory limit never becomes ready; nothing of it stays."""
+    """R16, D16: a model that does not fit its memory limit never becomes ready; nothing stays.
+
+    Inadequate hardware is said truthfully, before any answer, with the limit the binding declares.
+    """
     model_server.stop()  # one server at a time fits the Linux container
     adapter = make(tmp_path / "home")
     adapter.binding["limits"]["model_memory_gib"] = 0.5
     started = time.monotonic()
-    with pytest.raises(DspError) as refused:
-        adapter.start()
+    try:
+        with pytest.raises(DspError) as refused:
+            adapter.start()
+    finally:
+        adapter.stop()  # a server a failed check left behind would hold the port for every run
     seconds = time.monotonic() - started
     message = refused.value.message
     assert "memory_limit" in message or "exited with status" in message, message
