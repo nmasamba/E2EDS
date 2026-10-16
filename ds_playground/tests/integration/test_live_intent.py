@@ -59,6 +59,8 @@ def proposed(state_dir: Path, job: str) -> str:
     lines = []
     for c in calls(state_dir, job):
         what = c["arguments"].get("patch") or c["arguments"].get("question") or ""
+        if c["tool"] == "answer":
+            what = (c["result"] or {}).get("text", "")[:120]
         became = c["refusal"] or (c["result"] or {})
         became = {
             k: v for k, v in became.items() if k in ("code", "reason", "error", "applied", "asked")
@@ -86,7 +88,7 @@ def test_a29_the_five_reference_instructions(
     model did for each; PASS only when all five did what the suite describes.
     """
     client, _ = harness
-    ready(client)
+    ready(client, 300)  # a real restart when an earlier file's quit stopped the server
     seen: dict[str, str] = {}
 
     # 1. "use account_num as the ID": a string entity identifier, excluded from predictors.
@@ -208,7 +210,7 @@ def test_a29_the_five_reference_instructions(
         f"interpretation-{BINDING_ID}",
         "PASS" if all(outcomes.values()) else "FAIL",
         f"binding {BINDING_ID} (llama.cpp b11104, Qwen3-8B Q4_K_M, Metal full offload), seed 1, "
-        "temperature 0.7, the five reference instructions of conversational_control.md",
+        "temperature 0, the five reference instructions of conversational_control.md",
         "ID exclusion with string preservation; feature-count ambiguity asked; rounding as a typed "
         "transform with ties away from zero or a question about units; pause before the model sees "
         "the exclusion and work stays paused; a budget change needs the owner's grant",

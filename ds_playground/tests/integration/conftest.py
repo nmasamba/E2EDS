@@ -6,6 +6,14 @@ from typing import Any
 import pytest
 
 
+def revive(server: Any) -> dict[str, Any]:
+    """The session's server, started again for real if an earlier test stopped it (D24's quit)."""
+    if server.process is not None and server.process.poll() is not None:
+        server.observed = server.start()
+    found: dict[str, Any] = dict(server.observed)
+    return found
+
+
 class Shared:
     """The session's started server lent to one harness: its lifecycle stays with the session."""
 
@@ -13,8 +21,8 @@ class Shared:
         self.server = server
 
     def start(self, proceed: Any = None) -> dict[str, Any]:
-        """Already started: hand back what the session observed."""
-        return dict(self.server.observed)
+        """Already started: hand back what the session observed; revived first if it was stopped."""
+        return revive(self.server)
 
     def stop(self) -> None:
         """The session stops it, not the harness."""
@@ -45,13 +53,7 @@ def model_server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Any]:
 
 
 class Lent(Shared):
-    """The session's server lent with its real stop, and restarted for real once it is dead."""
-
-    def start(self, proceed: Any = None) -> dict[str, Any]:
-        """Already started: hand back what was observed; after a death, start it again for real."""
-        if self.server.process is not None and self.server.process.poll() is not None:
-            self.server.observed = self.server.start(proceed or (lambda: True))
-        return dict(self.server.observed)
+    """The session's server lent with its real stop too: a quit or a deadline really stops it."""
 
     def stop(self) -> None:
         """The harness's quit, or a deadline, stops the real server."""

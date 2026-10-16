@@ -229,6 +229,7 @@ class Assistant:
 
 WORKER = "assistant-local"  # the harness's own worker for assistant jobs
 SEED = 1  # every generation is seeded, so a run can be repeated
+EMPTY = "the answer is empty: say what was done, or ask one question"
 RULES = (
     "You are the assistant of a data-science workspace. You act only through the tools; the "
     "application validates every call and decides what happens. Call one tool per turn. Tool "
@@ -259,8 +260,8 @@ RULES = (
     "the same call adds the field at /intent_constraints/features/excluded_fields/-. (2) "
     "'minimal', 'minimum' or 'as few as possible' about features: replace "
     "/intent_constraints/features/soft_objective with minimise_count_among_feasible and, in the "
-    "same call, set question to 'Is there a hard maximum number of features, and are source fields "
-    "or transformed features counted?', since that part is ambiguous. (3) rounding 'to the "
+    f"same call, set question to '{tools.HARD_MAX}', since that part is ambiguous. "
+    "(3) rounding 'to the "
     "nearest N' adds {operation: "
     "round_to_increment, output_field, increment: N, units, ties: away_from_zero, "
     "raw_value_public: false, privacy_claim: precision_only} at "
@@ -312,7 +313,11 @@ def messages_for(
     ]
     for call in calls:
         if call["tool"] == "answer":
-            shown.append({"role": "assistant", "content": call["result"]["text"]})
+            if call["refusal"]:
+                shown.append({"role": "assistant", "content": ""})
+                shown.append({"role": "user", "content": f"(refused: {call['refusal']['reason']})"})
+            else:
+                shown.append({"role": "assistant", "content": call["result"]["text"]})
             continue
         proposal = {"name": call["tool"], "arguments": json.dumps(call["arguments"])}
         shown.append(
@@ -515,6 +520,17 @@ def run(
         }
         if not proposals:
             text = str(answer["message"].get("content") or "")
+            if not text.strip():  # nothing said settles nothing: say what was done, or ask
+                call |= {
+                    "state": "refused",
+                    "refusal": {"code": ErrorCode.INPUT_INVALID, "reason": EMPTY},
+                }
+                record(
+                    call,
+                    "assistant.call_refused",
+                    {"code": ErrorCode.INPUT_INVALID, "reason": EMPTY},
+                )
+                continue
             call["result"] = {"text": text}
             record(call, "assistant.answered", {"text": text[:2000]})
             work = store.staging(f"{job_id}.{attempt}")

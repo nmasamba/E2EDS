@@ -32,6 +32,23 @@ export async function startHarness(
   throw new Error("the harness did not start");
 }
 
+/** The explicit Quit (D24): the harness finishes what is in progress, stops its model server and exits. */
+export async function quitHarness(harness: Harness): Promise<void> {
+  await fetch(`${harness.base_url}/v1/shutdown`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${harness.token}` },
+  }).catch(() => undefined);
+  for (let attempt = 0; attempt < 600; attempt++) {
+    try {
+      process.kill(harness.pid, 0); // still there
+    } catch {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  process.kill(harness.pid);
+}
+
 export type Pick = (purpose: string) => Promise<unknown>;
 
 /**

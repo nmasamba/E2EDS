@@ -871,6 +871,50 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   `live_model` part `A28-generated-code-live-<binding>` (written by `make live`, PASS only when the
   committed table equals DuckDB's); the overall record stays INSUFFICIENT_EVIDENCE for sealed
   partitions (Sprint 9) and VM isolation (the owner's deviation), not rounded up.
+- **2026-10-16 — S5 — DECISION — the feature-count question is the application's own (5.7)** — the fifth
+  live run had four of the five reference instructions as described; for "keep features minimal"
+  the model set the soft objective and answered instead of asking about a hard maximum, as it had
+  at 5.3 (its system rules grew at 5.4). The suite fixes that ambiguity for the reference case, and
+  the other 5.3 interpretation rules are already the application's, so the dispatcher now asks "Is
+  there a hard maximum number of features, and are source fields or transformed features counted?"
+  itself whenever a patch sets the soft objective to minimise the count and no hard maximum is set
+  and the model asked nothing; the patch still applies, and the command ends in clarification. With
+  a hard maximum in the same patch nothing is asked. Loop test on the scripted gateway; the guard
+  mutation-caught. The intent test's step summary now shows an answer's text (it printed "" for
+  every answer), and its evidence names temperature 0, as the binding has it.
+- **2026-10-16 — S5 — FINDING — the fourth live run: three test defects and one product gap (5.7, fixed)** —
+  with the suite's server revived, the acceptance spec passed again (66 s) and 12 of 16 Python live
+  tests; the four failures had four causes. (1) The hung-generation tests asked the model for a
+  600-word essay and this time it refused in 1.3 s ("I cannot write a long essay…", 50 tokens),
+  so the job had succeeded before the SIGSTOP; both tests now try three requests in turn until one
+  is still generating 1.5 s in. (2) The acceptance and intent tests waited 20 s for readiness,
+  while a server the quit test had stopped takes 25 s to come back; they wait 300 s now, as the
+  failure tests do. (3) The quit test asserted the key file gone the instant the process was dead,
+  but `stop()` unlinks the file only after it has reaped the process; the test waits for the file.
+  (4) Product: a plain-text answer of nothing at all ("" after the "keep features minimal" patch,
+  where a question was due) settled the command `applied`; an empty answer is now refused with
+  "the answer is empty: say what was done, or ask one question", the refusal is shown to the model
+  as a user turn, and the next generation answers (loop test, mutation caught).
+- **2026-10-16 — S5 — DEFECT — the live suite's quit test stopped the server the later files needed (5.7, fixed)** —
+  the third `make live` ran the Python live tests at last, and the acceptance, intent and remote
+  tests failed with "the model server did not answer (ConnectError)" and no generation: the
+  gateway file's D24 quit test really stops the session's one server, and the `Shared` wrapper the
+  later files lend to their harnesses handed back the old observation without starting it again
+  (only the failure tests' `Lent` did). `Shared.start` now revives a stopped session server for any
+  later harness, `Lent` adds only the real stop, and the remote fixture revives the server before it
+  reads the served model ids. The suite was last fully green on macOS at 5.3, before the generate,
+  failure and remote files existed in this order; the earlier Linux run of 7 tests ended with the
+  quit test and never showed it.
+- **2026-10-16 — S5 — DEFECT — a Playwright spec's kill of its harness left the model server behind (5.7, fixed)** —
+  the second `make live` passed the acceptance spec (72 s) and then every Python live test errored
+  at setup: "127.0.0.1:8081 is held by another process". The spec had ended its harness with
+  `process.kill(pid)`, and the llama-server that harness had started survived it; two harnesses
+  from the previous day's renderer specs were found alive the same way. The live spec now quits
+  through `POST /v1/shutdown` (the explicit Quit of D24, which stops the server) and waits for the
+  harness to exit, killing only as a last resort. Why a SIGTERM to the harness did not reach its
+  supervisor's stop is not established; open as a question, not a product defect: the product's
+  Quit is the request, and a crashed harness's server is reaped by the next start on the same
+  profile (`stale()`). The leftovers were killed by hand.
 - **2026-10-16 — S5 — DEFECT — the confinement named the state folder by an unresolved path (5.7, fixed)** —
   the first `make live` of the gate failed its Playwright acceptance spec before the first keystroke:
   the harness it started reported "the model server exited with status 1" four times (the initial

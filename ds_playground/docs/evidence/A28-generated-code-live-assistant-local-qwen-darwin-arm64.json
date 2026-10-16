@@ -1,0 +1,14 @@
+{
+  "id": "A28",
+  "sprint": 5,
+  "os": "darwin-arm64",
+  "fixture": "the orders fixture (500 rows, seed 0) granted as a source; binding assistant-local-qwen, seed 1, temperature 0; the instruction of the sprint's acceptance line",
+  "commit": "5f2cec9",
+  "expected": "model-generated code runs only in the sandboxed runner through admission, the assistant sees redacted results and repairs at most twice, and the committed table artifact equals an independent query on the same fixture",
+  "actual": "job succeeded (None) in 37 s, 5 generations, 1 task(s) submitted, 0 repair(s); no committed CSV output matched DuckDB's means per service level; the committed transit_hours_by_service_level.csv has 8 rows: avg_transit_hours per ['region', 'service_level'] equals DuckDB's mean actual_transit_hours; measured: {\"first_tool_call_seconds\": 8.5, \"mean_step_seconds\": 6.8, \"completion_tokens_per_second\": 16.1, \"peak_model_server_memory_gib\": 6.39, \"memory_measure\": \"phys_footprint, sampled\"}; steps: 1 inspect_schema -> committed {\"columns\": [{\"distinct\": 500, \"max\": \"order-000499\", \"min\": \"order-000000\", \"name\": \"order_id\", \"non_null\": 500, \"nulls\": 0, \"proposed_type\": \"string\"}, {\"distinct\": 50, \"max\": \"000049\", \"min\": \"000000\", \"name\": \"account_num\", \"non_null\": 500, \"nulls\": 0, \"proposed_type\": \"string\"}, {\"distinct\": 498, \"max\": \"2026-07-27T11:54:00+00:00\", \"min\": \"2026-01-01T02:12:00+00:00\", \"name\": \"created_at\", \"no | 2 write_code_artifact -> committed source \"SELECT region, service_level, AVG(actual_transit_hours) AS avg_transit_hours FROM \\\"orders.csv\\\" GROUP BY region, service_level;\" | 3 submit_code_task -> committed {\"failure\": null, \"job\": \"job-fea06db29473416ab9d016bacdcc368c\", \"state\": \"succeeded\"} inputs ['orders.csv'] | 4 inspect_results -> committed | 5 answer -> committed {\"text\": \"The CSV file \\\"transit_hours_by_service_level.csv\\\" has been successfully generated and contains the average transit hours grouped by region and service level. The first few rows of the data are as follows:\\n\\n- Region: east, Service Level: express, Average Transit Hours: 27.72\\n- Region: ",
+  "outcome": "FAIL",
+  "limits": [
+    "OS-sandbox assurance for one local user, not VM isolation; one model, one seed, one instruction, not the qualification suite"
+  ],
+  "assurance": "os_sandbox_single_user"
+}

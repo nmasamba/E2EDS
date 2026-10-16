@@ -21,6 +21,7 @@ from dsp.adapters.openai_compatible import OpenAICompatible
 from dsp.application.assistant import Assistant, remote_binding
 from dsp.contracts.errors import TrustedContext
 from tests.conftest import Clock
+from tests.integration.conftest import revive
 from tests.integration.test_assistant_loop import ended, ready
 from tests.integration.test_controls import say
 from tests.integration.test_jobs import until
@@ -43,6 +44,7 @@ def binding(model_server: Any, **changes: Any) -> dict[str, Any]:
     base = (
         "http://127.0.0.1:8081/v1" if sys.platform == "darwin" else f"unix://{model_server.socket}"
     )
+    revive(model_server)  # an earlier file's quit test may have stopped it
     listed = model_server.client.get("/v1/models", headers=model_server.headers()).json()
     provider = {"name": "llama.cpp", "model": str(listed["data"][0]["id"])}
     endpoint = {"base_url": base, "api_key_ref": f"secret://local/{ACCOUNT}"}

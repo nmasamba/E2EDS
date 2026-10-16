@@ -23,6 +23,10 @@ from dsp.contracts.schemas import validate
 from dsp.ports import Ledger, Store
 
 MAX_SOURCE = 64 * 1024
+HARD_MAX = (  # asked whenever features are to be minimal and no hard maximum is set
+    "Is there a hard maximum number of features, and are source fields or transformed features "
+    "counted?"
+)
 NOT_YET = "nothing of that kind exists yet: trials, evaluations and releases come in later sprints"
 HANDLE = {
     "type": "string",
@@ -300,6 +304,14 @@ class Dispatcher:
                 current = current_workload(self.ctx, self.ledger)
                 self.grounded(proposed, current)
                 whole = complete(current, proposed)
+                features = apply_patch(current, whole)["intent_constraints"]["features"]
+                if (  # the reference case's ambiguity: the application's own question
+                    not asked
+                    and features.get("soft_objective") == "minimise_count_among_feasible"
+                    and features.get("hard_max_count") is None
+                    and any(op["path"].endswith("/soft_objective") for op in proposed)
+                ):
+                    asked = {"asked": HARD_MAX}
                 derived = [
                     {
                         "field": operation["path"],

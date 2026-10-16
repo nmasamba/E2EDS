@@ -35,6 +35,10 @@
   the changed path or its parent; the generation deadline now bounds a generation that keeps
   streaming, not only the wait for its next chunk; the memory limit on Metal counts the mapped
   weights; the input limit counts the tool catalogue.
+- An empty answer from the assistant is refused and shown to it, so an instruction never ends
+  with nothing said; the next generation answers or asks.
+- "Keep features minimal" always ends with the question about a hard maximum (and whether
+  source fields or transformed features count), asked by the application when the model does not.
 
 ## Sprint 4 — sandboxed native runner (2026-10-13)
 

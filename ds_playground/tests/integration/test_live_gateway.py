@@ -331,5 +331,9 @@ def test_d24_quitting_the_harness_stops_the_model_server_it_started(
             break
         time.sleep(0.1)
     assert model_server.process.poll() is not None, f"the model server {pid} outlived the harness"
+    for _ in range(100):  # the stop unlinks the key once the process has been reaped
+        if not (model_server.state / "api-key").exists():
+            break
+        time.sleep(0.1)
     assert not (model_server.state / "api-key").exists()
     (state_dir / "harness.json").unlink(missing_ok=True)

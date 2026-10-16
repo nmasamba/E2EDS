@@ -3,7 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { native, open, startHarness, type Harness } from "./harness";
+import { native, open, quitHarness, startHarness, type Harness } from "./harness";
 
 // The sprint's acceptance line on the real local model, in the real window's renderer: run by
 // `make live` (tag @live_model), never by `make e2e`. The model loads once for the file.
@@ -14,8 +14,8 @@ let harness: Harness;
 test.beforeAll(async () => {
   harness = await startHarness(undefined, MODELS);
 });
-test.afterAll(() => {
-  process.kill(harness.pid);
+test.afterAll(async () => {
+  await quitHarness(harness); // a plain kill left the model server behind, holding its port
 });
 
 const activity = (page: Page) => page.getByRole("region", { name: "Activity" });

@@ -738,7 +738,61 @@ GATE_PENDING_VERIFY_RERUN
   ```
   (pytest's temp cleanup warned about a scratch image the failed CPU-time test had left mounted;
   detached by hand under `pytest-of-nm`.)
-GATE_PENDING_LIVE
+- `make live` on macOS, with `/usr/bin/log stream` watching for Seatbelt denials throughout:
+  - first run at `f4c6690`: the `@live_model` Playwright acceptance spec failed before the first
+    keystroke, the harness it started saying "the model server exited with status 1" four times; the
+    watch showed Seatbelt denying the server its own key file, named through `/var` instead of
+    `/private/var` (decisions 2026-10-16; the adapter now resolves its paths, `5f2cec9`). Tail:
+    ```
+    Received string:    "version 0.1.0 · process 81896 · assistant unavailable: the model server exited with status 1"
+    1 failed
+    make: *** [live] Error 1
+    ```
+  - second run at `5f2cec9`: the acceptance spec **passed in 72 s** (type the instruction, the first
+    tool call in the trail, pause by the chord, the job paused, Resume, the proposal line, the table
+    opened); then every Python live test errored at setup, "127.0.0.1:8081 is held by another
+    process": the spec's plain kill of its harness had left the model server running (decisions
+    2026-10-16; the spec now quits through `/v1/shutdown`). Tail:
+    ```
+    ✓  1 tests/live.spec.ts:23:1 › @live_model A28, A24: type the instruction, see real progress, pause mid-run, resume, open the table (1.2m)
+    3 passed, 392 deselected, 6 warnings, 13 errors in 7.15s
+    ```
+  - third run (the spec quitting its harness): the acceptance spec **passed in 66 s** again; the
+    Python suite then ran: 10 passed, but the acceptance, intent and remote tests saw the model
+    server gone ("the model server did not answer (ConnectError)", 0 generations): the gateway
+    file's quit test (D24) stops the session's server, and only the failure tests' wrapper revived
+    it; the shared wrapper now revives a stopped session server for every later harness, and the
+    remote fixture revives it before reading the served models (decisions 2026-10-16). Tail:
+    ```
+    ✓  1 tests/live.spec.ts:23:1 › @live_model A28, A24: type the instruction, see real progress, pause mid-run, resume, open the table (1.1m)
+    2 failed, 10 passed, 392 deselected, 6 warnings, 4 errors in 303.45s (0:05:03)
+    ```
+  - fourth run (the shared wrapper reviving the server): the acceptance spec **passed in 66 s**;
+    Python **12 passed, 4 failed** in 6 min 30 s — the model refused the essay the hung-generation
+    test needed (answered in 1.3 s), two readiness waits were 20 s against a 25 s restart, the quit
+    test read the key file before the stop had unlinked it, and the "minimal features" case ended on
+    an empty answer the loop accepted (decisions 2026-10-16: all four fixed; an empty answer is now
+    refused). A24 under a hung generation was already recorded PASS by the third run (p95 pause
+    0.019 s, cancel 0.036 s). Tail:
+    ```
+    ✓  1 tests/live.spec.ts:23:1 › @live_model A28, A24: type the instruction, see real progress, pause mid-run, resume, open the table (1.1m)
+    4 failed, 12 passed, 392 deselected, 6 warnings in 390.48s (0:06:30)
+    ```
+  - fifth run (the four fixes): the acceptance spec **passed in 78 s**; Python **14 passed, 2 failed**
+    in 7 min 5 s: A28's generated-code part FAIL on the known over-grouping (8 rows by region and
+    service level, values equal to DuckDB's for that grouping; 5 generations, 37 s, 0 repairs), and
+    A29 with four of the five reference instructions as described and "keep features minimal" not:
+    the model set the soft objective and answered instead of asking about a hard maximum (the
+    intent test's step summary printed that answer as empty; it was not). The watch saw, of ours,
+    only the known benign denials plus `file-read-metadata /private/var/db/timezone/zoneinfo`; no
+    sysctl was asked for. Tail:
+    ```
+    ✓  1 tests/live.spec.ts:23:1 › @live_model A28, A24: type the instruction, see real progress, pause mid-run, resume, open the table (1.3m)
+    FAILED tests/integration/test_live_generate.py::test_a28_the_acceptance_instruction_yields_a_committed_table_equal_to_duckdb
+    FAILED tests/integration/test_live_intent.py::test_a29_the_five_reference_instructions
+    2 failed, 14 passed, 393 deselected, 6 warnings in 425.72s (0:07:05)
+    ```
+GATE_PENDING_LIVE_SIXTH
 GATE_PENDING_REVIEW
 GATE_PENDING_FACTS
 

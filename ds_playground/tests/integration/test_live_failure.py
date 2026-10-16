@@ -52,10 +52,31 @@ def reached(client: httpx.Client, job: str, state: str) -> Callable[[], bool]:
     return lambda: bool(job_of(client, job)["state"] == state)
 
 
-def generating(client: httpx.Client, job: str) -> None:
-    """Wait until the assistant job is leased and has had a second to reach the model."""
-    until(lambda: job_of(client, job)["state"] == "running", 60)
-    time.sleep(1.5)
+LONG = (  # what the model is asked for: one of these keeps it generating for seconds
+    "write a long essay about rivers, at least 600 words, as your answer",
+    "list the integers from 1 to 400, one per line, as your answer",
+    "describe each of the seven continents in a paragraph of its own, as your answer",
+)
+
+
+def hung_generation(client: httpx.Client, model_server: Any) -> tuple[str, int]:
+    """An assistant job whose generation is in progress on a server now stopped with SIGSTOP.
+
+    The model may answer a request briefly (it refused the essay once in a second), so the
+    requests are tried in turn until one is still generating 1.5 s after the job began.
+    """
+    for text in LONG:
+        job = str(say(client, text)["job"]["id"])
+        until(reached(client, job, "running"), 60)
+        time.sleep(1.5)
+        pid = int(model_server.process.pid)
+        if job_of(client, job)["state"] == "running":
+            os.kill(pid, signal.SIGSTOP)
+            if job_of(client, job)["state"] == "running":
+                return job, pid
+            os.kill(pid, signal.SIGCONT)
+        ended(client, job, 300)
+    raise AssertionError("no request kept the model generating for 1.5 s")
 
 
 def events(client: httpx.Client) -> list[dict[str, Any]]:
@@ -75,11 +96,7 @@ def test_a24_pause_and_cancel_receipts_are_durable_within_two_seconds_under_a_hu
     """
     client, _ = harness
     ready(client, 300)  # the previous test's harness stopped the lent server: a real restart
-    answer = say(client, "write a long essay about rivers, at least 600 words, as your answer")
-    job = answer["job"]["id"]
-    generating(client, job)
-    pid = model_server.process.pid
-    os.kill(pid, signal.SIGSTOP)  # a genuinely hung generation
+    job, pid = hung_generation(client, model_server)  # a genuinely hung generation
     busy = [
         subprocess.Popen([sys.executable, "-c", "while True: pass"])
         for _ in range(os.cpu_count() or 2)
@@ -153,11 +170,7 @@ def test_r16_a_hung_server_is_killed_at_the_deadline_and_the_assistant_recovers_
     ready(client, 300)  # the previous test's harness stopped the lent server: a real restart
     assistant.binding["limits"]["generation_deadline_seconds"] = 5
     before = pin(assistant.binding)
-    answer = say(client, "write a long essay about rivers, at least 600 words, as your answer")
-    job = answer["job"]["id"]
-    generating(client, job)
-    pid = model_server.process.pid
-    os.kill(pid, signal.SIGSTOP)
+    job, pid = hung_generation(client, model_server)
     done = ended(client, job, 120)
     assert (done["state"], done["reason"]) == (
         "failed",

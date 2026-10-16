@@ -1158,3 +1158,92 @@ def test_r16_a_server_that_keeps_dying_is_started_again_three_times_then_left_un
 def kinds(client: httpx.Client) -> list[str]:
     """Every event's type, in commit order."""
     return [str(e["type"]) for e in client.get("/v1/events").json()["events"]]
+
+
+def test_d17_an_empty_answer_is_refused_and_the_model_is_told_so(
+    harness: Harness, state_dir: Path, script: list[Step], gateway: Scripted
+) -> None:
+    """D17, R17: nothing said settles nothing; the next generation sees the refusal and answers."""
+    client, _ = harness
+    script += [text(""), text("   "), text("Nothing to change.")]
+    ready(client)
+    job, _ = instruct(client, "status of the plan?")
+    assert ended(client, job)["state"] == "succeeded"
+    recorded = calls(state_dir, job)
+    assert [(c["n"], c["state"], (c["refusal"] or {}).get("reason")) for c in recorded] == [
+        (1, "refused", "the answer is empty: say what was done, or ask one question"),
+        (2, "refused", "the answer is empty: say what was done, or ask one question"),
+        (3, "committed", None),
+    ]
+    assert recorded[2]["result"] == {"text": "Nothing to change."}
+    assert [m["content"] for m in gateway.shown[2][-2:]] == [
+        "",
+        "(refused: the answer is empty: say what was done, or ask one question)",
+    ]
+    assert [e["type"] for e in events(client)].count("assistant.call_refused") == 2
+
+
+def test_a29_minimal_features_without_a_hard_maximum_is_the_application_s_own_question(
+    harness: Harness, state_dir: Path, script: list[Step]
+) -> None:
+    """A29: 'keep features minimal' sets the soft objective and asks about a hard maximum itself."""
+    client, _ = harness
+    ready(client)
+    where = [
+        {
+            "field": "/intent_constraints/features/soft_objective",
+            "span": "minimal",
+            "confidence": 0.8,
+            "materiality": "high",
+        }
+    ]
+    minimal = {
+        "op": "replace",
+        "path": "/intent_constraints/features/soft_objective",
+        "value": "minimise_count_among_feasible",
+    }
+    script += [
+        call(
+            "propose_requirement_patch",
+            expected_revision="1.0.0",
+            patch=[minimal],
+            provenance=where,
+            question=None,
+        )
+    ]
+    job, answer = instruct(client, "keep the features minimal")
+    assert ended(client, job)["state"] == "succeeded"
+    applied = calls(state_dir, job)[0]["result"]
+    assert (applied["applied"], applied["revision"], applied["asked"]) == (
+        True,
+        "2.0.0",
+        "Is there a hard maximum number of features, and are source fields or transformed "
+        "features counted?",
+    )
+    state = settled(client, answer["command"])
+    assert (state["state"], state["reason"]) == ("needs_clarification", applied["asked"])
+    cap = {"op": "replace", "path": "/intent_constraints/features/hard_max_count", "value": 3}
+    script += [
+        call(
+            "propose_requirement_patch",
+            expected_revision="2.0.0",
+            patch=[cap],
+            provenance=[where[0] | {"field": cap["path"], "span": "at most 3"}],
+            question=None,
+        ),
+        text("Done: at most 3 features."),
+    ]
+    job, answer = instruct(client, "at most 3 features, minimal")
+    assert ended(client, job)["state"] == "succeeded"
+    assert "asked" not in calls(state_dir, job)[0]["result"]
+    assert settled(client, answer["command"])["state"] == "applied"
+
+
+def settled(client: httpx.Client, command: str) -> dict[str, Any]:
+    """The last state a command reached, with its reason."""
+    found = [
+        e["body"]
+        for e in client.get("/v1/events").json()["events"]
+        if e["type"].startswith("command.") and e["body"]["command"] == command
+    ]
+    return found[-1]

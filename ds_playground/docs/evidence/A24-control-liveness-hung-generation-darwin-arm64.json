@@ -1,0 +1,13 @@
+{
+  "id": "A24",
+  "sprint": 5,
+  "os": "darwin-arm64",
+  "fixture": "the real model server (Metal) stopped mid-generation, 10 busy processes, 20 pause and 20 cancel trials on hung test-worker jobs",
+  "commit": "5f2cec9",
+  "expected": "receipt persists within 2 s at p95 independent of model and task load; no new tool dispatch after an accepted pause; actual stopping shown",
+  "actual": "the model server was stopped with SIGSTOP during a generation and 10 busy processes held every processor; over 20 trials pause was durable in p95 0.063 s (max 0.063 s) and cancel in p95 0.070 s (max 0.116 s); the hung assistant job's own pause was durable in 0.049 s, it showed paused once the server resumed, and no call was dispatched",
+  "outcome": "PASS",
+  "limits": [
+    "the generation itself ends only when the server resumes or the deadline kills it"
+  ]
+}

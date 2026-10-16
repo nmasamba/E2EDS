@@ -133,7 +133,7 @@ def test_a28_the_acceptance_instruction_yields_a_committed_table_equal_to_duckdb
 
     monkeypatch.setattr(workspace, "probes", lambda state: fixed_probes(cpus=8, memory_gib=32))
     client, _ = harness
-    ready(client)
+    ready(client, 300)  # a real restart when an earlier file's quit stopped the server
     data = tmp_path / "orders.csv"
     write_orders(data, orders=500, accounts=50)
     granted = client.post("/v1/grants", json={"purpose": "source_root", "path": str(data)}).json()
