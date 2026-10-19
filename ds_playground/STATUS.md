@@ -27,7 +27,7 @@ Resume point for every session. Read this first, then `docs/decisions.md`, then 
 | 2 | M1 desktop, discovery, plan | merged to `main` (PR #5) | PASS for Sprint 2 scope, see below |
 | 3 | M1 jobs, admission, conversation, control | merged to `main` (PRs #6, #7) | PASS for Sprint 3 scope, see below |
 | 4 | M1 sandboxed native runner | merged to `main` (PR #8) | PASS for Sprint 4 scope, see below |
-| 5 | M1 assistant gateway, open model first | on `claude/sprint-5-assistant-gateway-fc1f11` | in progress |
+| 5 | M1 assistant gateway, open model first | PR #9 open from `claude/sprint-5-assistant-gateway-fc1f11` (owner merges) | verify, SAT, e2e PASS on both OSes; live: A28 FAIL (over-grouping), Linux live red by the D17 deadline fact; see below |
 | 6–11 | M1 | not started | — |
 | 12–20 | M1B, M1C, M1R, M2, M3, M3Z, M4 | not started | — |
 
@@ -972,7 +972,7 @@ health in 16.2 s, 3.1 prompt tok/s, 1.6 generation tok/s.
    On the first run macOS may ask to allow keychain access: expected, the harness reads the server's
    key from the login keychain (service `dev.dsp.assistant`), and the table will be grouped by region
    and service level (the open A28 defect).
-2. Optional: remove `~/Library/Containers/dsp.probe.appsandbox` (28 KB), left by the gap investigation's
+3. Optional: remove `~/Library/Containers/dsp.probe.appsandbox` (28 KB), left by the gap investigation's
    App Sandbox probe; the system refused its deletion from this session.
 
 ## Handoff note
@@ -1008,3 +1008,15 @@ task at a time. On macOS each task mounts a scratch disk image (about 1.7 s); af
 detach only images under `pytest-of-…`, never the owner's. A macOS task's System V segment outlives
 it (`ipcs -m`); remove only segments the tests' tasks made. `make verify-linux` runs bubblewrap
 inside Docker with `seccomp=unconfined`; `/proc` cannot be mounted there.
+
+Sprint 5 notes: the harness's background threads are not daemons (a quit must stop the model server), so a
+test that builds a harness inline stops it in a `finally` (a failed assertion otherwise leaves pytest alive
+for ever), and the `harness` fixture joins the supervisor and waits for the assistant's first event. The
+live suite lends one session server to every harness (`Shared` revives a stopped one; `Lent` also stops it
+for real); the failure tests run last; the Playwright live spec quits its harness through `/v1/shutdown`.
+A mutation script restores sources when each case ends, so never edit `src` while one runs; a mutation that
+disables a kill can leave a real llama-server on port 8081. Two test modules with one basename break
+collection. The OS sandbox matches real paths, so the adapter resolves the model, the binary and the state
+folder first. CI has no llama-server: a test wanting the hash check names any existing file as the binary.
+The Linux container processes prompts at 3.1 tokens per second, so the assistant's full context cannot
+meet D17 there; only the short-prompt live tests can pass in it.

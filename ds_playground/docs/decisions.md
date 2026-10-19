@@ -41,6 +41,10 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   "untitled folder" by Finder when the commit was made. The owner confirmed the rename was accidental; the
   folder was restored and the scaffolding is in the next commit. Pushed history was not rewritten.
 
+- **2026-10-15 — S5 — DECISION — the Sprint 5 choices (owner)** — D1 = A, D2 = A, D3 = A (picked 2026-10-15: Metal full
+  offload), D4 = B, D5 = A; recorded in full under Sprint 5 ("the owner's Sprint 5 choices"), with the D3
+  pick's table in `STATUS.md`.
+
 ## Agent defaults awaiting objection
 
 - **2026-10-01 — S0 — ASSUMPTION — roles** — the owner holds every role (PO, DO, DE, AO, ML, EO, PL, SEC, CL,
@@ -77,6 +81,12 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   for the general data workflow" table has rows R24–R27 pasted into it, and R23, ADR25 and O20 appear out of
   numeric order. The IDs themselves are intact.
 
+- **2026-10-16 — S5 — FINDING — D17's per-call deadline and the CPU contract** — the start-up contract's CPU
+  profile (`-t 2`, no accelerator) processes the assistant's 2,700-token context at 3.1 tokens per second
+  in the Linux container, so one call needs about 15 minutes against D17's 300 s generation deadline; the
+  assistant is unusable at that speed and says so. The suite should say what prompt processing rate the
+  CPU profile must reach, or D17 should bound the output, not the call. Carried for the qualification
+  suite (Sprint 11) and the local runtime's qualification section.
 - **2026-10-02 — S0 — FINDING — model download truncation** — the transfer ended early three times (4.70, 4.79
   and 5.01 of 5.03 GB), once with curl reporting success, and each partial file had a different SHA-256. The
   source's headers confirmed the expected size and digest, so the transfer was resumed until the size matched;

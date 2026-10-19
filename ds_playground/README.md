@@ -60,7 +60,7 @@ uv run dsp plan
 uv run dsp stop
 ```
 
-## Jobs, messages and controls (Sprint 3, in progress)
+## Jobs, messages and controls (Sprint 3)
 
 The window and the harness now run durable jobs. The only workload is the deterministic test worker: queue
 it with "Start the hung test job" in the window (or `POST /v1/jobs` through the harness), then run the
@@ -95,11 +95,12 @@ refused by the OS (`failed: undeclared_read: ... the OS answered ...`, exit stat
 trail shows each job and the reason it failed. The built app finds the runner's environment through
 `DSP_RUNNER_ENV`; without it, sandboxed work is refused.
 
-## Desktop shell (Sprint 2, in progress)
+## Desktop shell (Sprint 2)
 
 A native window on macOS and Linux that starts or reconnects to the local harness and shows the workspace as
 the harness's ledger records it: the nine-stage work trail, the observed hardware (and what could not be
-observed), a provisional plan, and the folders you grant through the native folder dialog. Closing the
+observed), a provisional plan, the folders you grant through the native folder dialog, the activity trail
+with every receipt, the assistant's state in the header and the Results of succeeded jobs. Closing the
 window leaves the harness running; Quit stops the harness the app started, after work in progress finishes. Building it needs Rust, Node 22 and pnpm; on Linux also the system packages listed in the `desktop`
 job of `../.github/workflows/ds-playground.yml`.
 
@@ -120,10 +121,35 @@ executable and builds the bundle (`.app` on macOS; deb and AppImage on Linux) un
 `desktop/src-tauri/target/release/bundle/`; the app starts its own bundled harness, with no terminal and no uv.
 `make e2e` runs the renderer and shell tests against a real harness and then launches the built app, so run
 `make desktop-build` first. `make sat` runs the sprint acceptance tests and writes their evidence records to
-`docs/evidence/`. `make live` runs the tests that need the local open model (`llama-server` and the
-Qwen3-8B file under `~/.local/share/dsp/`, which `make verify` and `make sat` leave out) and writes their
-evidence; `make live-linux` runs them in the Linux container, building llama.cpp there once into a cached
-Docker volume.
+`docs/evidence/`.
+
+## Assistant (Sprint 5)
+
+Type an instruction in the window's composer ("load this CSV and show transit hours by service level", "use
+account_num as the ID") and the local open model proposes typed steps that the harness checks and runs: it
+inspects a granted file's schema, proposes a requirement change with where in your words it came from (the
+trail shows a readback and the diff), writes SQL or Python that runs as a sandboxed task, reads a bounded
+preview of the result and repairs a failed task at most twice; the trail shows every call, refusal and
+answer, marked as a proposal, and the Results section opens a committed table. Pause and cancel reach the
+jobs the assistant submitted. The model is llama-server b11104 with Qwen3-8B Q4_K_M under
+`~/.local/share/dsp/` (size and SHA-256 verified before every load), confined by the OS (Seatbelt with Metal on
+macOS; bubblewrap on Linux) with its API key from the OS secret store; without it the workspace still opens
+and the header says `assistant unavailable: <reason>`. A remote OpenAI-compatible endpoint can be opted in
+with a binding record at `<profile>/assistant/binding.json`: its key comes from the OS secret store, its data
+policy and spend limit are shown before first use, and it never falls back to the local model. Known
+(STATUS, open defects): the acceptance instruction's table comes grouped by region and service level.
+
+```bash
+make live
+```
+
+```bash
+make live-linux
+```
+
+`make live` runs the tests that need the model (which `make verify` and `make sat` leave out), the Playwright
+acceptance spec first, and writes their evidence; `make live-linux` runs the Python ones in the Linux
+container, building llama.cpp there once into a cached Docker volume. Nothing leaves the machine.
 
 ## Development
 
