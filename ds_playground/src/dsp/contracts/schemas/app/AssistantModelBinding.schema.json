@@ -1,0 +1,403 @@
+{
+  "$comment": "0.4.0 adds the remote, OpenAI-compatible mode (the skill's binding 2, opt-in by D4); a local binding keeps the suite's 0.3.0. Never a fallback for one another.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.4.0"
+    },
+    "planning_only": {
+      "type": "boolean"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "revision": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "tenant_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+      "readOnly": true
+    },
+    "project_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "state": {
+      "enum": [
+        "proposed",
+        "qualified",
+        "suspended",
+        "retired"
+      ]
+    },
+    "mode": {
+      "const": "remote_openai_compatible"
+    },
+    "profile_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "enum": [
+            "huggingface",
+            "ollama",
+            "vllm",
+            "llama.cpp",
+            "other"
+          ]
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "name",
+        "model"
+      ]
+    },
+    "endpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "base_url": {
+          "type": "string",
+          "pattern": "^(https?://[^/\\s]+(/[^\\s]*)?|unix:///[^\\s]+)$"
+        },
+        "api_key_ref": {
+          "type": "string",
+          "pattern": "^secret://local/[A-Za-z0-9._-]+$"
+        }
+      },
+      "required": [
+        "base_url",
+        "api_key_ref"
+      ]
+    },
+    "placement": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "type": "string",
+          "minLength": 1
+        },
+        "leaves_machine": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "host",
+        "leaves_machine"
+      ]
+    },
+    "data_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allowed": {
+          "enum": [
+            "none",
+            "synthetic_fixtures_only"
+          ]
+        },
+        "sealed_data": {
+          "const": false
+        },
+        "secrets": {
+          "const": false
+        }
+      },
+      "required": [
+        "allowed",
+        "sealed_data",
+        "secrets"
+      ]
+    },
+    "spend": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "price_per_million_tokens_minor": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "approved_by": {
+          "const": "owner"
+        },
+        "approved_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "price_per_million_tokens_minor",
+        "approved_by",
+        "approved_at"
+      ]
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "context_tokens": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_input_tokens": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_output_tokens": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "concurrent_generations": {
+          "const": 1
+        },
+        "generation_deadline_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_model_calls_per_task": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_code_repairs_per_task": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_generation_seconds_per_task": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_external_charge_minor": {
+          "const": 0
+        },
+        "currency": {
+          "const": "GBP"
+        }
+      },
+      "required": [
+        "context_tokens",
+        "max_input_tokens",
+        "max_output_tokens",
+        "concurrent_generations",
+        "generation_deadline_seconds",
+        "max_model_calls_per_task",
+        "max_code_repairs_per_task",
+        "max_generation_seconds_per_task",
+        "max_external_charge_minor",
+        "currency"
+      ]
+    },
+    "decoding": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "temperature": {
+          "type": "number",
+          "minimum": 0
+        },
+        "top_p": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        }
+      },
+      "required": [
+        "temperature",
+        "top_p"
+      ]
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "remote_fallback": {
+          "const": false
+        },
+        "automatic_downloads": {
+          "const": false
+        }
+      },
+      "required": [
+        "remote_fallback",
+        "automatic_downloads"
+      ]
+    },
+    "observed": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "model": {
+              "type": "string",
+              "minLength": 1
+            },
+            "probe_seconds": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "model",
+            "probe_seconds"
+          ]
+        }
+      ]
+    },
+    "operator_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "payer_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "qualification": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "planned",
+            "passed",
+            "failed",
+            "inconclusive"
+          ]
+        },
+        "report_ref": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                },
+                "revision": {
+                  "type": "string",
+                  "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+                },
+                "sha256": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^sha256:[a-f0-9]{64}$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "revision",
+                "sha256"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "observed_hardware_ref": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                },
+                "revision": {
+                  "type": "string",
+                  "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+                },
+                "sha256": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^sha256:[a-f0-9]{64}$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "revision",
+                "sha256"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "status",
+        "report_ref",
+        "observed_hardware_ref"
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "planning_only",
+    "id",
+    "revision",
+    "tenant_ref",
+    "project_ref",
+    "state",
+    "mode",
+    "profile_id",
+    "provider",
+    "endpoint",
+    "placement",
+    "data_policy",
+    "spend",
+    "limits",
+    "decoding",
+    "privacy",
+    "observed",
+    "operator_ref",
+    "payer_ref",
+    "qualification"
+  ]
+}

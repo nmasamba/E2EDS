@@ -9,7 +9,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview --port 1420 --strictPort",
     "tauri": "tauri",
-    "test": "vitest run src && playwright test"
+    "test": "vitest run src && playwright test --grep-invert @live_model"
   },
   "dependencies": {
     "@tauri-apps/api": "2.12.0",

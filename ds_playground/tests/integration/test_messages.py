@@ -117,7 +117,11 @@ def test_a27_a_dropped_acknowledgement_then_the_same_id_gives_one_command(
     )
     assert len(store.current(CTX, "ConversationCommand")) == 1
     events = client.get("/v1/events").json()["events"]
-    assert [event["type"] for event in events] == ["message.received", "command.rejected"]
+    assert [event["type"] for event in events] == [
+        "assistant.unavailable",  # the harness start: no model here
+        "message.received",
+        "command.rejected",
+    ]
 
 
 def test_a27_reconnect_with_a_cursor_replays_messages_in_order(api: TestClient) -> None:
@@ -145,7 +149,7 @@ def test_a27_reconnect_with_a_cursor_replays_messages_in_order(api: TestClient) 
         ErrorCode.ASSISTANT_UNAVAILABLE,
         "rejected",
     )
-    assert rejected["body"]["reason"] == "no assistant is bound yet"
+    assert rejected["body"]["reason"] == "the assistant has not started"
 
 
 def test_d18_a_body_over_16_kib_is_refused_before_it_is_parsed(api: TestClient) -> None:

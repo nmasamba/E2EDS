@@ -13,6 +13,7 @@ import time
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -36,6 +37,18 @@ def state_dir(tmp_path: Path) -> Iterator[Path]:
     if pid:
         with contextlib.suppress(ProcessLookupError):
             os.kill(pid, signal.SIGTERM)
+
+
+@pytest.fixture(autouse=True)
+def no_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """No test loads the 5 GB model by accident: the model folder is empty unless a test says."""
+    monkeypatch.setenv("DSP_MODEL_DIR", str(tmp_path / "no-models"))
+
+
+@pytest.fixture
+def assistant() -> None:
+    """The assistant a harness is mounted with: none, so it builds its own (no model, see above)."""
+    return None
 
 
 @pytest.fixture
@@ -148,7 +161,7 @@ class Clock:
 
 
 @pytest.fixture
-def harness(state_dir: Path) -> Iterator[tuple[httpx.Client, Clock]]:
+def harness(state_dir: Path, assistant: Any) -> Iterator[tuple[httpx.Client, Clock]]:
     """A real harness served from this process on a loopback socket, on a clock the test moves.
 
     Worker processes find it through ``harness.json`` like any harness; the client it yields is
@@ -161,7 +174,7 @@ def harness(state_dir: Path) -> Iterator[tuple[httpx.Client, Clock]]:
     (state_dir / "harness.json").write_text(json.dumps({"port": port, "token": token, "pid": 0}))
     app = create_app(token, port)
     server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
-    workspace.mount(app, state_dir, server, clock)
+    workspace.mount(app, state_dir, server, clock, assistant)
     thread = threading.Thread(target=server.run, kwargs={"sockets": [listener]}, daemon=True)
     thread.start()
     client = httpx.Client(
@@ -175,9 +188,16 @@ def harness(state_dir: Path) -> Iterator[tuple[httpx.Client, Clock]]:
             break
         except httpx.HTTPError:
             time.sleep(0.05)
+    for _ in range(200):  # a started harness has said what its assistant is (ready or not)
+        events = client.get("/v1/events").json()["events"]
+        if any(e["type"].startswith("assistant.") for e in events):
+            break
+        time.sleep(0.05)
     yield client, clock
     server.should_exit = True
     thread.join(10)
+    if supervisor := getattr(app.state, "supervisor", None):
+        supervisor.join(60)  # the assistant's stop is part of the quit; a lent server is shared
     (state_dir / "harness.json").unlink()
 
 

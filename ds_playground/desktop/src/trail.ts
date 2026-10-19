@@ -120,9 +120,12 @@ export function freshness(observedAt: string | null, now: number) {
 /** Every job's latest state from its own events, the most recently queued first. */
 export function jobs(log: LedgerEvent[]): JobView[] {
   const seen = new Map<string, JobView>();
+  const parents = new Map<string, string>();
   for (const { type, body } of log) {
     const state = jobState(type, body);
     if (!state) continue;
+    const input = (body.input ?? {}) as Record<string, unknown>;
+    if (type === "job.queued" && typeof input.parent === "string") parents.set(String(body.job), input.parent);
     seen.set(String(body.job), {
       id: String(body.job),
       state,
@@ -130,7 +133,22 @@ export function jobs(log: LedgerEvent[]): JobView[] {
       fence: Number(body.fence),
     });
   }
-  return [...seen.values()].reverse();
+  // A job the assistant submitted is addressed through its parent while that parent is live.
+  const live = (id: string) => seen.has(id) && !ENDED.has(seen.get(id)!.state);
+  return [...seen.values()].filter((job) => !live(parents.get(job.id) ?? "")).reverse();
+}
+
+export type Result = { job: string; sha256: string };
+
+/** Every committed result, newest first: the digest of the record the job's success names. */
+export function results(log: LedgerEvent[]): Result[] {
+  const found: Result[] = [];
+  for (const { type, body } of log) {
+    const input = (body.input ?? {}) as Record<string, unknown>;
+    if (type === "job.succeeded" && typeof body.job === "string" && typeof input.sha256 === "string")
+      found.push({ job: body.job, sha256: input.sha256 });
+  }
+  return found.reverse();
 }
 
 /** The job the header's controls act on: the most recent one that has not ended. */
@@ -170,7 +188,10 @@ export function activity(log: LedgerEvent[]): Activity[] {
       add(`Job ${tail(body.job)}: ${said}${attempt}`, String(input.reason ?? input.because ?? ""));
     } else if (type === "workload.revised") {
       const impact = body.impact as { stale: unknown[]; holds: unknown[] };
-      const changed = (body.patch as { path: string }[]).map((op) => op.path.split("/").at(-1)).join(", ");
+      const changed =
+        typeof body.readback === "string"
+          ? body.readback
+          : (body.patch as { path: string }[]).map((op) => op.path.split("/").at(-1)).join(", ");
       add(`Requirements ${body.from} → ${body.to}: ${changed}; ${impact.stale.length} stale, ${impact.holds.length} held`);
     } else if (type === "admission.rejected") add(`Admission refused: ${body.reason}`);
     else if (type === "discovery.finished") add(`Environment observed: ${body.evidence_source}`);
@@ -178,6 +199,32 @@ export function activity(log: LedgerEvent[]): Activity[] {
     else if (type === "grant.created") add(`Folder granted: ${body.label}`);
     else if (type === "grant.revoked") add("Folder removed");
     else if (type === "export.committed") add(`Export committed: ${body.version}`);
+    else if (type === "assistant.ready") add(`Assistant ready: ${body.profile}`, shown(body) || undefined);
+    else if (type === "assistant.unavailable") add(`Assistant unavailable: ${body.reason}`);
+    else if (type === "assistant.call_dispatched") add(`Assistant call ${body.n}: ${body.tool}`);
+    else if (type === "assistant.call_refused") add(`Assistant call ${body.n}: ${body.tool}`, `refused · ${body.reason}`);
+    else if (type === "assistant.answered") add(`Assistant (a proposal, not a result): ${body.text}`);
   }
   return items;
+}
+
+export type AssistantView = { state: string; reason: string; profile: string; shown: string };
+
+/** A remote binding's placement, data policy and spend limit, as the ready event shows them (D4). */
+function shown(body: Record<string, unknown>): string {
+  const policy = body.data_policy as { allowed?: string } | undefined;
+  if (!policy) return "";
+  const placement = body.placement as { host?: string } | undefined;
+  const limit = Number(body.spend_limit_minor ?? 0) / 100;
+  return `remote ${placement?.host ?? "?"} · ${String(policy.allowed).replace(/_/g, " ")} · spend limit £${limit.toFixed(2)}`;
+}
+
+/** The assistant as its last committed event left it: never ready on a message's say-so. */
+export function assistant(log: LedgerEvent[]): AssistantView {
+  let view: AssistantView = { state: "unavailable", reason: "not started", profile: "", shown: "" };
+  for (const { type, body } of log) {
+    if (type === "assistant.ready") view = { state: "ready", reason: "", profile: String(body.profile), shown: shown(body) };
+    else if (type === "assistant.unavailable") view = { state: "unavailable", reason: String(body.reason), profile: "", shown: "" };
+  }
+  return view;
 }

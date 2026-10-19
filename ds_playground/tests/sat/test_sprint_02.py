@@ -44,6 +44,7 @@ def test_sprint_2_folders_hardware_and_plan_survive_a_restart(
     pid = first.get("/v1/status").json()["pid"]
     before = [first.get(route).json() for route in ROUTES]
     assert [event["type"] for event in before[3]["events"]] == [
+        "assistant.unavailable",  # the assistant's state at this start: no model here
         "grant.created",
         "grant.created",
         "discovery.finished",
@@ -54,7 +55,12 @@ def test_sprint_2_folders_hardware_and_plan_survive_a_restart(
     assert harness_stopped(home)
     reopened = connect(home)
     assert reopened.get("/v1/status").json()["pid"] != pid
-    assert [reopened.get(route).json() for route in ROUTES] == before
+    after = [reopened.get(route).json() for route in ROUTES]
+    assert [event["type"] for event in after[3]["events"][len(before[3]["events"]) :]] == [
+        "assistant.unavailable"  # the only new event: this start's assistant state
+    ]
+    assert after[:3] == before[:3]
+    assert after[3]["events"][: len(before[3]["events"])] == before[3]["events"]
     assert str(tmp_path) not in json.dumps(before)
 
 

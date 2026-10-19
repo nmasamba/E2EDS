@@ -1,5 +1,45 @@
 # Changelog
 
+## Sprint 5 — assistant gateway, open model first (2026-10-16; gate run on both OSes, two live records open)
+
+- Cancel run is Cmd+Shift+K on macOS and Ctrl+Shift+K on Linux (in the window and in the native menu);
+  Cmd+. reached nothing in the built macOS app.
+- The local open model: the harness verifies the model's size and SHA-256, starts llama-server confined
+  by the OS (Seatbelt on macOS with Metal; bubblewrap on Linux, where it listens on a UNIX socket),
+  with its API key from the OS secret store in a 0600 file, and marks the assistant ready only after the
+  health endpoint and a typed tool-response probe. The workspace opens with the model absent and the
+  header and trail say `assistant unavailable: <reason>`. `make live` and `make live-linux` run the
+  model tests; `make verify` leaves them out.
+- An instruction becomes an assistant job: the assistant proposes typed tool calls (inspect a granted
+  CSV's schema, propose a requirement patch, write a code artifact, submit a code task, inspect its
+  results), the application validates and runs each one, and the trail shows every call, refusal and
+  the assistant's answer, marked as a proposal. Pause and cancel reach the jobs the assistant
+  submitted; the instruction's command is accepted, then applied, rejected or needs clarification.
+- Requirement changes from the assistant are typed patches with where in your words each came from;
+  the trail shows a plain readback of each revision; "Pause now; exclude region before continuing"
+  pauses first; a budget change through the assistant is refused for your own action.
+- The assistant writes SQL or Python, runs it in the sandbox as a job, sees a bounded preview of the
+  result and repairs a failed task at most twice; the Results section opens a committed table.
+- Every failure of the model ends in `assistant unavailable` with its reason, the conversation and
+  the controls untouched and no other model tried: a missing or corrupt model, a server that does not
+  fit its memory limit, a hung server (killed at the generation deadline, the task failed with that
+  reason, the same binding restarted) and a harness restart, which never dispatches a committed tool
+  call twice. Pause and cancel receipts stay within 2 s with the model stopped mid-generation.
+- Opt-in remote binding (D4 = B): a record at `<profile>/assistant/binding.json` points the assistant
+  at an OpenAI-compatible endpoint, with its key read from the OS secret store, the project's data
+  policy and the owner's spend limit shown in the header and trail before the first instruction, a
+  charge the limit cannot cover refused before it is sent, and never the local model in its place.
+  Tested against llama-server itself; no proprietary adapter.
+- After the integrity review: a proposal can no longer set the privacy status (the application
+  derives it) or add a role for a field the instruction never names, and its provenance must name
+  the changed path or its parent; the generation deadline now bounds a generation that keeps
+  streaming, not only the wait for its next chunk; the memory limit on Metal counts the mapped
+  weights; the input limit counts the tool catalogue.
+- An empty answer from the assistant is refused and shown to it, so an instruction never ends
+  with nothing said; the next generation answers or asks.
+- "Keep features minimal" always ends with the question about a hard maximum (and whether
+  source fields or transformed features count), asked by the application when the model does not.
+
 ## Sprint 4 — sandboxed native runner (2026-10-13)
 
 - The activity trail is the one place outcomes appear: command receipts and their states with one wording,

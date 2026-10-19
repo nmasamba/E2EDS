@@ -6,6 +6,7 @@ command's state are derived here. The exact control phrases are recognised deter
 other text is an instruction, and with no assistant bound an instruction is rejected as such.
 """
 
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -17,7 +18,6 @@ from dsp.contracts.schemas import validate
 from dsp.ports import Ledger
 
 MAX_BYTES = 16 * 1024  # D18
-NO_ASSISTANT = "no assistant is bound yet"
 CONTROLS = {
     "pause": "pause",
     "pause now": "pause",
@@ -28,11 +28,33 @@ CONTROLS = {
 }
 
 
+LEADING = re.compile(
+    r"^\s*(?P<phrase>"
+    + "|".join(re.escape(p) for p in CONTROLS)
+    + r")\s*[;.,:\n]\s*(?P<rest>\S.*)$",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def leading(text: str) -> tuple[str, str] | None:
+    """A direct message opening with an exact control phrase, then more: the control and the rest.
+
+    "Pause now; exclude region before continuing" is a pause first, then an instruction. A phrase
+    quoted, embedded or followed by other words on the same clause is no control.
+    """
+    found = LEADING.match(text)
+    if found is None:
+        return None
+    return CONTROLS[found.group("phrase").lower()], found.group("rest").strip()
+
+
 def classify(text: str) -> str:
     """The operation the text asks for: a control phrase, a known change, else an instruction."""
     phrase = text.strip().lower().rstrip(".!")
     if phrase in CONTROLS:
         return CONTROLS[phrase]
+    if split := leading(text):
+        return split[0]
     return "change_requirements" if parse_change(text) else "instruction"
 
 
@@ -82,7 +104,8 @@ def receive(
 
     The same client message ID again returns the same receipt (A27: a lost acknowledgement); the
     same ID with other text is an IDEMPOTENCY_CONFLICT. The first message of a conversation creates
-    it. An instruction is then rejected, honestly, because no assistant is bound yet.
+    it. An instruction is settled by the control path: accepted as an assistant job when the
+    assistant is ready, otherwise rejected with the assistant's actual state.
     """
     if len(text.encode()) > MAX_BYTES:
         raise DspError(ErrorCode.INPUT_INVALID, "the message is larger than 16 KiB")
@@ -147,16 +170,6 @@ def receive(
     }
     validate("ConversationCommand", command)
     _record(ctx, command, "message.received", body, [*objects, command], ledger)
-    if command["operation"] == "instruction":
-        command = settle(
-            ctx,
-            command,
-            "rejected",
-            because=ErrorCode.ASSISTANT_UNAVAILABLE,
-            reason=NO_ASSISTANT,
-            ledger=ledger,
-            clock=clock,
-        )
     return command
 
 

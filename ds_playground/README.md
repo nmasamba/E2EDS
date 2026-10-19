@@ -65,7 +65,7 @@ uv run dsp stop
 The window and the harness now run durable jobs. The only workload is the deterministic test worker: queue
 it with "Start the hung test job" in the window (or `POST /v1/jobs` through the harness), then run the
 worker against your profile; pause, resume and cancel from the header, the keyboard (Cmd/Ctrl+P and
-Cmd/Ctrl+., handled by the window; the native menu has the same items) or by typing `pause now`, `resume`,
+Cmd/Ctrl+Shift+K, handled by the window; the native menu has the same items) or by typing `pause now`, `resume`,
 `cancel this run` or `status` in the composer;
 change a requirement with `exclude field region`. Every receipt and state appears in the activity trail.
 
@@ -120,7 +120,10 @@ executable and builds the bundle (`.app` on macOS; deb and AppImage on Linux) un
 `desktop/src-tauri/target/release/bundle/`; the app starts its own bundled harness, with no terminal and no uv.
 `make e2e` runs the renderer and shell tests against a real harness and then launches the built app, so run
 `make desktop-build` first. `make sat` runs the sprint acceptance tests and writes their evidence records to
-`docs/evidence/`.
+`docs/evidence/`. `make live` runs the tests that need the local open model (`llama-server` and the
+Qwen3-8B file under `~/.local/share/dsp/`, which `make verify` and `make sat` leave out) and writes their
+evidence; `make live-linux` runs them in the Linux container, building llama.cpp there once into a cached
+Docker volume.
 
 ## Development
 

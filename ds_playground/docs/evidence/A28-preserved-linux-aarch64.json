@@ -3,13 +3,13 @@
   "sprint": 4,
   "os": "linux-aarch64",
   "fixture": "failed-attempt",
-  "commit": "9be5f61",
+  "commit": "f4c6690",
   "expected": "a task's source is kept in the content store under the digest its CodeTask records, and each attempt's start and end are events",
   "actual": "failed: crash: ValueError: a failed attempt is kept too; source stored by digest; 1 attempt started and ended",
   "outcome": "PASS",
   "limits": [
     "OS-sandbox assurance for one local user (Seatbelt on macOS, bubblewrap and seccomp on Linux): not VM isolation, and not a boundary for hostile multi-tenant code",
-    "repairs (at most two per task, D17) need the assistant of Sprint 5"
+    "repairs (at most two, D17) are the assistant's, recorded by the Sprint 5 live test"
   ],
   "assurance": "os_sandbox_single_user"
 }

@@ -1,4 +1,4 @@
-.PHONY: install runner-env format test-fast sat sat-linux verify verify-linux harness-bin desktop-dev desktop-build e2e
+.PHONY: install runner-env format test-fast sat sat-linux verify verify-linux live live-linux harness-bin desktop-dev desktop-build e2e
 
 # rustup from Homebrew is keg-only on macOS; the extra entries are harmless elsewhere.
 export PATH := /opt/homebrew/opt/rustup/bin:$(HOME)/.cargo/bin:$(PATH)
@@ -21,10 +21,23 @@ test-fast: runner-env  ## inner loop: no slow, sandbox, model, desktop or networ
 	uv run pytest -m "not slow and not sandbox and not live_model and not remote_model and not desktop and not network"
 
 sat: runner-env        ## sprint acceptance tests, cumulative; writes evidence records to docs/evidence
-	DSP_EVIDENCE=docs/evidence DSP_COMMIT=$$(git rev-parse --short HEAD) uv run pytest tests/sat
+	DSP_EVIDENCE=docs/evidence DSP_COMMIT=$$(git rev-parse --short HEAD) uv run pytest -m "not live_model" tests/sat
 
 verify: runner-env     ## the sprint gate on this machine
 	sh tools/verify.sh
+
+live: runner-env       ## the local open model's tests: the real server, confined, on this machine
+	cd desktop && pnpm exec playwright test --grep @live_model
+	DSP_EVIDENCE=docs/evidence DSP_COMMIT=$$(git rev-parse --short HEAD) uv run pytest -m live_model
+
+# The same tests in the Linux container: llama.cpp b11104 built there once into a named volume from the
+# checkout beside the model (CPU only), the model mounted read-only, bubblewrap confining the server.
+LLAMA_SRC ?= $(HOME)/.local/share/dsp/llama.cpp
+MODEL_DIR ?= $(HOME)/.local/share/dsp/models
+live-linux:            ## the live_model tests in the Linux container (D2)
+	docker volume create dsp-llama-build >/dev/null
+	$(MAKE) verify-linux LINUX_MOUNTS='-v "$(LLAMA_SRC)":/llama:ro -v dsp-llama-build:/build -v "$(MODEL_DIR)":/models:ro -v "$(CURDIR)/docs/evidence":/evidence' \
+		LINUX_RUN='DSP_COMMIT=$(shell git rev-parse --short HEAD) sh tools/live_linux.sh'
 
 LINUX = docker run --rm --security-opt seccomp=unconfined -v "$(CURDIR)/..":/repo:ro -w /repo/ds_playground \
 	-e UV_PROJECT_ENVIRONMENT=/tmp/venv -e UV_CACHE_DIR=/tmp/uv -e RUFF_CACHE_DIR=/tmp/ruff \
@@ -38,7 +51,7 @@ verify-linux:   ## the same gate in a Linux container: repo read-only, bubblewra
 
 sat-linux:      ## every sprint's acceptance tests in the Linux container; evidence copied to docs/evidence
 	$(MAKE) verify-linux LINUX_MOUNTS='-v "$(CURDIR)/docs/evidence":/evidence' \
-		LINUX_RUN='DSP_EVIDENCE=/tmp/evidence DSP_COMMIT=$(shell git rev-parse --short HEAD) uv run pytest tests/sat'
+		LINUX_RUN='DSP_EVIDENCE=/tmp/evidence DSP_COMMIT=$(shell git rev-parse --short HEAD) uv run pytest -m \"not live_model\" tests/sat'
 
 
 harness-bin:    ## freeze the harness into one executable, named for the target triple, for the bundle

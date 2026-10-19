@@ -74,7 +74,8 @@ def launch(binary: Path, state_dir: Path) -> Iterator[Callable[[], subprocess.Po
     started: list[subprocess.Popen[bytes]] = []
 
     def start() -> subprocess.Popen[bytes]:
-        app = subprocess.Popen([binary], env={**os.environ, "DSP_HOME": str(state_dir)})
+        environment = {**os.environ, "DSP_HOME": str(state_dir), "DSP_MODEL_DIR": str(state_dir)}
+        app = subprocess.Popen([binary], env=environment)
         started.append(app)
         return app
 
@@ -102,6 +103,18 @@ def settled(app: subprocess.Popen[bytes]) -> None:
 
     eventually(spawned)  # the shell spawns it as it starts, not before launch() returns
     eventually(gone)
+
+
+def closed(app: subprocess.Popen[bytes]) -> int:
+    """The shell's exit status within 20 s; when it does not end, what is left says why."""
+    try:
+        return app.wait(20)
+    except subprocess.TimeoutExpired:
+        left = [
+            subprocess.run(seen, capture_output=True, text=True, check=False).stdout
+            for seen in (["wmctrl", "-l"], ["pgrep", "-af", "dsp-desktop"])
+        ]
+        raise AssertionError(f"the shell did not end in 20 s; windows and shells: {left}") from None
 
 
 def press(keys: str) -> None:
@@ -163,7 +176,12 @@ def inspect_window(binary: Path, state_dir: Path) -> None:
                 answer = harness(state_dir).get("/v1/status").json()
                 assert f"version {answer['version']} · process {answer['pid']}" in text
                 assert "Environment and context\n● Completed" in text
-                assert "Outcome: INSUFFICIENT_EVIDENCE. local-native-draft is unqualified" in text
+                # the plan's line comes with its own request, like the snapshot's below
+                eventually(
+                    lambda: shown(
+                        "Outcome: INSUFFICIENT_EVIDENCE. local-native-draft is unqualified"
+                    )
+                )
                 snapshot = harness(state_dir).get("/v1/hardware").json()
                 cpus = snapshot["cpu"]["visible_logical_processors"]
                 # the window reads the snapshot apart from the plan, so it may show later
@@ -230,7 +248,7 @@ def test_the_built_app_works_and_survives_close_kill_crash_and_a_second_instance
     assert owner | {"pid": 0} == {"status": "ok", "pid": 0, "version": version("dsp")}
 
     def opened() -> None:
-        assert kinds(bundled) == ["discovery.finished", "plan.proposed"]
+        assert kinds(bundled) == ["assistant.unavailable", "discovery.finished", "plan.proposed"]
 
     eventually(opened)
     assert bundled.get("/v1/hardware").json()["evidence_source"] == "observed"
@@ -283,18 +301,18 @@ def test_the_built_app_works_and_survives_close_kill_crash_and_a_second_instance
     replaced = eventually(lambda: harness(state_dir))
     successor = replaced.get("/v1/status").json()["pid"]
     assert successor != owner["pid"]
-    assert kinds(replaced) == history
+    assert kinds(replaced) == [*history, "assistant.unavailable"]  # the new harness's own state
 
     if LINUX:
         # A real window close, asked of the window manager, only detaches: the app ends and the
         # harness it started keeps running.
         xdotool("search", "--sync", "--onlyvisible", "--name", "^DS Playground$")
         subprocess.run(["wmctrl", "-F", "-c", "DS Playground"], check=True, timeout=60)
-        assert fourth.wait(20) == 0
+        assert closed(fourth) == 0
         assert replaced.get("/v1/status").json()["pid"] == successor
         fifth = launch()
         press("ctrl+q")  # a real Quit from a shell that did not start the harness leaves it too
-        assert fifth.wait(20) == 0
+        assert closed(fifth) == 0
         assert replaced.get("/v1/status").json()["pid"] == successor
     else:
         fourth.terminate()  # an open window would start another harness once this one stops
@@ -307,7 +325,7 @@ def test_the_built_app_works_and_survives_close_kill_crash_and_a_second_instance
         owning = launch()  # a shell that started its own harness stops it on a real Quit
         eventually(lambda: harness(state_dir))
         press("ctrl+q")
-        assert owning.wait(20) == 0
+        assert closed(owning) == 0
         assert harness_stopped(state_dir)
         (state_dir / "harness.json").unlink()
     seen = (
@@ -401,7 +419,7 @@ def drive_controls(binary: Path, state_dir: Path) -> None:
                 eventually(lambda: shown(first, "queued, waiting for a worker"))
                 workers.append(worker(state_dir, job))
                 eventually(lambda: shown(first, "running (attempt 2, fence 1)"))
-                press("ctrl+period")  # the real Cancel shortcut
+                press("ctrl+shift+k")  # the real Cancel shortcut
                 eventually(lambda: shown(first, "◇ Inconclusive · cancelled"))
                 assert workers[-1].wait(30) == 0
                 shown(first, f"Job {job[-6:]}: cancelled (attempt 2, fence 2)")

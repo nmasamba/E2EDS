@@ -540,6 +540,571 @@ KIND: DECISION (owner or agent choice), ASSUMPTION, DEVIATION (from the suite or
   trail shows. Sprint 4's housekeeping makes the activity trail the one place every outcome appears,
   removes the inline notes, and tests the wording once.
 
+## Sprint 5
+
+- **2026-10-15 — S5 — DECISION — the owner's Sprint 5 choices (prompt 5.0)** — D1 = A: the Cancel run chord is
+  `CmdOrCtrl+Shift+K` on both OSes, a letter chord like the working Cmd+P. D2 = A: `make live-linux` builds
+  llama.cpp b11104 inside the verify container (a named Docker volume as its build cache), mounts the model
+  read-only and runs the `live_model` tests there. D3 = A: after 5.1 the build stops at a checkpoint with a
+  measured table (CPU 2 threads, CPU all cores, Metal full offload: load time, first-token latency, tokens/s,
+  peak memory) and waits for the owner's pick. D4 = B: 5.6 ships the OpenAI-compatible adapter only, tested
+  against a local OpenAI-compatible server (llama-server itself); no proprietary adapter, no keys, £0 spend,
+  only synthetic fixtures may leave the machine. D5 = A: before any technical HALT one bounded investigation
+  workflow may run (at most 9 agents, cost stated first); the `integrity-reviewer` runs once at 5.7.
+- **2026-10-15 — S5 — DECISION — Cancel run is CmdOrCtrl+Shift+K (5.0, D1)** — closes the 2026-10-13 defect
+  as far as code can: the renderer's chord table now keys on the chord without the platform modifier
+  (`p`, `shift+k`), so Shift is part of a chord rather than a reason to ignore it; the native menu item says
+  `CmdOrCtrl+Shift+K`; Playwright presses Meta+Shift+K on macOS and Ctrl+Shift+K on Linux against a real
+  harness, and the Linux built-app test presses the real Ctrl+Shift+K through xdotool. Mutation-checked:
+  with the old chord back in the renderer the Playwright spec fails. Whether the built macOS app delivers
+  Cmd+Shift+K is the owner's press at the gate (the Cmd+. failure was seen only there).
+- **2026-10-15 — S5 — DECISION — the launch contract as this build's flags (5.1)** — llama-server b11104
+  (0.4.1-dev) on this Mac, each flag proven by a run: `-m`, `--host 127.0.0.1 --port 8081`, `-c 8192`,
+  `-np 1`, `-t <threads>`, `-ngl <layers>`, `--offline`, `--no-webui` (`/` answers 404), `--no-agent` and
+  no `--tools`, `--no-slots` (`/slots` answers 501; it would show prompt content), `--log-disable` (the
+  server wrote 51 bytes of start-up text to its own stderr and nothing afterwards; no log file), `--reasoning
+  off` (an answer carries no `reasoning_content` and no `<think>`: proven; the chat-template kwargs route was
+  not needed), `--jinja` (tool calls come back as OpenAI-shaped `tool_calls` with `tool_choice: required`).
+  `/metrics` is off by default (501); `GET /props` answers with the server's settings and chat template (no
+  prompt content) and is used once at readiness to pin the template's digest; `POST /props` is off. The API
+  key is generated once (`secrets.token_urlsafe(32)`), kept in the OS secret store under
+  `secret://local/assistant-api-key`, written to a 0600 file under the state directory and passed with
+  `--api-key-file`; it is in no process's arguments or environment (checked through `ps`), and the file is
+  deleted when the server stops. The seed and temperature are per request, so the live tests fix them.
+- **2026-10-15 — S5 — DECISION — the model server is confined by the OS (5.1)** — macOS: a deny-by-default
+  Seatbelt profile applied by `sandbox-exec -f` (the binary is not ours, so the in-process `sandbox_init`
+  of Sprint 4 does not apply): `file-read*` on the binary's folder, the model file, the key file, `/usr/lib`,
+  `/System/Library` and the shared libraries the binary links outside those (read from `otool -L`: Homebrew's
+  OpenSSL), metadata on their ancestors; `process-exec` of the server binary alone; `network-bind` and
+  `network-inbound` on `localhost:8081` and no outbound rule, so egress is denied by the kernel, not by
+  `--offline`; `(deny process-info*)` with `(allow process-info* (target self))` (the server reads its own
+  process info and traps without it); sysctl reads by exact name only (36 names, taken from the denial log
+  while it started under CPU and under Metal; none is `kern.proc*`); the Sprint 4 System V denial; and for
+  Metal `iokit-open` on `IOSurfaceRootUserClient` and `AGXDeviceUserClient` plus `mach-lookup` of
+  `com.apple.MTLCompilerService` (the shader library is embedded as source and compiled at start through
+  that XPC service; without it Metal fails to create its library). Denials that remain and do not matter
+  (the server works): `com.apple.bsd.dirhelper`, `opendirectoryd`, `diagnosticd` (so os_log is off),
+  `windowserver`, `tccd`, metadata of `/etc`, `/var/db/timezone`, `/System/Cryptexes/App` and
+  `.GlobalPreferences.plist`. Memory on macOS is polled (the kernel's footprint, every check and before
+  every call) against the binding's `model_memory_gib` and the server killed past it: `sandbox-exec`'s exec
+  drops a jetsam limit (the Sprint 4 measurement), so the limit is not kernel-enforced there. Linux:
+  `prlimit --as` then bubblewrap with `--unshare-all --die-with-parent --new-session`, read-only binds of
+  the system libraries, `ld.so.cache`, the binary's folder, the model and the key file, `--dev`, the root
+  remounted read-only, no `/proc` (Docker forbids a fresh one) and the socket folder bound writable.
+- **2026-10-15 — S5 — DEVIATION — on Linux the listener is a UNIX socket (5.1)** — with every namespace new
+  the harness cannot reach `127.0.0.1:8081` inside the server's network namespace, so on Linux the server
+  listens on `<state>/assistant/socket/llama.sock` (`--host` takes a socket path in this build) and the
+  harness speaks HTTP over it; the binding record keeps the suite's `127.0.0.1:8081` (its schema allows no
+  other host). The alternative, sharing the network namespace and trusting `--offline`, is what the suite
+  says is not the boundary.
+- **2026-10-15 — S5 — DECISION — the model is verified at every server start (5.1)** — size first (the
+  Sprint 0 truncations), then SHA-256: hashing the 5.03 GB file takes 2.67 s on this Mac (1.89 GB/s); the
+  binary (50 KB) is hashed too. A verification failure (missing, size, hash) is final until the harness
+  restarts (the file does not change by itself); a crash, hang or limit is retried up to three times by the
+  harness's watch tick, each restart re-verifying. The alternative, caching by size and mtime, saves under
+  3 s per start and would trust a timestamp.
+- **2026-10-15 — S5 — DECISION — readiness and the binding record (5.1)** — readiness is `/health` 200 plus
+  a chat completion with one tool (`report_ready`, `tool_choice: required`) whose call must validate
+  against the tool's JSON Schema, and whose answer must carry no reasoning. The suite's
+  AssistantModelBinding 0.3.0 is written as a planning record (null digests) and, once ready, stored in the
+  ledger with the measured model, binary and chat-template digests (`planning_only: false`) and pinned by
+  the `assistant.ready` event; `assistant.unavailable` carries the reason. The workspace starts the
+  assistant in a thread after it is up and stops the server on quit; `GET /v1/assistant` shows the state
+  and the binding (no secret, no path). Model and server paths come from `DSP_MODEL_DIR` and
+  `DSP_LLAMA_SERVER`, defaulting to `~/.local/share/dsp`; a port held by another process is refused before
+  spawning, and a server a crashed harness left is killed by its pid file only if its command line is ours.
+- **2026-10-15 — S5 — DECISION — the secret store (5.1)** — macOS: the Security framework's generic-password
+  C API through ctypes (`SecKeychainAddGenericPassword`, `SecKeychainFindGenericPassword`,
+  `SecKeychainItemModifyAttributesAndData`; deprecated since 10.10, working on 26.3.1, proven here), never
+  the `security` command with `-w`, which would put the secret in a process's arguments; the login keychain
+  by default, a keychain file with its password for tests (`security create-keychain` under tmp). Linux:
+  `secret-tool` (the value on its standard input) when present, else a 0600 file under a 0700
+  `<state>/secrets/` (the container and CI); a folder others can read is refused. Service name
+  `dev.dsp.assistant`, account the last part of the `secret://local/<account>` reference. Not tested:
+  `secret-tool` present without a Secret Service (no such host here).
+- **2026-10-15 — S5 — ASSUMPTION — no test loads the model by accident (5.1)** — every pytest harness runs
+  with `DSP_MODEL_DIR` pointed at an empty folder (an autouse fixture), as do Playwright's harnesses, the
+  shell's Rust test and the built-app tests; `live_model` tests start one real server per session and lend
+  it to each harness. A harness start therefore records `assistant.unavailable: model missing` as its
+  first event, and four tests that asserted exact event lists now expect it.
+- **2026-10-15 — S5 — FINDING — what the D3 measurement shows (5.1)** — see the checkpoint table in
+  `STATUS.md`: under the Seatbelt profile on this M1 Max, CPU with 2 threads generates 11.5 tokens/s, CPU
+  with all 10 cores 11.1 tokens/s (the efficiency cores slow the whole), Metal full offload 45 tokens/s with
+  prompt processing at 258 tokens/s and the typed probe in 1.1 s against 10 s on 2 CPU threads. The
+  footprint the kernel accounts (what the memory poll reads) is 5.6 GiB on CPU and 1.2 GiB on Metal, whose
+  weights live in GPU-mapped memory the footprint does not count; resident size is 9.9 GiB and 6.0 GiB.
+- **2026-10-15 — S5 — DEFECT — a server that answered health but failed readiness was left running
+  (5.1, fixed)** — found by a mutation run that put the key in the arguments: the server started, health
+  answered, the authenticated probe got 401, the adapter raised without stopping the process and the
+  port stayed held. Readiness after health is now one step whose failure stops the server; a unit test
+  runs a real process that answers health and refuses everything else and checks it is gone afterwards
+  (mutation-checked). On Linux `ps -o command=` cuts the command line at the terminal's width, which hid
+  `--api-key-file` from the live test and would have stopped the stale-server check from recognising its
+  own server: both use `ps -ww` now.
+- **2026-10-15 — S5 — FINDING — guards mutation-checked (5.1)** — each broken in turn, each caught by a test:
+  the size check, the hash check, a stale server killed only when its command line is ours, a port held by
+  another process refused before spawning, `(deny default)` in the profile, `--unshare-all` on Linux, the
+  keychain's replace path, the fallback folder's permissions, the key as a file rather than an argument
+  (both the flag and the value), outbound network denied in the profile (the A30 probe connects when it is
+  allowed), the typed probe deciding readiness (made stricter: the real model cannot be made to fail it, so
+  the check was shown to run), `--no-slots`, `--reasoning off` (with reasoning on the answer carries
+  `reasoning_content`), the quit stopping the server, and a readiness failure stopping the server.
+- **2026-10-15 — S5 — FINDING — one model server at a time in the Linux container (5.1)** — Docker
+  Desktop's VM has 7.75 GiB; inside it llama-server holds the model as 5.7 GiB of anonymous memory
+  (`anon-rss` in the kernel's out-of-memory record; the bind-mounted file is not kept as file pages), so a
+  second server does not fit and the kernel killed the first (`make live-linux`, status 137, twice). The
+  live tests therefore start one server per session, and the quit test lends that server to its harness
+  and runs last. A machine with the model on a local disk would map it instead; not measured here.
+- **2026-10-15 — S5 — DECISION — D3 pick: Metal full offload (owner, after 5.1)** — from the measured table
+  (STATUS, "D3 checkpoint"): `-ngl 99 -t 2`, profile `assistant-local-metal-v1`, 45 tokens/s against 11.5
+  on two CPU threads. Consequences: the binding's `cpu_threads` stays 2 and the Seatbelt profile keeps the
+  two IOKit classes and the Metal compiler lookup; on Linux the CPU-only build ignores `-ngl` with a
+  warning, so the same binding runs on the CPU there (the `live-linux` numbers in STATUS). The suite's
+  contract said CPU only; this is the owner's deviation from it for this host.
+- **2026-10-15 — S5 — DECISION — an instruction is an assistant job (5.2)** — the application owns the
+  loop: an instruction the assistant can take is admitted as a Job whose task names the command
+  (`{"command": <id>}`), on the same admission path as every other job (request, reservation, plan
+  recheck), and the command is settled `accepted` with the job as its effect; when the loop ends, the
+  command is `applied` (a plain-text answer), `needs_clarification` (the assistant asked one question) or
+  `rejected` with the reason the task failed. With the assistant not ready the instruction is rejected
+  with its actual state. Jobs give the loop what the suite asks of it for free: lease and heartbeat while
+  the model generates, a fence that pause and cancel advance, resume as readmission, the trail. The
+  harness runs one assistant job at a time (`attend`, every half second) in its own thread, beside the
+  dispatcher that runs the sandboxed jobs. Alternative: an AssistantTask object with its own state
+  machine and its own control path, which would have duplicated the Job's.
+- **2026-10-15 — S5 — DEVIATION — Job 0.3.0 and CodeTask 0.2.0 (5.2)** — Job 0.3.0 adds the assistant task
+  shape and a nullable `parent`: a job the assistant submitted (a profile, a code task) names the
+  assistant job, so a pause or cancel of the parent reaches its live children (`jobs.control`
+  cascades, best effort) and the phrases and the window's controls address the parent while it is
+  live (a child is never the "live job" then). CodeTask 0.2.0 adds the language `assistant` for the
+  loop's own declaration (the instruction's digest as its source; no inputs or outputs; never run by
+  the runner). Both prior versions stay readable under their own schema files. The ExecutionRequest of
+  an assistant job and of its children pins the conversation and the assistant binding, as the suite's
+  schema provides.
+- **2026-10-15 — S5 — DECISION — the tool-call ledger (5.2)** — app AssistantCall 0.1.0: one record per
+  generation (the model's proposal: a tool call, or `answer` for the final text), written `dispatched`
+  before the tool runs and committed with the quoted result, or `refused` with the code and reason,
+  under the job's attempt and fence on the `assistant-task:<job>` aggregate, with events
+  `assistant.call_dispatched`, `assistant.call_committed`, `assistant.call_refused` and
+  `assistant.answered`. The model's context is rebuilt from these records on every generation (the
+  canonical state, the instruction, each proposal and its quoted result or refusal), so a resumed or
+  restarted attempt replays what was committed and never dispatches a committed call twice. A call
+  interrupted between dispatch and commit (a pause, a crash) stays `dispatched` and runs again on the
+  next attempt, idempotently: an artifact is content-addressed, admission is idempotent by the call's
+  id, and a job the call submitted that was paused with its parent is resumed rather than started over.
+  A tool's own refusal (a budget change for the owner, a tool that has nothing to act on yet) is the
+  model's data (`{"error", "reason"}`), never an exception for it.
+- **2026-10-15 — S5 — DECISION — the checks, in order, before a call runs (5.2)** — schema (the tool's
+  JSON Schema; an unknown tool, several calls in one turn or arguments that are not JSON are refused
+  the same way), principal (the scope the tool needs is in the trusted context), revision (a patch names
+  the current requirements revision; a code task is refused once the requirements moved past the
+  revision its job was admitted at), scope (a result inspected is a job this task submitted; a task's
+  inputs are captured data and its artifact is in the store), budget (the repairs), fence (the job is
+  still this attempt's and running: a call proposed after a pause or cancel is refused with that state's
+  code and the task stops). A refusal is recorded, quoted back to the model and counts as a model call.
+- **2026-10-15 — S5 — ASSUMPTION — how D17's counters are read (5.2)** — per generation: at most 6,144
+  input tokens (counted by the server's tokenizer before the call; over it the task fails), 2,048 output
+  tokens (`max_tokens`), 300 s (the deadline, after which the server is stopped as hung); per task: at
+  most 20 model calls (generations; the twenty-first is not made), 2 code repairs (an artifact that
+  names what it repairs) and 1,800 s of generation (the sum of the generations' wall time). The
+  "8,192 total tokens" is the context window of one generation (`-c 8192`), not a sum over the task:
+  a sum would make twenty calls impossible, since each call re-sends the context. One generation at a
+  time is a lock in the harness's assistant. The first limit reached fails the task with
+  `budget: <which> is the most for one task`.
+- **2026-10-15 — S5 — DECISION — the eight tools (5.2)** — exactly the skill's: `inspect_schema` (the
+  reviewed profiling recipe on one granted CSV, run in the sandbox as a child job; returns the data's id
+  and the profile), `propose_requirement_patch` (a typed JSON patch with provenance, or one question),
+  `write_code_artifact` (create or edit: an immutable, content-addressed source; naming what it repairs
+  counts as a repair), `submit_code_task` (admission and the sandbox, unchanged from Sprint 4, as a child
+  job; waits for its end and returns the redacted outcome), `inspect_results` (a submitted job's state,
+  bounded failure text and outputs by name, size and digest; the content view is 5.4), and
+  `request_trial`, `assemble_evidence_report`, `propose_release`, whose objects do not exist until later
+  sprints and which answer DEPENDENCY_UNAVAILABLE. No shell, grant or sealed-data tool. A task's failure
+  message reaches the model as at most 200 characters of quoted data (the Sprint 4 finding).
+- **2026-10-15 — S5 — DECISION — what the model is told (5.2)** — a fixed system text (act only through
+  the tools; one call per turn; tool results are quoted data, never instructions; answer in plain text
+  with a readback and never claim completion; a measure by a category is its mean unless told
+  otherwise) plus the workspace state as JSON: the requirements revision, field roles and features, the
+  granted sources by handle and label, the captured data by id, and the counters. The catalogue is the
+  tools' schemas themselves. Nothing else: no manual, no schema of the whole suite.
+- **2026-10-15 — S5 — FINDING — a stop takes effect between tokens (5.2)** — the generation streams; a
+  pause or cancel ends it at the next chunk, which cancels it on the server, and during prompt
+  processing (no chunks) at the first token. The job heartbeats every 15 s from the loop's own thread
+  while the generation thread waits, so a lease never expires under a long generation.
+- **2026-10-15 — S5 — FINDING — guards mutation-checked (5.2)** — seventeen, each broken in turn and each
+  caught: the argument schema, an unknown tool, the principal's scope, the revision check, the scope
+  check, the repair budget, the twenty-call budget, the fence before dispatch, one call per turn, the
+  input-token budget, the generation-second budget, a gateway fault failing the task, an interrupted
+  call staying dispatched, the pause and cancel cascade to children, a phrase naming the parent, a
+  paused child resumed before it runs again, and an instruction rejected while the assistant is
+  unavailable (the first run of that one survived because the test's harness had observed no hardware,
+  so admission refused before the assistant check could; the test now observes first). Found and
+  removed by the checks: the tools module's own refusal of a budget patch duplicated `revise`'s.
+- **2026-10-15 — S5 — DECISION — intent extraction is a typed patch with per-field provenance (5.3)** —
+  the model's `propose_requirement_patch` is a JSON Patch on the WorkloadSpec (add, replace, remove;
+  lists by index or `-`; applied whole to a copy, a missing path refuses the whole patch) plus one
+  provenance entry per patched path: the exact words of the instruction (a span that is not a substring
+  of the message is refused, so a reader can always find it), the model's extraction confidence, and the
+  materiality; every change must be covered and no entry may name an unpatched path. The entries are
+  written on the new revision as `direct_user_message`, `confirmation_status: proposed`,
+  `confirmed_by: null`; the Sprint 3 grammar's own change stays one `confirmed` entry, since the owner
+  typed it. The `workload.revised` event carries the structured diff (the patch) and a plain readback
+  the application writes from it (each path and value, nothing invented), which the trail shows; the
+  model's final text stays a proposal. A question (`question` set) applies nothing and ends the command
+  `needs_clarification` with the question as its reason: the suite's "ask only about ambiguities that
+  change imminent material work" is the model's call, bounded to one question per task.
+- **2026-10-15 — S5 — DECISION — the owner's paths through the assistant (5.3)** — a proposal on
+  `/requested_resources/max_external_charge_minor` or the evaluation contract is refused by `revise`
+  (REQUIRES_CONFIRMATION, as in Sprint 3), the refusal is the model's data, the task ends with its
+  proposal recorded, and the command is settled `rejected` with REQUIRES_CONFIRMATION and the reason:
+  "spend another £100" changes nothing and says who must act. The grant itself (FIN) does not exist yet.
+- **2026-10-15 — S5 — DECISION — a leading control phrase (5.3)** — a direct message that opens with an
+  exact control phrase followed by `;`, `.`, `,`, `:` or a line break and more text is that control
+  first (the fast path, settled before the model sees anything) and then a second command,
+  `<message id>:then`, whose text is the rest and which the assistant takes as an instruction; a retry
+  of the message id repeats neither. "Pause now; exclude region before continuing" therefore pauses the
+  live job, then revises the requirements while it stays paused (resume is explicit). A phrase quoted,
+  embedded or followed by other words in the same clause ("pause the music") remains an instruction,
+  as Sprint 3 decided.
+- **2026-10-15 — S5 — DECISION — the requirements' own rules complete a patch (5.3)** — three rules the
+  schema cannot express run on every proposed patch (`workloads.complete`, the contract-change skill's
+  semantic validators): a predictor field left in neither feature list by the patch is excluded (the
+  derived operation is appended, recorded with `trusted_observation` provenance and shown in the
+  readback as the application's), a field in both lists refuses the whole patch, adding an output
+  transform while the privacy status is `not_requested` sets it to `requires_review` (rounding is a
+  precision change, not anonymity), and a patch that leaves no row identifier is refused. Found by the
+  live runs: the 8B model does one of a two-step edit (drops `region` from the allowed list but does
+  not add it to the excluded one; adds the rounding transform but not the review), and once removed
+  the row id's role while adding the entity id's. The rules make the record right whatever the model
+  managed, without inventing intent: nothing is added that the proposal did not imply.
+- **2026-10-15 — S5 — DECISION — a proposal is grounded in the instruction or refused (5.3)** — before
+  the completion rules, three checks on what the model proposed, each with the instruction's text:
+  every number in a value under the intent constraints must appear in the instruction (a hard maximum
+  of 2 for "keep the feature set minimal" is an invention; the increment 10 for "nearest 10" is not), a
+  field role may be removed only when the instruction names that field (the model dropped the row id
+  to make "the ID" the only identifier, three times, under three wordings), and a patch that changes
+  nothing or is empty without a question is refused with "ask a question instead". The owner's budget
+  path is exempt from the number rule (minor units are a conversion). Found by the live runs; each is a
+  general rule, not a case.
+- **2026-10-15 — S5 — DECISION — the interpretation policy is in the model's instructions (5.3)** — the
+  reference cases of `conversational_control.md` "From language to enforceable intent" are stated as
+  numbered procedures, path by path (a named field not yet in the roles is added, never another field's
+  role changed; "the ID" is an entity id, a string, excluded; "minimal" features asks a fixed question;
+  rounding adds the typed transform; excluding moves a field between the two lists; a spend change is
+  a patch on the owner's budget path). Without them the model repurposed the row id's role for "the
+  ID", set a hard maximum instead of asking, rounded with ties to even and answered the budget change
+  in prose; measured on 2026-10-15, seed 1 (STATUS, 5.3). This is the product's policy from the suite,
+  not an aid to the tests; the tests check the typed records, never the prose.
+- **2026-10-15 — S5 — DEVIATION — typed proposals at temperature 0 (5.3)** — the binding's decoding is
+  `temperature 0` (the suite's example says 0.7): tool calls and patches are structured output, and at
+  0.7 the same instruction gave a different wrong patch on each run. The seed stays 1. A later binding
+  may set its own decoding; the record says what was used.
+- **2026-10-15 — S5 — FINDING — what the model got wrong that the application let stand (5.3)** —
+  "spend another £100" was proposed as 1,100 minor units (£11) and refused anyway for the owner; the
+  ID case once added `order_id` to the excluded list twice (the schema allows duplicates in that list).
+  Neither changed a record's meaning; both are the model's arithmetic and tidiness, logged for the
+  qualification suite (Sprint 11).
+- **2026-10-15 — S5 — FINDING — guards mutation-checked (5.3)** — eighteen, each broken in turn and each
+  caught: a span must be verbatim, a provenance field must be patched, every change must be covered,
+  provenance is recorded as proposed, a missing path refuses the whole patch, a field in both lists,
+  the derived exclusion, the derived review, a row id must remain, a question ends in clarification,
+  an owner-only proposal ends rejected, the leading phrase, the `:then` command, the readback on the
+  event, a number not in the instruction, an unnamed removal, a no-op patch and an empty patch.
+- **2026-10-15 — S5 — ASSUMPTION — repeatable live runs (5.3)** — every generation uses seed 1 and the
+  binding's temperature (0.7), so a run can be repeated on the same server; llama.cpp is deterministic
+  for one build, one profile and one seed. The five reference instructions are one `live_model` test
+  that writes an A29 evidence record whose slug names the binding (`interpretation-assistant-local-
+  qwen`), so another binding's record is a separate file and never merged.
+- **2026-10-15 — S5 — DECISION — what "redacted" means for results the assistant sees (5.4, before the
+  code)** — of a job the assistant submitted, the model is shown: the job's state; a failure's kind
+  and at most 200 characters of its message, as quoted data (the message is text the task chose); each
+  declared output's name, size and digest; and, for one output it asks to see by name, a bounded
+  preview: for a CSV the header and the first 20 rows with each cell cut at 200 characters and the
+  total row count, for a JSON or text file its first 2,000 characters, for anything else nothing but
+  the size. Never: a file outside the job's declared outputs, the inputs themselves, the ledger, the
+  store, a path on this machine, a secret (none can reach an output: the sandbox refuses the reads),
+  or a sealed partition (none exists yet; Sprint 9 excludes sealed manifests at admission and the
+  binding's `sealed_data_access: false` will be read then). A remote binding (5.6) shows a preview only
+  when its data policy allows the data class; the local binding allows the owner's own data, which
+  never leaves the machine. The preview is a view of a committed artifact, built by the harness from
+  the content store; the model's context holds it only as quoted data.
+- **2026-10-16 — S5 — DECISION — generate, run, repair (5.4)** — the assistant writes an artifact
+  (`write_code_artifact`), submits it (`submit_code_task`: Sprint 4's admission, dispatcher and sandbox
+  unchanged, as a child job) and sees the redacted outcome; `inspect_results` with an output's name adds
+  the bounded preview defined above; a repair is a new artifact naming the failed one and is counted
+  against D17's two. The model's instructions say how (SQL on a table named like the input; one output;
+  read the failure, repair, resubmit) and that an instruction to load, show, compute or summarise data
+  is done only when a code task produced the table, never by describing data in the answer: on the
+  first live run the model inspected the schema and answered in prose (no task). The window's Results
+  section lists each succeeded job's CSV outputs from the RunRecord its success names and opens one as
+  a table of cells (`GET /v1/artifacts/{sha256}`, read-only, by digest only); a profile's JSON is a
+  record, not a table, and is not listed. The `data.captured` event now carries the capture's digest,
+  so a client can name captured data as a task input without reading the manifest.
+- **2026-10-16 — S5 — DECISION — a task's own requirement change does not stale its code tasks (5.4)** —
+  5.2 refused `submit_code_task` once the requirements had moved past the revision the assistant job
+  was admitted at. On the first live run the model registered the CSV's field roles with a patch (a
+  reasonable "load this CSV" step), the revision moved, and every resubmission of its repaired code
+  was refused as stale; the task ended without a table. The check is gone: a child job is admitted
+  under the current revision by construction, and a change made outside the task (the owner's typed
+  change) already pauses the task through the revision's hold, which is the suite's own rule. The
+  patch's `expected_revision` check stays.
+- **2026-10-16 — S5 — DEFECT — the local model over-groups the acceptance instruction (5.4, open)** —
+  "load this CSV and show transit hours by service level" on the orders fixture: after the procedure
+  and naming fixes the model inspects the schema, writes SQL, runs it in the sandbox, inspects the
+  result and answers from it, in 5 generations and about 35 s, but its SQL groups by `region` and
+  `service_level` (identical on four runs at seed 1, temperature 0, under three wordings of a rule
+  against added groupings), so the committed table is not the table per service level the independent
+  query gives, though its values are DuckDB's means for the grouping it chose. The A28 part
+  `generated-code-live-assistant-local-qwen` is therefore FAIL on this binding; the gate's `make live`
+  is red by it. Not fixed by more prompting on purpose: the application cannot know the instruction's
+  categories, and tuning the model's instructions to one test is not a product change. Earlier failed
+  runs, each fixed in the product: the model answered in prose after the schema (rule added), named the
+  granted file by its label (the resolver now accepts it), queried its input as a file (the rules now
+  name the input as the data's name) and lost its resubmissions to the stale-revision check (removed).
+- **2026-10-16 — S5 — ASSUMPTION — what "equal to an independent query" accepts (5.4)** — the
+  acceptance instruction names "transit hours" and the fixture has quoted and actual transit hours;
+  the live test accepts a committed CSV with one row per service level whose numeric column equals
+  DuckDB's mean of either column within 0.01 (rounding by the model's SQL), and the record says which;
+  the row count, column names and order are the model's. Nothing else about the model's prose is read.
+- **2026-10-16 — S5 — DECISION — A28's record after 5.4** — the Sprint 4 SAT's wording that no model
+  generates code until Sprint 5 is replaced: model-generated code and its repairs are the
+  `live_model` part `A28-generated-code-live-<binding>` (written by `make live`, PASS only when the
+  committed table equals DuckDB's); the overall record stays INSUFFICIENT_EVIDENCE for sealed
+  partitions (Sprint 9) and VM isolation (the owner's deviation), not rounded up.
+- **2026-10-16 — S5 — DEFECT — the gate's CI read, run 38950633517 at `2712b6b`: three test races (fixed, pushed unread)** —
+  `verify (ubuntu)`: the Sprint 4 harness-dies containment test's own liveness helper read
+  `/proc/<pid>/stat` after checking it existed, and the task ended in between (a gone process now
+  counts as not alive). `verify (macos)`: a Sprint 3 message test expects the assistant's first
+  event before its first message, and the slow runner recorded `assistant.unavailable` after it;
+  the `harness` fixture now waits for that first event, so every harness test starts from the
+  same state. `desktop (ubuntu)`: the built app's window check asserted the plan's outcome line in
+  the same text that showed the stage, while the plan comes with its own request (the Sprint 4
+  race, on another line); it now waits for the line. The desktop macOS job passed. The fixes are
+  pushed without a further CI read (the three read points are spent); the pull request's checks
+  show the result, and Auto-fix can wake this session on them.
+- **2026-10-16 — S5 — FINDING — the Linux container cannot meet D17's deadline for the assistant's prompts (5.7, open as a fact)** —
+  `make live-linux` at the gate: 12 passed, 4 failed. The gateway's readiness, verification, key
+  and A30 offline tests, the hung-generation A24, out of memory and the remote refusals pass; A28
+  and A29 fail with "no answer within the 300 s generation deadline" and no generation, because
+  the container (CPU only, 2 threads, no Metal) processes prompts at 3.1 tokens per second and one
+  call's context is about 2,700 tokens: some 15 minutes of prompt processing against a 300 s
+  deadline. The next two tests then wait behind the abandoned generations, which keep the single
+  slot (`-np 1`) until their deadline, and time out. The harness's answers were right at every
+  step (the deadline fired, the task failed with that reason, the controls answered). Nothing is
+  tuned for it: the binding's limits are D17's; the container is the Linux verification stand-in,
+  not a target machine. Recorded as a measured fact per OS, open as such. The Linux evidence files
+  of that run were not copied out because `tools/live_linux.sh` copied after a failing pytest; it
+  now copies whatever was written and then exits with pytest's status.
+- **2026-10-16 — S5 — DECISION — the feature-count question is the application's own (5.7)** — the fifth
+  live run had four of the five reference instructions as described; for "keep features minimal"
+  the model set the soft objective and answered instead of asking about a hard maximum, as it had
+  at 5.3 (its system rules grew at 5.4). The suite fixes that ambiguity for the reference case, and
+  the other 5.3 interpretation rules are already the application's, so the dispatcher now asks "Is
+  there a hard maximum number of features, and are source fields or transformed features counted?"
+  itself whenever a patch sets the soft objective to minimise the count and no hard maximum is set
+  and the model asked nothing; the patch still applies, and the command ends in clarification. With
+  a hard maximum in the same patch nothing is asked. Loop test on the scripted gateway; the guard
+  mutation-caught. The intent test's step summary now shows an answer's text (it printed "" for
+  every answer), and its evidence names temperature 0, as the binding has it.
+- **2026-10-16 — S5 — FINDING — the fourth live run: three test defects and one product gap (5.7, fixed)** —
+  with the suite's server revived, the acceptance spec passed again (66 s) and 12 of 16 Python live
+  tests; the four failures had four causes. (1) The hung-generation tests asked the model for a
+  600-word essay and this time it refused in 1.3 s ("I cannot write a long essay…", 50 tokens),
+  so the job had succeeded before the SIGSTOP; both tests now try three requests in turn until one
+  is still generating 1.5 s in. (2) The acceptance and intent tests waited 20 s for readiness,
+  while a server the quit test had stopped takes 25 s to come back; they wait 300 s now, as the
+  failure tests do. (3) The quit test asserted the key file gone the instant the process was dead,
+  but `stop()` unlinks the file only after it has reaped the process; the test waits for the file.
+  (4) Product: a plain-text answer of nothing at all ("" after the "keep features minimal" patch,
+  where a question was due) settled the command `applied`; an empty answer is now refused with
+  "the answer is empty: say what was done, or ask one question", the refusal is shown to the model
+  as a user turn, and the next generation answers (loop test, mutation caught).
+- **2026-10-16 — S5 — DEFECT — the live suite's quit test stopped the server the later files needed (5.7, fixed)** —
+  the third `make live` ran the Python live tests at last, and the acceptance, intent and remote
+  tests failed with "the model server did not answer (ConnectError)" and no generation: the
+  gateway file's D24 quit test really stops the session's one server, and the `Shared` wrapper the
+  later files lend to their harnesses handed back the old observation without starting it again
+  (only the failure tests' `Lent` did). `Shared.start` now revives a stopped session server for any
+  later harness, `Lent` adds only the real stop, and the remote fixture revives the server before it
+  reads the served model ids. The suite was last fully green on macOS at 5.3, before the generate,
+  failure and remote files existed in this order; the earlier Linux run of 7 tests ended with the
+  quit test and never showed it.
+- **2026-10-16 — S5 — DEFECT — a Playwright spec's kill of its harness left the model server behind (5.7, fixed)** —
+  the second `make live` passed the acceptance spec (72 s) and then every Python live test errored
+  at setup: "127.0.0.1:8081 is held by another process". The spec had ended its harness with
+  `process.kill(pid)`, and the llama-server that harness had started survived it; two harnesses
+  from the previous day's renderer specs were found alive the same way. The live spec now quits
+  through `POST /v1/shutdown` (the explicit Quit of D24, which stops the server) and waits for the
+  harness to exit, killing only as a last resort. Why a SIGTERM to the harness did not reach its
+  supervisor's stop is not established; open as a question, not a product defect: the product's
+  Quit is the request, and a crashed harness's server is reaped by the next start on the same
+  profile (`stale()`). The leftovers were killed by hand.
+- **2026-10-16 — S5 — DEFECT — the confinement named the state folder by an unresolved path (5.7, fixed)** —
+  the first `make live` of the gate failed its Playwright acceptance spec before the first keystroke:
+  the harness it started reported "the model server exited with status 1" four times (the initial
+  start and the watch's three). The `log stream` watch kept beside the run shows why: Seatbelt
+  denied `file-read-data` on the key file at `/private/var/folders/…/dsp-renderer-…/assistant/api-key`;
+  the profile had named it as `/var/folders/…`, the path Node's temp directory gives, and the OS
+  sandbox matches the real path. pytest's temp paths are already real, so no Python test saw it;
+  an owner whose profile folder sits behind a symlink would have. The adapter now resolves the
+  model, the binary and the state folder before any path reaches a profile, an argv or a bind
+  (unit test with a symlinked folder on both OSes). The watch found no other denial of ours beyond
+  the known benign ones (`com.apple.diagnosticd`, `com.apple.bsd.dirhelper`, `/System/Cryptexes/App`
+  metadata, `/etc` metadata); no sysctl was asked for.
+- **2026-10-16 — S5 — DEFECT — `make sat-linux` lost the marker expression's quotes (5.7, fixed)** — the
+  5.5 change that leaves `live_model` out of the acceptance runs wrote `-m "not live_model"` into the
+  target's `LINUX_RUN`, which the Linux recipe passes to the container inside a double-quoted
+  string, so pytest received `-m not` and refused ("expected not OR left parenthesis OR
+  identifier; got end of input"); the first gate run of `make sat-linux` failed at once. The quotes
+  are now escaped (`\"not live_model\"`) and the dry run shows them reaching the container.
+  `make sat` on macOS, which runs pytest directly, was never affected.
+- **2026-10-16 — S5 — DEFECT — `killpg` refused with EPERM in the sandbox's stop, intermittent (open)** —
+  the final `make verify` on macOS failed the Sprint 4 CPU-time containment test once:
+  `sandbox.py:104` `os.killpg(pid, signal.SIGKILL)` → `PermissionError: [Errno 1]` while stopping
+  a task past its CPU limit; the test passed three times alone right after and in the two earlier
+  full runs of the day. The same refusal was logged without a traceback at the Sprint 4 gate. Not
+  touched by this sprint; recorded with the traceback, open for Sprint 6 housekeeping (the kill
+  should check the group is still the task's, or signal the known pids), and the gate's record
+  below keeps the failed run beside the rerun.
+- **2026-10-16 — S5 — FINDING — the integrity review at 5.7: PASS, two should-fix, six notes** — run once
+  as a general-purpose agent carrying the reviewer's definition (the project agent is not in the
+  session's registry), on `73698be..4eef69d`. Should-fix, both fixed: (1) authority — a model
+  `replace` of a string leaf under `/intent_constraints` was applied unchecked, so a patch could set
+  `privacy_status` to `reviewed_with_evidence` or add a role for a field the instruction never
+  names, and one provenance entry with the bare prefix `/intent_constraints` covered every path;
+  now the privacy status is refused as derived by the application, a field name a value introduces
+  (`field`, `output_field`) must be in the instruction or in the current roles, and a provenance
+  field must be the patched path or its parent. (2) containment — the generation deadline was
+  passed to httpx as a per-read timeout, so a generation that kept streaming chunks was never
+  stopped (at the container's 1.6 tok/s a 2,048-token answer would run 21 minutes past a 300 s
+  deadline); `assemble` now carries the absolute deadline and a chunk past it is the hang, in
+  both adapters (unit test on a slow stream; the SIGSTOP live test keeps the no-chunk case).
+  Notes, taken: (3) the input bound now counts the tool catalogue with the messages; (4) on Metal
+  the footprint account leaves the mapped weights out, so the memory limit now takes the larger
+  of footprint and resident. Notes, deferred and open: (5) a `dispatched` call replayed after a
+  crash is not idempotent for `propose_requirement_patch` (the revision applied; the replay is
+  quoted a conflict) and `inspect_schema` (a second capture); no double commit, so Sprint 6
+  housekeeping. (6) a plain-text answer settles the command `applied` even when every call was
+  refused; the trail calls the answer a proposal, so nothing is rounded up, but "applied" means
+  the job ended; to settle on effect in Sprint 6. (7) the live failure and remote tests had run on
+  macOS only at review time; `make live-linux` at the gate runs them on Linux. (8) the remote
+  spend sum lives in memory and a harness restart resets it; harmless while the schema holds
+  `max_external_charge_minor` at 0, to come from the ledger when that is lifted.
+- **2026-10-16 — S5 — DEFECT — the stale-server check needed `ps`, which the verify container lacks (5.7, fixed)** —
+  the first `make verify-linux` of the gate failed one unit test: `stale()` read a pid file's process
+  through `ps -ww -o command=`, and the plain Linux container has no `ps` (the live container had it
+  from its build tools). On Linux the check now reads the kernel's own record, `/proc/<pid>/cmdline`,
+  with no dependency; macOS keeps `ps` (there is no `/proc`). The unit test is unchanged and covers
+  the negative case on both OSes; the positive kill is exercised by the live restart path.
+- **2026-10-16 — S5 — ASSUMPTION — the acceptance line's Playwright spec is selected by tag (5.7)** —
+  Playwright has no markers, so the `live_model` spec (`desktop/tests/live.spec.ts`, titled
+  `@live_model`) is left out of `make e2e` by `--grep-invert @live_model` in the renderer's test
+  script and run by `make live` with `--grep @live_model`, before the Python live tests so a red
+  acceptance record does not hide it. It starts a real harness on the real model folder, grants the
+  generated orders fixture through the harness (the folder picker is the owner's), types the 5.4
+  instruction into the composer, waits for the first tool call in the trail, pauses with the chord,
+  waits for the job to show paused, presses Resume, waits for the assistant's proposal line, and
+  opens the first committed CSV as a table. Deselection, never a skip, as the gate rule asks.
+- **2026-10-16 — S5 — FINDING — two processes left behind by earlier runs (5.6)** — the live remote
+  tests first failed with "127.0.0.1:8081 is held by another process": a llama-server from the 5.5
+  mutation run was still up, started by the out-of-memory test under the mutation that disabled the
+  footprint kill (the model loaded in full, the test failed, and nothing stopped the adapter it had
+  built). That test now stops its adapter in a `finally`. The same look found a pytest from before
+  this session's context was compacted, 51 minutes old, on the restart test: the non-daemon harness
+  thread hang of the CI defect above, seen here first and not understood then. Both killed by hand.
+- **2026-10-16 — S5 — DECISION — remote OpenAI-compatible binding, D4 = B (5.6)** — the app owns
+  `AssistantModelBinding` 0.4.0, the remote mode only (`mode: remote_openai_compatible`; a local binding
+  keeps the suite's 0.3.0): provider and model name, `endpoint.base_url` (http, https, or `unix://` for
+  a server on a socket) and `api_key_ref` (`secret://local/<account>`), `placement` (host; whether data
+  leaves the machine), `data_policy` (`none` or `synthetic_fixtures_only`; sealed data and secrets are
+  `false` by the schema), `spend` (the price per million tokens in minor units, approved by the owner,
+  when), the D17 limits with `max_external_charge_minor` as the owner's spend limit, standard decoding
+  fields only, `remote_fallback: false`, and `observed` (the model id and the probe's seconds) once
+  ready. The adapter `OpenAICompatible` sits behind the same `ModelServer` port: `start` checks the
+  policy (`none` lets nothing leave: refused before the key is read), reads the key from the secret
+  store under the account (none: refused with the exact `security` and `secret-tool` commands of D4),
+  sees the model in `GET /v1/models` (401 or 403: "the endpoint refused the key"), then passes the same
+  typed tool-response probe as the local server; `complete` refuses a call whose projected charge
+  (the counted input plus `max_tokens`, at the price, rounded up) would take the spend past the limit,
+  before anything is sent, and adds the reported usage's charge after; `count` is the endpoint's own
+  tokenizer (`/tokenize`: llama-server, vLLM) or, on 404, one token per two bytes. The harness opts in
+  by a record at `<profile>/assistant/binding.json`; an invalid record leaves the assistant unavailable
+  with the first schema error, and never the local model in its place (no fallback, by the skill). The
+  ready event carries placement, data policy, spend and limit, so the window's header and trail show
+  them before the first instruction ("shown before first use"). Tested against llama-server itself
+  on TCP (macOS) and its socket (Linux), with the session server's own key in a test-only store: no
+  key of the owner's, no spend, nothing leaves (D4 = B). The proprietary adapter is not built.
+- **2026-10-16 — S5 — ASSUMPTION — the data policy is declared and shown, not enforced on content (5.6)** —
+  under D4 = B the only data that may leave is synthetic fixtures; the harness cannot tell a synthetic
+  file from a real one, so the policy is the owner's declaration recorded with the binding, shown at
+  readiness and in the trail, and enforced only where it can be: sealed data and secrets never enter
+  a prompt (Sprint 9 adds sealed data; the key is never in the context). An endpoint without a
+  tokenizer gets a high token bound (two bytes per token), so the D17 input limit refuses an input
+  the endpoint might cut, at the cost of usable context.
+- **2026-10-16 — S5 — FINDING — the restart bound was not real (5.5, found by its mutation check)** — the
+  "verification failures are final" branch survived its mutation because the watch only ever restarted
+  from the ready state and reset its counter on every success: a server that kept dying was restarted
+  without bound, and a failed launch was never retried. Now: the watch starts a server again after a
+  death or a failed launch, at most three times in one harness's life, and leaves it unavailable
+  past that; failures no restart can change are final at once (a missing, corrupt or mis-sized model
+  or binary, the memory limit, no key, a refused key, a `none` data policy, an unaffordable probe).
+  Tests: a server dead at every tick ends with four ready and four unavailable events and no more;
+  the corrupt-model test waits two ticks and sees no second attempt; the remote failures likewise.
+- **2026-10-16 — S5 — DEFECT — CI run 38895075855, the 5.4 read (fixed, one open)** — (1) both `verify`
+  jobs: the corrupt-model test expected "model hash mismatch" for its second case and got "model server
+  binary missing": verification checks the binary before the model's hash, and CI has no llama-server.
+  The failed assertion left that test's inline harness threads alive (not daemons: a quit must stop the
+  model server), so pytest never exited and both jobs ran until cancelled 37 minutes later. The case now
+  names an existing file (`sys.executable`) as its binary, and both inline-harness tests stop their
+  servers in a `finally`. Reproduced here with a HOME that has no binary: the failure and the hang, then
+  the fixed test passing and exiting. (2) `verify (macos-latest)` only: the Sprint 1 SAT profile test got
+  exit 2 from the CLI, a `DspError` whose text the test did not show; it passes here and a cold harness
+  answers the CLI in 1.6 s. The CLI gave a cold harness 10 s (100 tries of 0.1 s) under a coverage-traced
+  subprocess on a shared runner; it now gives 30 s, and the test shows the CLI's output when it fails.
+  Not reproduced: a hypothesis until the gate's run. (3) `desktop (ubuntu-24.04)`: after the real window
+  close the shell did not end within 20 s. The Sprint 4 gate passed this step; the shell's close path and
+  the window's title are unchanged since; the 5.2 and 5.3 runs failed earlier in that test, so this step
+  had not run on CI since Sprint 4. The three close waits now report the windows and shells left when
+  they time out. **Open** until the gate's run; not reproducible here (no Linux desktop).
+- **2026-10-16 — S5 — FINDING — a test harness's quit must be joined (5.5)** — the harness's supervisor
+  thread stops the assistant's server after uvicorn has exited; the `harness` fixture joined only
+  uvicorn, so one test's stop could land after the next test's harness had reported the shared live
+  server ready: the first deadline run died at its own SIGSTOP with "no such process", and the loop,
+  whose tokenizer call hit a bare connection error, left the job leased and logged "attend failed".
+  The app now keeps the supervisor on `app.state`, the fixture joins it (a quit's stop finishes before
+  the next harness starts), a tokenizer call that cannot reach the server is `ASSISTANT_UNAVAILABLE`
+  with the error's type, and the loop fails the task with that reason.
+- **2026-10-16 — S5 — FINDING — the deadline test raced the watch's tick (5.5)** — the watch marks the
+  server dead and restarts it on a one-second tick; the test read the events 60 ms after the task
+  failed and found the state still ready and no outage recorded. The test now waits for the restart's
+  second `assistant.ready` before counting the one `assistant.unavailable`. Product unchanged: the
+  window can show "ready" for up to a second after a deadline kill, and an instruction in that second
+  fails with the gateway's own reason.
+- **2026-10-16 — S5 — DECISION — failure and independence (5.5)** — every failure of the model ends in
+  `assistant_unavailable` with the conversation and the controls untouched and no other model tried:
+  a missing model or binary and a hash or size mismatch are verification failures, final until the
+  harness restarts (the watch never retries them: the file does not change by itself); out of memory
+  is the kernel's kill on macOS (jetsam is not available through `sandbox-exec`, so the footprint poll
+  kills past the binding's limit) or `prlimit`'s refusal on Linux, before the server is ever ready; a
+  hung server is killed at the generation deadline (the stream's read timeout, 300 s by the binding;
+  5 s in the test), the task fails with that reason, the command is rejected with it, and the watch
+  restarts the same binding up to three times; a restart of the harness expires the dead attempt's
+  lease, and the next attempt rebuilds the context from the committed AssistantCall records, so a
+  committed call is never dispatched twice and an interrupted one runs again idempotently. The fast
+  controls never touch the model: with the server stopped mid-generation (SIGSTOP) and every
+  processor busy, pause and cancel receipts stay within 2 s at p95 (the A24 record for Sprint 5), a
+  pause of the hung assistant job is durable at once and nothing it proposes afterwards runs. A30's
+  offline part is the 5.1 probe under the server's own confinement, now written as evidence.
+- **2026-10-16 — S5 — ASSUMPTION — Sprint 5's acceptance tests live with the live tests (5.5)** — A24
+  under a hung generation, A29 and the A28 generated-code part need the real model, so they are
+  `live_model` tests under `tests/integration/` whose evidence `make live` writes (and `make live-linux`
+  copies out); `make sat` and `make sat-linux` leave `live_model` out, as `make verify` does, and rerun
+  every earlier sprint's file. The live failure tests end the session's server on purpose, so the
+  integration conftest orders them after the other live tests, and each later harness restarts it.
+- **2026-10-15 — S5 — ASSUMPTION — the sprint branch** — the work is on the branch the desktop app made for
+  this session, `claude/sprint-5-assistant-gateway-fc1f11`, from `main` at `73698be`, rather than a
+  branch named `sprint-5-assistant`; the pull request carries the sprint's title.
+
 ## Sprint 4
 
 - **2026-10-12 — S4 — DEFECT — the harness published its port before listening (housekeeping)** — `serve`
